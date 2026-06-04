@@ -1,0 +1,72 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// 1. Decision Audit Table (Used for inactivity audits and kill switch checks)
+model DecisionAudit {
+  id              String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  classification  String   @db.VarChar(50)
+  rejectionReason String?  @map("rejection_reason")
+  systemRiskState String   @map("system_risk_state") @db.VarChar(50)
+  htf             Json?
+  metadata        Json?
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([classification])
+  @@index([createdAt(sort: Desc)])
+  @@map("decision_audit")
+}
+
+// 2. Incidents Table (Tracks Global and Symbol level incidents)
+model Incident {
+  id         Int      @id @default(autoincrement())
+  symbol     String?  @db.VarChar(20)
+  level      String   @db.VarChar(20)
+  source     String   @db.VarChar(50)
+  reason     String
+  detectedAt BigInt   @map("detected_at")
+  resolvedAt BigInt?  @map("resolved_at")
+
+  @@index([symbol])
+  @@index([level])
+  @@map("incidents")
+}
+
+// 3. Alert Log Table (Deduplicated System Warnings)
+model AlertLog {
+  id        Int      @id @default(autoincrement())
+  level     String   @db.VarChar(50)
+  title     String
+  message   String
+  entityId  String?  @map("entity_id") @db.VarChar(100)
+  timestamp DateTime @default(now())
+
+  @@map("alert_log")
+}
+
+// 4. Circuit Breaker State Table (Protections like drawdowns)
+model CircuitBreakerState {
+  id          Int      @id @default(autoincrement())
+  breakerType String   @unique @map("breaker_type") @db.VarChar(50)
+  status      String   @db.VarChar(50)
+  currentVal  Decimal  @map("current_val") @db.Decimal(10, 4)
+  lastUpdated DateTime @default(now()) @updatedAt @map("last_updated")
+
+  @@map("circuit_breaker_state")
+}
+
+// 5. Monitored Bot Table (Multi-client support structure)
+model MonitoredBot {
+  id           String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  customerId   String   @map("customer_id") @db.Uuid
+  strategyName String   @map("strategy_name") @db.VarChar(100)
+  broker       String   @db.VarChar(50)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("monitored_bot")
+}

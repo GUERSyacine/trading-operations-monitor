@@ -1,0 +1,84 @@
+EXECUTION-WATCHDOG PRODUCT FAMILY
+Service 1 — Bot Heartbeat Monitor
+
+Pain:
+"my bot silently died"
+
+Features:
+
+heartbeat ping
+inactivity detection
+Telegram alert
+restart warning
+
+Sellability:
+VERY HIGH
+
+Customers:
+retail algo traders
+
+Service 2 — Incident Detection Monitor
+
+Pain:
+"market conditions became abnormal"
+
+Examples:
+your code:
+
+flash crash
+spread explosion
+slippage anomaly
+
+Sellability:
+HIGH
+
+Service 3 — Exchange Health Monitor
+
+Pain:
+"broker API degraded"
+
+detect:
+
+latency spikes
+ack timeout
+API failures
+
+Sellability:
+HIGH
+
+Service 4 — Strategy Runtime Monitor
+
+Pain:
+"bot alive but behaving weird"
+
+detect:
+
+no trades
+abnormal fill rates
+strange drift
+
+Sellability:
+VERY HIGH
+
+Service 5 — Kill Switch Protection
+
+Pain:
+"STOP THE SYSTEM"
+
+Examples:
+
+daily loss hit
+infra failure
+symbol halt
+
+Sellability:
+VERY HIGH
+
+Service 6 — Kill Diagnostics / Incident Forensics
+
+Pain:
+"WHY did it stop?"
+
+Your diagnostics code does exactly this.
+
+Premium feature

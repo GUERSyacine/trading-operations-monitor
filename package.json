@@ -1,0 +1,19 @@
+{
+  "name": "execution-watchdog",
+  "version": "1.0.0",
+  "description": "Premium fail-closed monitoring watchdog for algorithmic trading",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.10.2",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.24",
+    "prisma": "^5.10.2",
+    "typescript": "^5.3.3"
+  }
+}
