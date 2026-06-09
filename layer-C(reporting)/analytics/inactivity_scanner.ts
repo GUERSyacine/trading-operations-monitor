@@ -30,22 +30,42 @@ async function monitorInactivity() {
             return;
         }
 
-        // Group by reason
-        const stats: Record<string, { count: number; lastRisk: string; lastHTF: any }> = {};
+        const totalRejections = decisions.length;
+        console.log(`Total rejections in last 24h: ${totalRejections}`);
+
+        // Group by reason, track risk state and HTF distribution per reason
+        const stats: Record<string, { count: number; riskStates: Record<string, number>; htfStates: { tradable: number; notTradable: number } }> = {};
         decisions.forEach((d: any) => {
             const reason = d.rejectionReason || 'UNKNOWN_REASON';
-            if (!stats[reason]) stats[reason] = { count: 0, lastRisk: '', lastHTF: null };
+            if (!stats[reason]) stats[reason] = { count: 0, riskStates: {}, htfStates: { tradable: 0, notTradable: 0 } };
             stats[reason].count++;
-            stats[reason].lastRisk = d.systemRiskState;
-            stats[reason].lastHTF = d.htf;
+            // Aggregate risk state distribution
+            const riskState = d.systemRiskState || 'UNKNOWN';
+            stats[reason].riskStates[riskState] = (stats[reason].riskStates[riskState] || 0) + 1;
+            // Aggregate HTF tradability distribution
+            if ((d.htf as any)?.isTradable === true) stats[reason].htfStates.tradable++;
+            else if ((d.htf as any)?.isTradable === false) stats[reason].htfStates.notTradable++;
         });
 
-        console.table(Object.keys(stats).map(reason => ({
-            Reason: reason,
-            Count: stats[reason].count,
-            Last_Risk: stats[reason].lastRisk,
-            HTF_Tradable: (stats[reason].lastHTF as any)?.isTradable
-        })));
+        // Sort by count descending so most impactful reasons appear first
+        const sortedRows = Object.entries(stats)
+            .sort((a, b) => b[1].count - a[1].count)
+            .map(([reason, { count, riskStates, htfStates }]) => {
+                const percentage = ((count / totalRejections) * 100).toFixed(1) + '%';
+                const riskDistribution = Object.entries(riskStates)
+                    .map(([state, n]) => `${state}: ${n}`)
+                    .join(', ');
+                const htfDistribution = `tradable: ${htfStates.tradable}, notTradable: ${htfStates.notTradable}`;
+                return {
+                    Reason: reason,
+                    Count: count,
+                    Percentage: percentage,
+                    Risk_State_Distribution: riskDistribution,
+                    HTF_Tradable_Distribution: htfDistribution
+                };
+            });
+
+        console.table(sortedRows);
 
         // 🚨 Alert for vague reasons
         const vagueDecisions = decisions.filter((d: any) => !d.rejectionReason || d.rejectionReason === 'UNKNOWN_REASON');

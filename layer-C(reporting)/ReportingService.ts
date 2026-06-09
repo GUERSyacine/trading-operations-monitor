@@ -38,7 +38,8 @@ export class ReportingService {
                 return { category: 'Order Latency Spike', type: 'operations' };
 
             default:
-                // Fallback using reason string
+                // Log unrecognised source so it never silently degrades report quality
+                console.warn(`[ReportingService] Unknown incident source: "${incident.source}". Falling back to Generic Anomaly. Add it to getIncidentCategory().`);
                 const lower = incident.reason.toLowerCase();
                 return {
                     category: 'Generic Anomaly',
@@ -98,22 +99,22 @@ export class ReportingService {
         let report = `Daily Report\nDate: ${dateStr}\n\n`;
 
         report += `Operations Incidents:\n`;
-        const opsKeys = Object.keys(opsCounts);
-        if (opsKeys.length === 0) {
+        const opsSorted = Object.entries(opsCounts).sort((a, b) => b[1] - a[1]);
+        if (opsSorted.length === 0) {
             report += `- None\n`;
         } else {
-            for (const key of opsKeys) {
-                report += `- ${key}: ${opsCounts[key]}\n`;
+            for (const [key, count] of opsSorted) {
+                report += `- ${key}: ${count}\n`;
             }
         }
 
         report += `\nExecution Incidents:\n`;
-        const execKeys = Object.keys(execCounts);
-        if (execKeys.length === 0) {
+        const execSorted = Object.entries(execCounts).sort((a, b) => b[1] - a[1]);
+        if (execSorted.length === 0) {
             report += `- None\n`;
         } else {
-            for (const key of execKeys) {
-                report += `- ${key}: ${execCounts[key]}\n`;
+            for (const [key, count] of execSorted) {
+                report += `- ${key}: ${count}\n`;
             }
         }
 
@@ -150,11 +151,15 @@ export class ReportingService {
 
         score = Math.max(0, Math.min(100, score));
 
-        let level = 'EXCELLENT';
-        if (score < 70) {
-            level = 'HALTED';
-        } else if (score < 90) {
+        let level: string;
+        if (score >= 95) {
+            level = 'EXCELLENT';
+        } else if (score >= 80) {
+            level = 'GOOD';
+        } else if (score >= 60) {
             level = 'DEGRADED';
+        } else {
+            level = 'HALTED';
         }
 
         return {
