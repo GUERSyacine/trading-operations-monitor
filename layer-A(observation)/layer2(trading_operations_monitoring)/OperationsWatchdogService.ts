@@ -2,6 +2,7 @@ import { prisma } from '../../prisma';
 import { AlertingService } from '../../layer-D(notification)/alerting/AlertingService';
 import { HealthCheckResult } from '../types';
 import { MVP_CONFIG } from '../../mvpConfig';
+import { IncidentManager } from '../../layer-B(Assessement)/IncidentManager';
 
 export interface TradeMetrics {
     pnl: number;
@@ -13,6 +14,7 @@ export interface TradeMetrics {
 export class OperationsWatchdogService {
     constructor(
         protected alertingService: AlertingService,
+        protected incidentManager: IncidentManager,
         protected allowedInactivityMs: number = MVP_CONFIG.OPERATIONS.HEARTBEAT_TIMEOUT_MS
     ) {}
 
@@ -90,11 +92,10 @@ export class OperationsWatchdogService {
             if (!isSuccess) {
                 if (isAlarm) {
                     console.error(`🚨 [OperationsWatchdog] HEARTBEAT LOST CRITICAL: ${errorMsg}`);
-                    await this.alertingService.sendAlert({
+                    await this.incidentManager.reportIncident({
                         level: 'CRITICAL',
-                        title: 'Trading Bot Heartbeat LOST',
-                        message: `CRITICAL SAFETY BREACH: No decisions or updates logged by the trading engine in the last ${(elapsedMs / 60000).toFixed(1)} minutes (consecutive checks failed: ${this.heartbeatFailures}). Bot may have crashed!`,
-                        dedupKey: 'heartbeat_lost_critical'
+                        source: 'HEARTBEAT',
+                        reason: `No decisions or updates logged by the trading engine in the last ${(elapsedMs / 60000).toFixed(1)} minutes`
                     });
                 } else {
                     console.warn(`⚠️ [OperationsWatchdog] HEARTBEAT SILENCE WARNING: ${errorMsg}`);
@@ -115,6 +116,9 @@ export class OperationsWatchdogService {
                     metadata
                 };
             }
+
+            // Stateful recovery: resolve the incident if it was active
+            await this.incidentManager.resolveIncidentBySource('HEARTBEAT');
 
             console.log(`[OperationsWatchdog] Bot is ALIVE. Last update was ${(elapsedMs / 1000).toFixed(0)}s ago.`);
             return {
@@ -300,11 +304,10 @@ export class OperationsWatchdogService {
             if (!isSuccess) {
                 if (isAlarm) {
                     console.error(`🚨 [OperationsWatchdog] BROKER CONNECTION STALE/DOWN CRITICAL: ${errorMsg}`);
-                    await this.alertingService.sendAlert({
+                    await this.incidentManager.reportIncident({
                         level: 'CRITICAL',
-                        title: 'Broker Connection Down',
-                        message: `CRITICAL: Broker connection is reported down or stale (consecutive checks failed: ${this.brokerFailures}). Detail: ${errorMsg || 'Connection offline'}`,
-                        dedupKey: 'broker_connection_stale_critical'
+                        source: 'BROKER_CONNECTION',
+                        reason: `Broker connection is reported down or stale. Detail: ${errorMsg || 'Connection offline'}`
                     });
                 } else {
                     console.warn(`⚠️ [OperationsWatchdog] BROKER CONNECTION WARNING: ${errorMsg}`);
@@ -325,6 +328,9 @@ export class OperationsWatchdogService {
                     metadata
                 };
             }
+
+            // Stateful recovery: resolve the incident if it was active
+            await this.incidentManager.resolveIncidentBySource('BROKER_CONNECTION');
 
             console.log('[OperationsWatchdog] Broker connection is healthy.');
             return {

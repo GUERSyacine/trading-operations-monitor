@@ -116,7 +116,18 @@ async function runTests() {
             }
         };
 
-        const watchdog = new OperationsWatchdogService(mockAlerting, 5 * 60 * 1000);
+        const mockIncidentManager: any = {
+            incidentsReported: [] as any[],
+            incidentsResolved: [] as any[],
+            async reportIncident(incident: any) {
+                this.incidentsReported.push(incident);
+            },
+            async resolveIncidentBySource(source: string, symbol: string | null = null) {
+                this.incidentsResolved.push({ source, symbol });
+            }
+        };
+
+        const watchdog = new OperationsWatchdogService(mockAlerting, mockIncidentManager as any, 5 * 60 * 1000);
 
         // Dynamically override prisma.decisionAudit query handlers
         let mockFindFirst: any = async () => null;
@@ -136,6 +147,7 @@ async function runTests() {
         assert(hbAlive.source === 'HEARTBEAT', 'Heartbeat source should be HEARTBEAT.');
         assert(typeof hbAlive.checkDurationMs === 'number', 'Heartbeat check includes checkDurationMs.');
         assert(mockAlerting.alertsSent.length === 0, 'No alert should be sent when bot is alive.');
+        assert(mockIncidentManager.incidentsResolved.some((r: any) => r.source === 'HEARTBEAT'), 'Heartbeat recovery should call resolveIncidentBySource.');
         assert(hbAlive.metadata?.watchdogVersion === '1.0.0', 'Metadata includes watchdogVersion.');
         assert(hbAlive.metadata?.serviceName === 'OperationsWatchdogService', 'Metadata includes serviceName.');
         assert(hbAlive.metadata?.environment !== undefined, 'Metadata includes environment.');
@@ -147,6 +159,7 @@ async function runTests() {
             createdAt: new Date(Date.now() - 10 * 60 * 1000)
         });
         mockAlerting.alertsSent = [];
+        mockIncidentManager.incidentsReported = [];
         (watchdog as any).heartbeatFailures = 0;
 
         const hbFail1 = await watchdog.checkHeartbeat();
@@ -163,7 +176,10 @@ async function runTests() {
         assert(hbDead.healthy === false, 'Heartbeat check should fail on third silence check.');
         assert(hbDead.severity === 'CRITICAL', 'Third consecutive failure has CRITICAL severity.');
         assert(hbDead.message?.includes('No decision audits logged') === true, 'Third consecutive failure contains the actual error detail.');
-        assert(mockAlerting.alertsSent.length === 3 && mockAlerting.alertsSent[2].level === 'CRITICAL', 'Telegram alert should trigger on heartbeat loss.');
+        assert(mockAlerting.alertsSent.length === 2, 'Two warning alerts sent from OperationsWatchdog directly.');
+        assert(mockIncidentManager.incidentsReported.length === 1, 'One critical incident reported to IncidentManager.');
+        assert(mockIncidentManager.incidentsReported[0].source === 'HEARTBEAT', 'Incident source should be HEARTBEAT.');
+        assert(mockIncidentManager.incidentsReported[0].level === 'CRITICAL', 'Incident level should be CRITICAL.');
 
         // 4.2 checkTradeFrequency
         // Scenario A: Has trades (Healthy)
@@ -207,6 +223,7 @@ async function runTests() {
         const brokerHealthy = await watchdog.checkBrokerConnection();
         assert(brokerHealthy.healthy === true, 'Broker connection check should pass when connected=true.');
         assert(brokerHealthy.source === 'BROKER_CONNECTION', 'Broker connection source should be BROKER_CONNECTION.');
+        assert(mockIncidentManager.incidentsResolved.some((r: any) => r.source === 'BROKER_CONNECTION'), 'Broker connection recovery should call resolveIncidentBySource.');
 
         // Scenario B: Reporting Disconnected (Unhealthy)
         mockFindFirst = async () => ({
@@ -215,6 +232,7 @@ async function runTests() {
             metadata: { connected: false, error: 'MT5 offline' }
         });
         mockAlerting.alertsSent = [];
+        mockIncidentManager.incidentsReported = [];
         (watchdog as any).brokerFailures = 0;
 
         const brFail1 = await watchdog.checkBrokerConnection();
@@ -228,7 +246,10 @@ async function runTests() {
         const brokerFailed = await watchdog.checkBrokerConnection();
         assert(brokerFailed.healthy === false, 'Broker connection check should fail on third failure.');
         assert(brokerFailed.severity === 'CRITICAL', 'Third broker failure has CRITICAL severity.');
-        assert(mockAlerting.alertsSent.length === 3 && mockAlerting.alertsSent[2].level === 'CRITICAL', 'Dispatches critical alert on broker failure.');
+        assert(mockAlerting.alertsSent.length === 2, 'Two warning alerts sent from OperationsWatchdog directly.');
+        assert(mockIncidentManager.incidentsReported.length === 1, 'One critical incident reported to IncidentManager.');
+        assert(mockIncidentManager.incidentsReported[0].source === 'BROKER_CONNECTION', 'Incident source should be BROKER_CONNECTION.');
+        assert(mockIncidentManager.incidentsReported[0].level === 'CRITICAL', 'Incident level should be CRITICAL.');
 
         // Scenario C: Stale connection check (Unhealthy)
         mockFindFirst = async () => null; // No connection events at all
@@ -251,9 +272,12 @@ async function runTests() {
         assert(brStale2.healthy === false, 'Broker connection check should fail on second stale event.');
         assert(brStale2.severity === 'WARNING', 'Second stale event has WARNING severity.');
 
+        mockIncidentManager.incidentsReported = [];
         const brokerStale = await watchdog.checkBrokerConnection();
         assert(brokerStale.healthy === false, 'Broker check should fail when no ping logs are found in the timeframe.');
         assert(brokerStale.severity === 'CRITICAL', 'Third stale event has CRITICAL severity.');
+        assert(mockIncidentManager.incidentsReported.length === 1, 'One critical incident reported on stale broker connection.');
+        assert(mockIncidentManager.incidentsReported[0].source === 'BROKER_CONNECTION', 'Stale incident source is BROKER_CONNECTION.');
 
         // 4.4 checkMarketDataFeed
         // Scenario A: Tick received recently (Healthy)

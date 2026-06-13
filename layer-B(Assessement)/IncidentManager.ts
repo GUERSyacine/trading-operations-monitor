@@ -17,6 +17,7 @@ export class IncidentManager {
         symbols: {}
     };
     private globalSince?: number;
+    private globalSource?: string;
 
     constructor(private alertingService?: AlertingService) {}
 
@@ -45,6 +46,7 @@ export class IncidentManager {
                     this.state.globalLevel = record.level as IncidentSeverity | 'NORMAL';
                     this.state.globalReason = record.reason;
                     this.globalSince = detectedAtNum;
+                    this.globalSource = record.source;
                 }
             }
             console.log(`[IncidentManager] Restored ${activeIncidents.length} unresolved incident(s) from Neon DB.`);
@@ -90,6 +92,7 @@ export class IncidentManager {
             this.state.globalLevel = incident.level;
             this.state.globalReason = incident.reason;
             this.globalSince = Date.now();
+            this.globalSource = incident.source;
             await this.persistIncident(null, incident.level, incident.source, incident.reason, this.globalSince);
         }
 
@@ -121,9 +124,11 @@ export class IncidentManager {
 
         // Check global incident for expiration
         if (this.state.globalLevel !== 'NORMAL' && this.globalSince) {
-            if (now - this.globalSince > ttlMs) {
-                console.log('[IncidentManager] TTL Expired. Automatically recovering global system incident');
-                await this.resolveIncident(null);
+            if (this.globalSource && !['HEARTBEAT', 'BROKER_CONNECTION'].includes(this.globalSource)) {
+                if (now - this.globalSince > ttlMs) {
+                    console.log('[IncidentManager] TTL Expired. Automatically recovering global system incident');
+                    await this.resolveIncident(null);
+                }
             }
         }
     }
@@ -172,6 +177,7 @@ export class IncidentManager {
             this.state.globalLevel = 'NORMAL';
             delete this.state.globalReason;
             this.globalSince = undefined;
+            this.globalSource = undefined;
             try {
                 await prisma.incident.updateMany({
                     where: {
@@ -184,6 +190,53 @@ export class IncidentManager {
                 });
             } catch (error: any) {
                 console.error('[IncidentManager] Failed to resolve DB global incident:', error?.message || error);
+            }
+        }
+    }
+
+    async resolveIncidentBySource(source: string, symbol: string | null = null): Promise<void> {
+        const now = Date.now();
+        if (symbol) {
+            const active = this.state.symbols[symbol];
+            if (active && active.source === source) {
+                delete this.state.symbols[symbol];
+                try {
+                    await prisma.incident.updateMany({
+                        where: {
+                            symbol,
+                            source,
+                            resolvedAt: null
+                        },
+                        data: {
+                            resolvedAt: BigInt(now)
+                        }
+                    });
+                    console.log(`[IncidentManager] Resolved incident for symbol ${symbol} from source ${source}`);
+                } catch (error: any) {
+                    console.error(`[IncidentManager] Failed to resolve DB incident for ${symbol} / ${source}:`, error?.message || error);
+                }
+            }
+        } else {
+            if (this.state.globalLevel !== 'NORMAL' && this.globalSource === source) {
+                this.state.globalLevel = 'NORMAL';
+                delete this.state.globalReason;
+                this.globalSince = undefined;
+                this.globalSource = undefined;
+            }
+            try {
+                await prisma.incident.updateMany({
+                    where: {
+                        symbol: null,
+                        source,
+                        resolvedAt: null
+                    },
+                    data: {
+                        resolvedAt: BigInt(now)
+                    }
+                });
+                console.log(`[IncidentManager] Resolved global incident from source ${source}`);
+            } catch (error: any) {
+                console.error(`[IncidentManager] Failed to resolve DB global incident for source ${source}:`, error?.message || error);
             }
         }
     }

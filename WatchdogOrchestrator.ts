@@ -28,7 +28,7 @@ export class WatchdogOrchestrator {
         this.alertingService = new AlertingService();
         this.incidentManager = new IncidentManager(this.alertingService);
         this.infraService = new InfrastructureWatchdogService(this.alertingService);
-        this.opsService = new OperationsWatchdogService(this.alertingService);
+        this.opsService = new OperationsWatchdogService(this.alertingService, this.incidentManager);
         this.runtimeService = new RuntimeMonitorService(this.alertingService);
     }
 
