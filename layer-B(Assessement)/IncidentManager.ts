@@ -16,8 +16,7 @@ export class IncidentManager {
         globalLevel: 'NORMAL',
         symbols: {}
     };
-    private globalSince?: number;
-    private globalSource?: string;
+    private globalIncidents = new Map<string, { level: IncidentSeverity; reason: string; since: number }>();
 
     constructor(private alertingService?: AlertingService) {}
 
@@ -43,10 +42,11 @@ export class IncidentManager {
                         since: detectedAtNum
                     };
                 } else {
-                    this.state.globalLevel = record.level as IncidentSeverity | 'NORMAL';
-                    this.state.globalReason = record.reason;
-                    this.globalSince = detectedAtNum;
-                    this.globalSource = record.source;
+                    this.globalIncidents.set(record.source, {
+                        level: record.level as IncidentSeverity,
+                        reason: record.reason,
+                        since: detectedAtNum
+                    });
                 }
             }
             console.log(`[IncidentManager] Restored ${activeIncidents.length} unresolved incident(s) from Neon DB.`);
@@ -56,10 +56,31 @@ export class IncidentManager {
     }
 
     /**
-     * Get read-only snapshot of current state
+     * Get read-only snapshot of current state.
+     * Rebuilds legacy shape dynamically to ensure 100% backward compatibility.
      */
     getState(): IncidentControllerState {
-        return { ...this.state }; // Shallow copy sufficient for now
+        let maxGlobalLevel: IncidentSeverity | 'NORMAL' = 'NORMAL';
+        let globalReason: string | undefined = undefined;
+
+        if (this.globalIncidents.size > 0) {
+            const severityOrder: Record<string, number> = { 'LOW': 1, 'MEDIUM': 2, 'HIGH': 3, 'CRITICAL': 4 };
+            let maxOrder = 0;
+            for (const inc of this.globalIncidents.values()) {
+                const order = severityOrder[inc.level] || 0;
+                if (order > maxOrder) {
+                    maxOrder = order;
+                    maxGlobalLevel = inc.level;
+                    globalReason = inc.reason;
+                }
+            }
+        }
+
+        return {
+            globalLevel: maxGlobalLevel,
+            globalReason,
+            symbols: { ...this.state.symbols }
+        };
     }
 
     /**
@@ -76,8 +97,9 @@ export class IncidentManager {
                 return;
             }
         } else {
-            if (this.state.globalLevel === incident.level && this.state.globalReason === incident.reason) {
-                // Duplicate global level state, ignore duplicate insertion
+            const existing = this.globalIncidents.get(incident.source);
+            if (existing && existing.level === incident.level && existing.reason === incident.reason) {
+                // Duplicate global incident for this source, ignore duplicate insertion
                 return;
             }
         }
@@ -88,12 +110,14 @@ export class IncidentManager {
             this.state.symbols[incident.symbol] = incident as SymbolIncidentState;
             await this.persistIncident(incident.symbol, incident.level, incident.source, incident.reason, (incident as any).since || Date.now());
         } else {
-            console.warn(`[IncidentManager] GLOBAL Incident: ${incident.level} (${incident.reason})`);
-            this.state.globalLevel = incident.level;
-            this.state.globalReason = incident.reason;
-            this.globalSince = Date.now();
-            this.globalSource = incident.source;
-            await this.persistIncident(null, incident.level, incident.source, incident.reason, this.globalSince);
+            console.warn(`[IncidentManager] GLOBAL Incident: ${incident.level} (${incident.reason}) from source ${incident.source}`);
+            const detectedAt = (incident as any).since || Date.now();
+            this.globalIncidents.set(incident.source, {
+                level: incident.level,
+                reason: incident.reason,
+                since: detectedAt
+            });
+            await this.persistIncident(null, incident.level, incident.source, incident.reason, detectedAt);
         }
 
         // 3. Dispatch Live Alerts if the service is linked
@@ -122,18 +146,16 @@ export class IncidentManager {
             }
         }
 
-        // Check global incident for expiration
-        if (this.state.globalLevel !== 'NORMAL' && this.globalSince) {
-            if (this.globalSource && !['HEARTBEAT', 'BROKER_CONNECTION'].includes(this.globalSource)) {
-                if (now - this.globalSince > ttlMs) {
-                    console.log('[IncidentManager] TTL Expired. Automatically recovering global system incident');
-                    await this.resolveIncident(null);
+        // Check global incidents for expiration
+        for (const [source, incident] of this.globalIncidents.entries()) {
+            if (!['HEARTBEAT', 'BROKER_CONNECTION'].includes(source)) {
+                if (now - incident.since > ttlMs) {
+                    console.log(`[IncidentManager] TTL Expired. Automatically recovering global system incident for source ${source}`);
+                    await this.resolveIncidentBySource(source, null);
                 }
             }
         }
     }
-
-
 
     private async persistIncident(symbol: string | null, level: IncidentSeverity, source: string, reason: string, detectedAt: number) {
         try {
@@ -174,10 +196,7 @@ export class IncidentManager {
                 }
             }
         } else {
-            this.state.globalLevel = 'NORMAL';
-            delete this.state.globalReason;
-            this.globalSince = undefined;
-            this.globalSource = undefined;
+            this.globalIncidents.clear();
             try {
                 await prisma.incident.updateMany({
                     where: {
@@ -189,7 +208,7 @@ export class IncidentManager {
                     }
                 });
             } catch (error: any) {
-                console.error('[IncidentManager] Failed to resolve DB global incident:', error?.message || error);
+                console.error('[IncidentManager] Failed to resolve DB global incidents:', error?.message || error);
             }
         }
     }
@@ -217,26 +236,24 @@ export class IncidentManager {
                 }
             }
         } else {
-            if (this.state.globalLevel !== 'NORMAL' && this.globalSource === source) {
-                this.state.globalLevel = 'NORMAL';
-                delete this.state.globalReason;
-                this.globalSince = undefined;
-                this.globalSource = undefined;
-            }
-            try {
-                await prisma.incident.updateMany({
-                    where: {
-                        symbol: null,
-                        source,
-                        resolvedAt: null
-                    },
-                    data: {
-                        resolvedAt: BigInt(now)
-                    }
-                });
-                console.log(`[IncidentManager] Resolved global incident from source ${source}`);
-            } catch (error: any) {
-                console.error(`[IncidentManager] Failed to resolve DB global incident for source ${source}:`, error?.message || error);
+            const active = this.globalIncidents.get(source);
+            if (active) {
+                this.globalIncidents.delete(source);
+                try {
+                    await prisma.incident.updateMany({
+                        where: {
+                            symbol: null,
+                            source,
+                            resolvedAt: null
+                        },
+                        data: {
+                            resolvedAt: BigInt(now)
+                        }
+                    });
+                    console.log(`[IncidentManager] Resolved global incident from source ${source}`);
+                } catch (error: any) {
+                    console.error(`[IncidentManager] Failed to resolve DB global incident for source ${source}:`, error?.message || error);
+                }
             }
         }
     }

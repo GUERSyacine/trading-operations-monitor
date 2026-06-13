@@ -868,6 +868,96 @@ async function runTests() {
     console.log('');
 
     // ----------------------------------------------------
+    // TEST 5.1: IncidentManager State Machine & Deduplication
+    // ----------------------------------------------------
+    try {
+        console.log('--- Checking IncidentManager: Source-keyed Global Incident State ---');
+        const mockAlertingForManager: any = {
+            alertsSent: [] as any[],
+            async sendAlert(alert: any) {
+                this.alertsSent.push(alert);
+            }
+        };
+
+        const mgr = new IncidentManager(mockAlertingForManager);
+        let persisted: any[] = [];
+        (prisma.incident as any).create = async (args: any) => {
+            persisted.push(args.data);
+            return args.data;
+        };
+        (prisma.incident as any).updateMany = async (args: any) => {
+            return { count: 1 };
+        };
+
+        // 1. Report HEARTBEAT critical failure
+        persisted = [];
+        mockAlertingForManager.alertsSent = [];
+        await mgr.reportIncident({
+            level: 'CRITICAL',
+            source: 'HEARTBEAT',
+            reason: 'Heartbeat down'
+        });
+        assert(persisted.length === 1, 'Should persist heartbeat incident on initial failure.');
+        assert(mockAlertingForManager.alertsSent.length === 1, 'Should send Telegram alert for initial heartbeat failure.');
+
+        // 2. Report HEARTBEAT critical failure again (Deduplication)
+        persisted = [];
+        mockAlertingForManager.alertsSent = [];
+        await mgr.reportIncident({
+            level: 'CRITICAL',
+            source: 'HEARTBEAT',
+            reason: 'Heartbeat down'
+        });
+        assert(persisted.length === 0, 'Should skip duplicate heartbeat insertion (deduplication).');
+        assert(mockAlertingForManager.alertsSent.length === 0, 'Should not send duplicate alert for heartbeat.');
+
+        // 3. Report BROKER_CONNECTION critical failure concurrently
+        persisted = [];
+        mockAlertingForManager.alertsSent = [];
+        await mgr.reportIncident({
+            level: 'CRITICAL',
+            source: 'BROKER_CONNECTION',
+            reason: 'Broker offline'
+        });
+        assert(persisted.length === 1, 'Should persist broker incident concurrently with heartbeat.');
+        assert(mockAlertingForManager.alertsSent.length === 1, 'Should send Telegram alert for broker connection.');
+
+        // 4. Report HEARTBEAT again (Should not ping-pong / should still deduplicate correctly!)
+        persisted = [];
+        mockAlertingForManager.alertsSent = [];
+        await mgr.reportIncident({
+            level: 'CRITICAL',
+            source: 'HEARTBEAT',
+            reason: 'Heartbeat down'
+        });
+        assert(persisted.length === 0, 'Should continue to deduplicate heartbeat despite concurrent broker incident.');
+        assert(mockAlertingForManager.alertsSent.length === 0, 'Should not send duplicate alert for heartbeat.');
+
+        // 5. Verify getState() reports the highest severity and reason
+        const state = mgr.getState();
+        assert(state.globalLevel === 'CRITICAL', 'globalLevel should reflect CRITICAL.');
+        assert(state.globalReason === 'Heartbeat down' || state.globalReason === 'Broker offline', 'globalReason should expose an active critical reason.');
+
+        // 6. Resolve HEARTBEAT only
+        persisted = [];
+        await mgr.resolveIncidentBySource('HEARTBEAT');
+        const stateAfterHbResolve = mgr.getState();
+        assert(stateAfterHbResolve.globalLevel === 'CRITICAL', 'globalLevel should still be CRITICAL because Broker is still down.');
+        assert(stateAfterHbResolve.globalReason === 'Broker offline', 'globalReason should update to the remaining active incident.');
+
+        // 7. Resolve BROKER_CONNECTION
+        await mgr.resolveIncidentBySource('BROKER_CONNECTION');
+        const stateAfterAllResolve = mgr.getState();
+        assert(stateAfterAllResolve.globalLevel === 'NORMAL', 'globalLevel should return to NORMAL after all active incidents are resolved.');
+        assert(stateAfterAllResolve.globalReason === undefined, 'globalReason should be undefined.');
+
+        console.log('✅ [PASS] IncidentManager source-keyed global state and deduplication works perfectly.');
+    } catch (e: any) {
+        console.error('❌ IncidentManager test crashed:', e.message || e);
+    }
+    console.log('');
+
+    // ----------------------------------------------------
     // TEST 6: Reporting Service
     // ----------------------------------------------------
     try {
