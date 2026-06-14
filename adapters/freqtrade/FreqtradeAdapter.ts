@@ -199,23 +199,29 @@ export class FreqtradeAdapter extends TradingAdapter {
                     // Sample up to 5 pairs from the whitelist to assess freshness
                     const samplePairs = whitelist.slice(0, 5);
                     let freshSymbols = 0;
-                    let maxMarketTimestamp: string | null = null;
+                    let maxMarketTimestampMs = 0;
 
                     for (const pair of samplePairs) {
                         try {
                             const candleData = await this.apiRequest(`/pair_candles?pair=${pair}&timeframe=5m&limit=1`);
                             if (candleData) {
-                                let lastAnalyzedStr: string | null = null;
                                 let lastAnalyzedTs = 0;
 
-                                if (candleData.last_analyzed) {
-                                    lastAnalyzedStr = candleData.last_analyzed;
-                                    lastAnalyzedTs = (candleData.last_analyzed_ts || 0) * 1000;
+                                if (candleData.last_analyzed_ts) {
+                                    lastAnalyzedTs = candleData.last_analyzed_ts * 1000;
                                 } else if (Array.isArray(candleData.data) && candleData.data.length > 0) {
                                     const latestCandle = candleData.data[candleData.data.length - 1];
-                                    if (Array.isArray(latestCandle) && latestCandle.length > 0) {
-                                        lastAnalyzedTs = latestCandle[0];
-                                        lastAnalyzedStr = new Date(lastAnalyzedTs).toISOString();
+                                    if (Array.isArray(latestCandle) && Array.isArray(candleData.columns)) {
+                                        let timestampIndex = candleData.columns.indexOf('__date_ts');
+                                        if (timestampIndex < 0) {
+                                            timestampIndex = 0;
+                                        }
+                                        const rawTs = latestCandle[timestampIndex];
+                                        if (typeof rawTs === 'number') {
+                                            lastAnalyzedTs = rawTs;
+                                        } else if (typeof rawTs === 'string') {
+                                            lastAnalyzedTs = new Date(rawTs).getTime();
+                                        }
                                     }
                                 }
 
@@ -225,8 +231,8 @@ export class FreqtradeAdapter extends TradingAdapter {
                                     if (now - lastAnalyzedTs < fifteenMinutesMs) {
                                         freshSymbols++;
                                     }
-                                    if (!maxMarketTimestamp || lastAnalyzedTs > new Date(maxMarketTimestamp).getTime()) {
-                                        maxMarketTimestamp = lastAnalyzedStr;
+                                    if (lastAnalyzedTs > maxMarketTimestampMs) {
+                                        maxMarketTimestampMs = lastAnalyzedTs;
                                     }
                                 }
                             }
@@ -244,7 +250,7 @@ export class FreqtradeAdapter extends TradingAdapter {
                             sourceSystem: this.sourceSystem,
                             observedSymbols,
                             freshSymbols,
-                            lastMarketTimestamp: maxMarketTimestamp || new Date().toISOString()
+                            lastMarketTimestamp: maxMarketTimestampMs > 0 ? maxMarketTimestampMs : Date.now()
                         }
                     });
                     console.log(`[FreqtradeAdapter] Logged MARKET_DATA heartbeat. Total monitored pairs: ${observedSymbols}, sampled: ${samplePairs.length}, fresh: ${freshSymbols}`);
