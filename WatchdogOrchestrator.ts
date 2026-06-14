@@ -4,6 +4,8 @@ import { IncidentManager } from './layer-B(Assessement)/IncidentManager';
 import { InfrastructureWatchdogService } from './layer-A(observation)/layer1(infrastructure_monitoring)/InfrastructureWatchdogService';
 import { OperationsWatchdogService } from './layer-A(observation)/layer2(trading_operations_monitoring)/OperationsWatchdogService';
 import { RuntimeMonitorService } from './runtime/RuntimeMonitorService';
+import { EventPersistenceService } from './adapters/base/EventPersistenceService';
+import { FreqtradeAdapter } from './adapters/freqtrade/FreqtradeAdapter';
 
 export class WatchdogOrchestrator {
     private alertingService: AlertingService;
@@ -11,6 +13,7 @@ export class WatchdogOrchestrator {
     private infraService: InfrastructureWatchdogService;
     private opsService: OperationsWatchdogService;
     private runtimeService: RuntimeMonitorService;
+    private freqtradeAdapter: FreqtradeAdapter;
 
     // Concurrency flags
     private infraRunning = false;
@@ -30,6 +33,22 @@ export class WatchdogOrchestrator {
         this.infraService = new InfrastructureWatchdogService(this.alertingService);
         this.opsService = new OperationsWatchdogService(this.alertingService, this.incidentManager);
         this.runtimeService = new RuntimeMonitorService(this.alertingService);
+
+        const ftUrl = process.env.FREQTRADE_API_URL || 'http://localhost:8080/api/v1';
+        const ftUser = process.env.FREQTRADE_API_USERNAME || 'freqtrader';
+        const ftPass = process.env.FREQTRADE_API_PASSWORD || 'password123';
+        const ftIntervalMs = Number(process.env.FREQTRADE_ADAPTER_INTERVAL_MS) || 15000;
+
+        const persistence = new EventPersistenceService();
+        this.freqtradeAdapter = new FreqtradeAdapter(
+            {
+                baseUrl: ftUrl,
+                username: ftUser,
+                password: ftPass,
+                pollIntervalMs: ftIntervalMs
+            },
+            persistence
+        );
     }
 
     /**
@@ -66,6 +85,9 @@ export class WatchdogOrchestrator {
         console.log('[Orchestrator] Hydrating active incident engine state...');
         await this.incidentManager.init();
 
+        console.log('[Orchestrator] Starting Freqtrade Ingestion Adapter...');
+        this.freqtradeAdapter.start();
+
         console.log('[Orchestrator] Launching scheduler intervals...');
 
         // 1. Infrastructure checks (Default: 60s)
@@ -97,6 +119,9 @@ export class WatchdogOrchestrator {
     async stop(): Promise<void> {
         console.log('[Orchestrator] Initiating graceful shutdown...');
         
+        console.log('[Orchestrator] Stopping Freqtrade Ingestion Adapter...');
+        this.freqtradeAdapter.stop();
+
         if (this.infraInterval) clearInterval(this.infraInterval);
         if (this.opsInterval) clearInterval(this.opsInterval);
         if (this.runtimeInterval) clearInterval(this.runtimeInterval);
