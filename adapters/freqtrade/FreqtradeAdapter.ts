@@ -203,7 +203,8 @@ export class FreqtradeAdapter extends TradingAdapter {
 
                     for (const pair of samplePairs) {
                         try {
-                            const candleData = await this.apiRequest(`/pair_candles?pair=${pair}&timeframe=5m&limit=1`);
+                            const encodedPair = encodeURIComponent(pair);
+                            const candleData = await this.apiRequest(`/pair_candles?pair=${encodedPair}&timeframe=5m&limit=1`);
                             if (candleData) {
                                 let lastAnalyzedTs = 0;
 
@@ -241,15 +242,24 @@ export class FreqtradeAdapter extends TradingAdapter {
                         }
                     }
 
+                    const freshnessRatio = samplePairs.length > 0 ? freshSymbols / samplePairs.length : 1.0;
+                    let systemRiskState = 'NORMAL';
+                    if (freshnessRatio === 0) {
+                        systemRiskState = 'CRITICAL';
+                    } else if (freshnessRatio < 0.5) {
+                        systemRiskState = 'WARNING';
+                    }
+
                     await this.persistence.persistEvent({
                         classification: 'MARKET_DATA',
-                        systemRiskState: 'NORMAL',
+                        systemRiskState,
                         metadata: {
                             adapter: 'freqtrade',
                             adapterVersion: '1.0.0',
                             sourceSystem: this.sourceSystem,
                             observedSymbols,
                             freshSymbols,
+                            freshnessRatio,
                             lastMarketTimestamp: maxMarketTimestampMs > 0 ? maxMarketTimestampMs : Date.now()
                         }
                     });
