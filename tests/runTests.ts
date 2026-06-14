@@ -134,7 +134,22 @@ async function runTests() {
         let mockFindMany: any = async () => [];
 
         (prisma.decisionAudit as any).findFirst = async (args: any) => mockFindFirst(args);
-        (prisma.decisionAudit as any).findMany = async (args: any) => mockFindMany(args);
+        (prisma.decisionAudit as any).findMany = async (args: any) => {
+            const raw = await mockFindMany(args);
+            if (args?.where?.classification) {
+                const filter = args.where.classification;
+                if (typeof filter === 'string') {
+                    return raw.filter((item: any) => item.classification === filter);
+                } else if (filter && typeof filter === 'object') {
+                    if (filter.in) {
+                        return raw.filter((item: any) => filter.in.includes(item.classification));
+                    } else if (filter.equals) {
+                        return raw.filter((item: any) => item.classification === filter.equals);
+                    }
+                }
+            }
+            return raw;
+        };
 
         // 4.1 checkHeartbeat
         // Scenario A: Bot logged a heartbeat 10 seconds ago (Healthy)
@@ -282,22 +297,55 @@ async function runTests() {
         // 4.4 checkMarketDataFeed
         // Scenario A: Tick received recently (Healthy)
         mockFindMany = async () => [
-            { classification: 'TICK', createdAt: new Date(), metadata: { symbol: 'BTCUSDT' } }
+            { classification: 'MARKET_DATA', createdAt: new Date(), metadata: { lastMarketTimestamp: Date.now(), timeframe: '5m', sourceSystem: 'freqtrade', symbol: 'BTCUSDT' } }
         ];
         mockAlerting.alertsSent = [];
-        const feedHealthy = await watchdog.checkMarketDataFeed('BTCUSDT');
-        assert(feedHealthy.healthy === true, 'Market data feed should pass when recent tick matches symbol.');
+        const feedHealthy = await watchdog.checkMarketDataFeed();
+        assert(feedHealthy.healthy === true, 'Market data feed should pass when recent tick is received.');
         assert(feedHealthy.source === 'MARKET_DATA', 'Market data feed source should be MARKET_DATA.');
         assert(typeof feedHealthy.metadata?.latestTickAgeMs === 'number', 'Market feed metadata includes latestTickAgeMs as a number.');
         assert(feedHealthy.metadata?.latestTickAgeMs >= 0, 'Market feed metadata latestTickAgeMs is non-negative.');
         assert(feedHealthy.metadata?.latestTickTimestamp instanceof Date, 'Market feed metadata includes latestTickTimestamp as a Date.');
 
-        // Scenario B: Stale / No tick for symbol (Unhealthy)
+        // Scenario B: Stale / No tick (Unhealthy)
         mockFindMany = async () => [];
         mockAlerting.alertsSent = [];
-        const feedStale = await watchdog.checkMarketDataFeed('BTCUSDT', 30 * 1000);
-        assert(feedStale.healthy === false, 'Market data feed should fail if no ticks received for requested symbol in window.');
+        const feedStale = await watchdog.checkMarketDataFeed(30 * 1000);
+        assert(feedStale.healthy === false, 'Market data feed should fail if no ticks received in window.');
         assert(mockAlerting.alertsSent.length === 1 && mockAlerting.alertsSent[0].title === 'Market Data Feed Stale', 'Triggers market feed stale warning alert.');
+
+        // Scenario C: Malformed metadata (Unhealthy)
+        mockFindMany = async () => [
+            { classification: 'MARKET_DATA', createdAt: new Date(), metadata: { sourceSystem: 'freqtrade', symbol: 'BTCUSDT' } }
+        ];
+        mockAlerting.alertsSent = [];
+        const feedMalformed = await watchdog.checkMarketDataFeed();
+        assert(feedMalformed.healthy === false, 'Market data feed should fail if metadata is malformed.');
+        assert(feedMalformed.severity === 'WARNING', 'Malformed metadata check has WARNING severity.');
+        assert(mockAlerting.alertsSent.some((a: any) => a.title === 'Market Data Telemetry Failure'), 'Triggers malformed warning alert.');
+
+        // Scenario D: Stale metadata (Unhealthy)
+        mockFindMany = async () => [
+            { classification: 'MARKET_DATA', createdAt: new Date(), metadata: { lastMarketTimestamp: Date.now() - 120 * 1000, timeframe: '5m', sourceSystem: 'freqtrade', symbol: 'BTCUSDT' } }
+        ];
+        mockAlerting.alertsSent = [];
+        const feedStaleTs = await watchdog.checkMarketDataFeed(60 * 1000);
+        assert(feedStaleTs.healthy === false, 'Market data feed should fail if lastMarketTimestamp is too old.');
+        assert(feedStaleTs.severity === 'WARNING', 'Stale metadata check has WARNING severity.');
+        assert(mockAlerting.alertsSent.some((a: any) => a.title === 'Market Data Feed Stale'), 'Triggers stale warning alert.');
+
+        // Scenario E: Stuck metadata (Unhealthy)
+        const stuckTs = Date.now() - 10 * 1000;
+        mockFindMany = async () => [
+            { classification: 'MARKET_DATA', createdAt: new Date(), metadata: { lastMarketTimestamp: stuckTs, timeframe: '5m', sourceSystem: 'freqtrade', symbol: 'BTCUSDT' } },
+            { classification: 'MARKET_DATA', createdAt: new Date(Date.now() - 5 * 60 * 1000), metadata: { lastMarketTimestamp: stuckTs, timeframe: '5m', sourceSystem: 'freqtrade', symbol: 'BTCUSDT' } },
+            { classification: 'MARKET_DATA', createdAt: new Date(Date.now() - 11 * 60 * 1000), metadata: { lastMarketTimestamp: stuckTs, timeframe: '5m', sourceSystem: 'freqtrade', symbol: 'BTCUSDT' } }
+        ];
+        mockAlerting.alertsSent = [];
+        const feedStuck = await watchdog.checkMarketDataFeed();
+        assert(feedStuck.healthy === false, 'Market data feed should fail if timestamp has not advanced for longer than progression factor.');
+        assert(feedStuck.severity === 'WARNING', 'Stuck metadata check has WARNING severity.');
+        assert(mockAlerting.alertsSent.some((a: any) => a.title === 'Market Data Feed Stuck'), 'Triggers stuck warning alert.');
 
         // 4.5 checkOrderPipeline
         // Scenario A: Normal pipeline (Healthy)
@@ -381,7 +429,7 @@ async function runTests() {
             { classification: 'SIGNAL', createdAt: new Date() },
             { classification: 'ORDER_CREATED', createdAt: new Date() },
             { classification: 'ORDER_SENT', createdAt: new Date() },
-            { classification: 'TICK', createdAt: new Date(), metadata: { symbol: 'BTCUSDT' } }
+            { classification: 'MARKET_DATA', createdAt: new Date(), metadata: { lastMarketTimestamp: Date.now(), timeframe: '5m', sourceSystem: 'freqtrade', symbol: 'BTCUSDT' } }
         ];
         mockAlerting.alertsSent = [];
         const opsResults = await watchdog.runAllOperationsChecks({ strategyId: 'TREND_RIDER', symbol: 'BTCUSDT' });

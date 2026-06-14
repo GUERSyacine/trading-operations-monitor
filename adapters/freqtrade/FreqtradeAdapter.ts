@@ -262,6 +262,7 @@ export class FreqtradeAdapter extends TradingAdapter {
                             observedSymbols: samplePairs.length,
                             freshSymbols,
                             freshnessRatio,
+                            timeframe: '5m',
                             lastMarketTimestamp: maxMarketTimestampMs > 0 ? maxMarketTimestampMs : Date.now()
                         }
                     });

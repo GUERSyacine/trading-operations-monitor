@@ -357,50 +357,71 @@ export class OperationsWatchdogService {
      * 4. checkMarketDataFeed()
      * Question: Are market prices still arriving?
      */
-    async checkMarketDataFeed(symbol?: string, maxStalenessMs: number = MVP_CONFIG.OPERATIONS.MARKET_DATA_STALE_MS): Promise<HealthCheckResult> {
+    private parseTimeframeToMs(timeframe: string): number | null {
+        const match = timeframe.match(/^(\d+)([mhd])$/);
+        if (!match) return null;
+        const value = parseInt(match[1], 10);
+        const unit = match[2];
+        
+        const allowed = ['1m', '5m', '15m', '30m', '1h', '4h', '1d'];
+        if (!allowed.includes(timeframe)) {
+            return null;
+        }
+
+        switch (unit) {
+            case 'm': return value * 60 * 1000;
+            case 'h': return value * 60 * 60 * 1000;
+            case 'd': return value * 24 * 60 * 60 * 1000;
+            default: return null;
+        }
+    }
+
+    private async handleMalformedMarketData(msg: string, checkStart: number): Promise<HealthCheckResult> {
+        console.warn(`⚠️ [OperationsWatchdog] MALFORMED MARKET DATA: ${msg}`);
+        await this.alertingService.sendAlert({
+            level: 'WARNING',
+            title: 'Market Data Telemetry Failure',
+            message: `WARNING: ${msg}`,
+            entityId: 'global',
+            dedupKey: 'market_data_telemetry_fail:global'
+        });
+        return {
+            source: 'MARKET_DATA',
+            healthy: false,
+            checkedAt: new Date(),
+            checkDurationMs: Date.now() - checkStart,
+            severity: 'WARNING',
+            message: msg,
+            metadata: this.enrichMetadata('MARKET_DATA')
+        };
+    }
+
+    /**
+     * 4. checkMarketDataFeed()
+     * Question: Are market prices still arriving and advancing?
+     */
+    async checkMarketDataFeed(maxStalenessMs: number = MVP_CONFIG.OPERATIONS.MARKET_DATA_STALE_MS): Promise<HealthCheckResult> {
         const checkStart = Date.now();
         try {
-            const cutoff = new Date(Date.now() - maxStalenessMs);
-            const whereClause: any = {
-                classification: { in: ['MARKET_DATA', 'TICK'] },
-                createdAt: { gte: cutoff }
-            };
+            // Find the newest MARKET_DATA event globally
+            const newestWhere: any = { classification: 'MARKET_DATA' };
 
-            if (symbol) {
-                whereClause.metadata = {
-                    path: ['symbol'],
-                    equals: symbol
-                };
-            }
-
-            const ticks = await prisma.decisionAudit.findMany({
-                where: whereClause,
+            const newestTicks = await prisma.decisionAudit.findMany({
+                where: newestWhere,
                 orderBy: { createdAt: 'desc' },
-                take: 100
+                take: 1
             });
 
-            const newestTick = ticks[0];
-            const latestTickAgeMs = newestTick ? Date.now() - newestTick.createdAt.getTime() : null;
-
-            const metadata = {
-                symbol,
-                maxStalenessMs,
-                tickCount: ticks.length,
-                latestTickAgeMs,
-                latestTickTimestamp: newestTick ? newestTick.createdAt : null
-            };
-
-            if (ticks.length === 0) {
-                const target = symbol ? `for symbol ${symbol}` : 'globally';
-                const msg = `No updates ${target} in the last ${(maxStalenessMs / 1000).toFixed(0)} seconds.`;
+            if (newestTicks.length === 0) {
+                const msg = 'No market data updates globally.';
                 console.warn(`⚠️ [OperationsWatchdog] MARKET DATA FEED STALE: ${msg}`);
                 
                 await this.alertingService.sendAlert({
                     level: 'WARNING',
                     title: 'Market Data Feed Stale',
-                    message: `WARNING: Market data updates are stale ${target}! Last update was more than ${(maxStalenessMs / 1000).toFixed(0)}s ago.`,
-                    entityId: symbol || 'global',
-                    dedupKey: `market_data_stale:${symbol || 'global'}`
+                    message: 'WARNING: Market data updates are stale globally! No events found.',
+                    entityId: 'global',
+                    dedupKey: 'market_data_stale:global'
                 });
                 return {
                     source: 'MARKET_DATA',
@@ -409,8 +430,152 @@ export class OperationsWatchdogService {
                     checkDurationMs: Date.now() - checkStart,
                     severity: 'WARNING',
                     message: msg,
-                    metadata: this.enrichMetadata('MARKET_DATA', metadata)
+                    metadata: this.enrichMetadata('MARKET_DATA', {
+                        maxStalenessMs,
+                        tickCount: 0,
+                        latestTickAgeMs: null,
+                        latestTickTimestamp: null
+                    })
                 };
+            }
+
+            const newestTick = newestTicks[0];
+            
+            // 1. Strict schema validation
+            if (!newestTick.metadata || typeof newestTick.metadata !== 'object') {
+                const msg = 'Malformed MARKET_DATA event: metadata object missing.';
+                return this.handleMalformedMarketData(msg, checkStart);
+            }
+
+            const meta = newestTick.metadata as any;
+            const lastMarketTimestamp = meta.lastMarketTimestamp;
+            const timeframe = meta.timeframe;
+            const sourceSystem = meta.sourceSystem;
+
+            if (lastMarketTimestamp === undefined || lastMarketTimestamp === null || !timeframe) {
+                const msg = 'Malformed MARKET_DATA event: missing lastMarketTimestamp or timeframe.';
+                return this.handleMalformedMarketData(msg, checkStart);
+            }
+
+            const timeframeDurationMs = this.parseTimeframeToMs(timeframe);
+            if (timeframeDurationMs === null) {
+                const msg = `Invalid MARKET_DATA timeframe: ${timeframe}`;
+                return this.handleMalformedMarketData(msg, checkStart);
+            }
+
+            const newestMarketTs = typeof lastMarketTimestamp === 'number'
+                ? lastMarketTimestamp
+                : new Date(lastMarketTimestamp).getTime();
+
+            if (isNaN(newestMarketTs)) {
+                const msg = 'Malformed MARKET_DATA event: lastMarketTimestamp could not be parsed.';
+                return this.handleMalformedMarketData(msg, checkStart);
+            }
+
+            // Fetch the last 20 MARKET_DATA events matching the same sourceSystem (ordered by createdAt DESC)
+            const historyWhere: any = {
+                classification: 'MARKET_DATA',
+                AND: [
+                    {
+                        metadata: {
+                            path: ['sourceSystem'],
+                            equals: sourceSystem
+                        }
+                    }
+                ]
+            };
+
+            const history = await prisma.decisionAudit.findMany({
+                where: historyWhere,
+                orderBy: { createdAt: 'desc' },
+                take: 20
+            });
+
+            // 2. Freshness check
+            const latestTickAgeMs = Date.now() - newestMarketTs;
+            if (latestTickAgeMs > maxStalenessMs) {
+                const msg = `Market data globally is stale. Age: ${(latestTickAgeMs / 1000).toFixed(0)} seconds (threshold: ${(maxStalenessMs / 1000).toFixed(0)}s).`;
+                console.warn(`⚠️ [OperationsWatchdog] MARKET DATA FEED STALE: ${msg}`);
+
+                await this.alertingService.sendAlert({
+                    level: 'WARNING',
+                    title: 'Market Data Feed Stale',
+                    message: `WARNING: Market data updates are stale globally! Last update was ${(latestTickAgeMs / 1000).toFixed(0)}s ago.`,
+                    entityId: 'global',
+                    dedupKey: 'market_data_stale:global'
+                });
+                return {
+                    source: 'MARKET_DATA',
+                    healthy: false,
+                    checkedAt: new Date(),
+                    checkDurationMs: Date.now() - checkStart,
+                    severity: 'WARNING',
+                    message: msg,
+                    metadata: this.enrichMetadata('MARKET_DATA', {
+                        maxStalenessMs,
+                        tickCount: history.length,
+                        latestTickAgeMs,
+                        latestTickTimestamp: new Date(newestMarketTs),
+                        sourceSystem,
+                        timeframe
+                    })
+                };
+            }
+
+            // 3. Progression check (only run if we have at least 2 events for this sourceSystem)
+            if (history.length >= 2) {
+                let oldestSameTsEvent = newestTick;
+                for (let i = 1; i < history.length; i++) {
+                    const currentEvent = history[i];
+                    if (!currentEvent.metadata || typeof currentEvent.metadata !== 'object') {
+                        break;
+                    }
+                    const curMeta = currentEvent.metadata as any;
+                    const curTs = typeof curMeta.lastMarketTimestamp === 'number'
+                        ? curMeta.lastMarketTimestamp
+                        : new Date(curMeta.lastMarketTimestamp).getTime();
+
+                    if (curTs === newestMarketTs) {
+                        oldestSameTsEvent = currentEvent;
+                    } else {
+                        break;
+                    }
+                }
+
+                const parsed = Number(process.env.OPS_MARKET_DATA_PROGRESSION_FACTOR);
+                const progressionFactor = Number.isFinite(parsed) && parsed > 0 ? parsed : 2.0;
+                const progressionLimitMs = timeframeDurationMs * progressionFactor;
+                const timeSinceFirstSeenMs = newestTick.createdAt.getTime() - oldestSameTsEvent.createdAt.getTime();
+
+                if (timeSinceFirstSeenMs > progressionLimitMs) {
+                    const msg = `Market data timestamp not advancing globally (stuck for ${(timeSinceFirstSeenMs / 1000).toFixed(0)}s, threshold: ${(progressionLimitMs / 1000).toFixed(0)}s).`;
+                    console.warn(`⚠️ [OperationsWatchdog] MARKET DATA FEED STUCK: ${msg}`);
+
+                    await this.alertingService.sendAlert({
+                        level: 'WARNING',
+                        title: 'Market Data Feed Stuck',
+                        message: `WARNING: Market data timestamp is stuck and not advancing globally! Stuck for ${(timeSinceFirstSeenMs / 1000).toFixed(0)}s.`,
+                        entityId: 'global',
+                        dedupKey: 'market_data_stuck:global'
+                    });
+                    return {
+                        source: 'MARKET_DATA',
+                        healthy: false,
+                        checkedAt: new Date(),
+                        checkDurationMs: Date.now() - checkStart,
+                        severity: 'WARNING',
+                        message: msg,
+                        metadata: this.enrichMetadata('MARKET_DATA', {
+                            maxStalenessMs,
+                            tickCount: history.length,
+                            latestTickAgeMs,
+                            latestTickTimestamp: new Date(newestMarketTs),
+                            sourceSystem,
+                            timeframe,
+                            stuckDurationMs: timeSinceFirstSeenMs
+                        })
+                    };
+                }
             }
 
             return {
@@ -418,7 +583,14 @@ export class OperationsWatchdogService {
                 healthy: true,
                 checkedAt: new Date(),
                 checkDurationMs: Date.now() - checkStart,
-                metadata: this.enrichMetadata('MARKET_DATA', metadata)
+                metadata: this.enrichMetadata('MARKET_DATA', {
+                    maxStalenessMs,
+                    tickCount: history.length,
+                    latestTickAgeMs,
+                    latestTickTimestamp: new Date(newestMarketTs),
+                    sourceSystem,
+                    timeframe
+                })
             };
         } catch (error: any) {
             console.error('[OperationsWatchdog] Failed to check market data feed:', error?.message || error);
@@ -707,7 +879,7 @@ export class OperationsWatchdogService {
             this.checkHeartbeat(),
             this.checkTradeFrequency(strategyId),
             this.checkBrokerConnection(),
-            this.checkMarketDataFeed(params.symbol),
+            this.checkMarketDataFeed(),
             this.checkOrderPipeline(),
             this.checkExchangeAck(),
             this.checkLatency(strategyId)
