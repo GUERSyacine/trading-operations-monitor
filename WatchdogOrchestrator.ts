@@ -199,15 +199,10 @@ export class WatchdogOrchestrator {
                 }
             }
 
-            const monitoredSymbols = (process.env.MONITORED_SYMBOLS || 'BTCUSDT').split(',');
-            for (const sym of monitoredSymbols) {
-                const trimmed = sym.trim();
-                if (!trimmed) continue;
-                try {
-                    await this.opsService.checkMarketDataFeed(trimmed);
-                } catch (e: any) {
-                    console.error(`[Orchestrator] [ERROR] Operations check failed (Market Feed - ${trimmed}):`, e.message || e);
-                }
+            try {
+                await this.opsService.checkMarketDataFeed();
+            } catch (e: any) {
+                console.error('[Orchestrator] [ERROR] Operations check failed (Market Feed):', e.message || e);
             }
 
             const monitoredStrategies = (process.env.MONITORED_STRATEGIES || 'TREND_RIDER').split(',');

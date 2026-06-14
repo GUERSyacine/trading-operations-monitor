@@ -19,11 +19,12 @@ export class FreqtradeAdapter extends TradingAdapter {
         // 1. Fetch config once on startup to resolve the active exchange name
         await this.fetchConfigOnce();
 
-        // 2. Poll heartbeat and broker connection
+        // 2. Poll heartbeat, broker connection, orders, and market data
         await Promise.all([
             this.pollHeartbeat(),
             this.pollBrokerConnection(),
-            this.pollOrders()
+            this.pollOrders(),
+            this.pollMarketData()
         ]);
     }
 
@@ -177,5 +178,80 @@ export class FreqtradeAdapter extends TradingAdapter {
         }
 
         return response.json();
+    }
+
+    /**
+     * Poll and check market data feed freshness across whitelisted pairs.
+     * Emits a single aggregated MARKET_DATA event.
+     */
+    private async pollMarketData(): Promise<void> {
+        try {
+            const now = Date.now();
+            const lastWrite = await this.persistence.getLastEventTime('MARKET_DATA', this.sourceSystem);
+            
+            // Rate limit to max 1 write every 60 seconds
+            if (now - lastWrite >= 60000) {
+                const whitelistData = await this.apiRequest('/whitelist');
+                if (whitelistData && Array.isArray(whitelistData.whitelist)) {
+                    const whitelist = whitelistData.whitelist;
+                    const observedSymbols = whitelist.length;
+                    
+                    // Sample up to 5 pairs from the whitelist to assess freshness
+                    const samplePairs = whitelist.slice(0, 5);
+                    let freshSymbols = 0;
+                    let maxMarketTimestamp: string | null = null;
+
+                    for (const pair of samplePairs) {
+                        try {
+                            const candleData = await this.apiRequest(`/pair_candles?pair=${pair}&timeframe=5m&limit=1`);
+                            if (candleData) {
+                                let lastAnalyzedStr: string | null = null;
+                                let lastAnalyzedTs = 0;
+
+                                if (candleData.last_analyzed) {
+                                    lastAnalyzedStr = candleData.last_analyzed;
+                                    lastAnalyzedTs = (candleData.last_analyzed_ts || 0) * 1000;
+                                } else if (Array.isArray(candleData.data) && candleData.data.length > 0) {
+                                    const latestCandle = candleData.data[candleData.data.length - 1];
+                                    if (Array.isArray(latestCandle) && latestCandle.length > 0) {
+                                        lastAnalyzedTs = latestCandle[0];
+                                        lastAnalyzedStr = new Date(lastAnalyzedTs).toISOString();
+                                    }
+                                }
+
+                                if (lastAnalyzedTs > 0) {
+                                    // Consider a candle fresh if it has been updated in the last 15 minutes
+                                    const fifteenMinutesMs = 15 * 60 * 1000;
+                                    if (now - lastAnalyzedTs < fifteenMinutesMs) {
+                                        freshSymbols++;
+                                    }
+                                    if (!maxMarketTimestamp || lastAnalyzedTs > new Date(maxMarketTimestamp).getTime()) {
+                                        maxMarketTimestamp = lastAnalyzedStr;
+                                    }
+                                }
+                            }
+                        } catch (err: any) {
+                            console.error(`[FreqtradeAdapter] Failed to fetch candles for ${pair}:`, err.message || err);
+                        }
+                    }
+
+                    await this.persistence.persistEvent({
+                        classification: 'MARKET_DATA',
+                        systemRiskState: 'NORMAL',
+                        metadata: {
+                            adapter: 'freqtrade',
+                            adapterVersion: '1.0.0',
+                            sourceSystem: this.sourceSystem,
+                            observedSymbols,
+                            freshSymbols,
+                            lastMarketTimestamp: maxMarketTimestamp || new Date().toISOString()
+                        }
+                    });
+                    console.log(`[FreqtradeAdapter] Logged MARKET_DATA heartbeat. Total monitored pairs: ${observedSymbols}, sampled: ${samplePairs.length}, fresh: ${freshSymbols}`);
+                }
+            }
+        } catch (error: any) {
+            console.error(`[FreqtradeAdapter] Market Data poll failed:`, error?.message || error);
+        }
     }
 }
