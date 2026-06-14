@@ -194,7 +194,7 @@ export class FreqtradeAdapter extends TradingAdapter {
                 const whitelistData = await this.apiRequest('/whitelist');
                 if (whitelistData && Array.isArray(whitelistData.whitelist)) {
                     const whitelist = whitelistData.whitelist;
-                    const observedSymbols = whitelist.length;
+                    const totalSymbols = whitelist.length;
                     
                     // Sample up to 5 pairs from the whitelist to assess freshness
                     const samplePairs = whitelist.slice(0, 5);
@@ -213,9 +213,10 @@ export class FreqtradeAdapter extends TradingAdapter {
                                 } else if (Array.isArray(candleData.data) && candleData.data.length > 0) {
                                     const latestCandle = candleData.data[candleData.data.length - 1];
                                     if (Array.isArray(latestCandle) && Array.isArray(candleData.columns)) {
-                                        let timestampIndex = candleData.columns.indexOf('__date_ts');
+                                        const timestampIndex = candleData.columns.indexOf('__date_ts');
                                         if (timestampIndex < 0) {
-                                            timestampIndex = 0;
+                                            console.warn(`[FreqtradeAdapter] __date_ts column missing for ${pair}`);
+                                            continue;
                                         }
                                         const rawTs = latestCandle[timestampIndex];
                                         if (typeof rawTs === 'number') {
@@ -257,13 +258,14 @@ export class FreqtradeAdapter extends TradingAdapter {
                             adapter: 'freqtrade',
                             adapterVersion: '1.0.0',
                             sourceSystem: this.sourceSystem,
-                            observedSymbols,
+                            totalSymbols,
+                            observedSymbols: samplePairs.length,
                             freshSymbols,
                             freshnessRatio,
                             lastMarketTimestamp: maxMarketTimestampMs > 0 ? maxMarketTimestampMs : Date.now()
                         }
                     });
-                    console.log(`[FreqtradeAdapter] Logged MARKET_DATA heartbeat. Total monitored pairs: ${observedSymbols}, sampled: ${samplePairs.length}, fresh: ${freshSymbols}`);
+                    console.log(`[FreqtradeAdapter] Logged MARKET_DATA heartbeat. Total monitored pairs: ${totalSymbols}, sampled: ${samplePairs.length}, fresh: ${freshSymbols}`);
                 }
             }
         } catch (error: any) {
