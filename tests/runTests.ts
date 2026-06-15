@@ -347,6 +347,24 @@ async function runTests() {
         assert(feedStuck.severity === 'WARNING', 'Stuck metadata check has WARNING severity.');
         assert(mockAlerting.alertsSent.some((a: any) => a.title === 'Market Data Feed Stuck'), 'Triggers stuck warning alert.');
 
+        // Scenario F: Dynamic staleness threshold derived from heartbeatIntervalMs (Healthy / Unhealthy)
+        // Case F.1: telemetry age = 75 seconds, heartbeatIntervalMs = 60 seconds (threshold = 180s) -> Healthy
+        mockFindMany = async () => [
+            { classification: 'MARKET_DATA', createdAt: new Date(Date.now() - 75 * 1000), metadata: { lastMarketTimestamp: Date.now(), timeframe: '5m', sourceSystem: 'freqtrade', heartbeatIntervalMs: 60000, symbol: 'BTCUSDT' } }
+        ];
+        mockAlerting.alertsSent = [];
+        const feedHealthyDynamic = await watchdog.checkMarketDataFeed(60000);
+        assert(feedHealthyDynamic.healthy === true, 'Market data feed should pass if age (75s) is below dynamic threshold (180s).');
+
+        // Case F.2: telemetry age = 190 seconds, heartbeatIntervalMs = 60 seconds (threshold = 180s) -> Unhealthy
+        mockFindMany = async () => [
+            { classification: 'MARKET_DATA', createdAt: new Date(Date.now() - 190 * 1000), metadata: { lastMarketTimestamp: Date.now(), timeframe: '5m', sourceSystem: 'freqtrade', heartbeatIntervalMs: 60000, symbol: 'BTCUSDT' } }
+        ];
+        mockAlerting.alertsSent = [];
+        const feedStaleDynamic = await watchdog.checkMarketDataFeed(60000);
+        assert(feedStaleDynamic.healthy === false, 'Market data feed should fail if age (190s) is above dynamic threshold (180s).');
+        assert(mockAlerting.alertsSent.some((a: any) => a.title === 'Market Data Telemetry Stale'), 'Triggers dynamic stale warning alert.');
+
         // 4.5 checkOrderPipeline
         // Scenario A: Normal pipeline (Healthy)
         mockFindMany = async () => [

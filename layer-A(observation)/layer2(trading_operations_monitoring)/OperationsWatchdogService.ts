@@ -452,6 +452,7 @@ export class OperationsWatchdogService {
             const lastMarketTimestamp = meta.lastMarketTimestamp;
             const timeframe = meta.timeframe;
             const sourceSystem = meta.sourceSystem;
+            const heartbeatIntervalMs = meta.heartbeatIntervalMs;
 
             if (lastMarketTimestamp === undefined || lastMarketTimestamp === null || !timeframe) {
                 const msg = 'Malformed MARKET_DATA event: missing lastMarketTimestamp or timeframe.';
@@ -495,9 +496,14 @@ export class OperationsWatchdogService {
             const telemetryAgeMs = Date.now() - newestTick.createdAt.getTime();
             const latestTickAgeMs = Date.now() - newestMarketTs;
 
+            // Dynamically derive stale threshold if heartbeatIntervalMs is present in metadata
+            const resolvedStalenessThresholdMs = typeof heartbeatIntervalMs === 'number' && heartbeatIntervalMs > 0
+                ? heartbeatIntervalMs * 3
+                : maxStalenessMs;
+
             // 2. Telemetry Freshness check
-            if (telemetryAgeMs > maxStalenessMs) {
-                const msg = `Market data telemetry is stale. Age: ${(telemetryAgeMs / 1000).toFixed(0)} seconds (threshold: ${(maxStalenessMs / 1000).toFixed(0)}s).`;
+            if (telemetryAgeMs > resolvedStalenessThresholdMs) {
+                const msg = `Market data telemetry is stale. Age: ${(telemetryAgeMs / 1000).toFixed(0)} seconds (threshold: ${(resolvedStalenessThresholdMs / 1000).toFixed(0)}s).`;
                 console.warn(`⚠️ [OperationsWatchdog] MARKET DATA TELEMETRY STALE: ${msg}`);
 
                 await this.alertingService.sendAlert({
@@ -516,6 +522,7 @@ export class OperationsWatchdogService {
                     message: msg,
                     metadata: this.enrichMetadata('MARKET_DATA', {
                         maxStalenessMs,
+                        resolvedStalenessThresholdMs,
                         tickCount: history.length,
                         telemetryAgeMs,
                         latestTickAgeMs,
@@ -571,6 +578,7 @@ export class OperationsWatchdogService {
                         message: msg,
                         metadata: this.enrichMetadata('MARKET_DATA', {
                             maxStalenessMs,
+                            resolvedStalenessThresholdMs,
                             tickCount: history.length,
                             telemetryAgeMs,
                             latestTickAgeMs,
@@ -590,6 +598,7 @@ export class OperationsWatchdogService {
                 checkDurationMs: Date.now() - checkStart,
                 metadata: this.enrichMetadata('MARKET_DATA', {
                     maxStalenessMs,
+                    resolvedStalenessThresholdMs,
                     tickCount: history.length,
                     telemetryAgeMs,
                     latestTickAgeMs,
