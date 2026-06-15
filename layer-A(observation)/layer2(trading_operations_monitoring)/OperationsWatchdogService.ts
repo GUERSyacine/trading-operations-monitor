@@ -681,10 +681,24 @@ export class OperationsWatchdogService {
 
             // Stage 6: Pipeline Validation Logic for PARTIAL visibility
             if (pipelineVisibility === 'PARTIAL') {
-                const oldSignals = audits.filter(a => 
-                    a.classification.toUpperCase() === 'SIGNAL' && 
-                    (Date.now() - a.createdAt.getTime()) > MVP_CONFIG.OPERATIONS.SIGNAL_FILL_TIMEOUT_MS
-                );
+                const timeoutThreshold = new Date(Date.now() - MVP_CONFIG.OPERATIONS.SIGNAL_FILL_TIMEOUT_MS);
+                const maxLookback = new Date(Date.now() - (7 * 24 * 60 * 60 * 1000)); // 7 days safety cutoff
+
+                const oldSignals = await prisma.decisionAudit.findMany({
+                    where: {
+                        classification: {
+                            equals: 'SIGNAL',
+                            mode: 'insensitive'
+                        },
+                        createdAt: {
+                            gte: maxLookback,
+                            lte: timeoutThreshold
+                        }
+                    },
+                    orderBy: {
+                        createdAt: 'desc'
+                    }
+                });
 
                 for (const oldSignal of oldSignals) {
                     const meta = oldSignal.metadata as Record<string, any> || {};
@@ -698,7 +712,10 @@ export class OperationsWatchdogService {
                     // Perform database correlation for corresponding fill event
                     const matchingFill = await prisma.decisionAudit.findFirst({
                         where: {
-                            classification: 'ORDER_FILLED',
+                            classification: {
+                                equals: 'ORDER_FILLED',
+                                mode: 'insensitive'
+                            },
                             createdAt: { gte: oldSignal.createdAt },
                             metadata: {
                                 path: ['tradeId'],

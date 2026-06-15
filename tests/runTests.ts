@@ -137,20 +137,35 @@ async function runTests() {
 
         (prisma.decisionAudit as any).findFirst = async (args: any) => mockFindFirst(args);
         (prisma.decisionAudit as any).findMany = async (args: any) => {
-            const raw = await mockFindMany(args);
+            let filtered = await mockFindMany(args);
             if (args?.where?.classification) {
                 const filter = args.where.classification;
                 if (typeof filter === 'string') {
-                    return raw.filter((item: any) => item.classification === filter);
+                    filtered = filtered.filter((item: any) => item.classification === filter);
                 } else if (filter && typeof filter === 'object') {
                     if (filter.in) {
-                        return raw.filter((item: any) => filter.in.includes(item.classification));
+                        filtered = filtered.filter((item: any) => filter.in.includes(item.classification));
                     } else if (filter.equals) {
-                        return raw.filter((item: any) => item.classification === filter.equals);
+                        filtered = filtered.filter((item: any) => item.classification === filter.equals);
                     }
                 }
             }
-            return raw;
+            if (args?.where?.createdAt) {
+                const filter = args.where.createdAt;
+                if (filter.gte) {
+                    filtered = filtered.filter((item: any) => {
+                        const date = item.createdAt ? new Date(item.createdAt) : new Date();
+                        return date >= filter.gte;
+                    });
+                }
+                if (filter.lte) {
+                    filtered = filtered.filter((item: any) => {
+                        const date = item.createdAt ? new Date(item.createdAt) : new Date();
+                        return date <= filter.lte;
+                    });
+                }
+            }
+            return filtered;
         };
 
         // 4.1 checkHeartbeat
@@ -387,7 +402,10 @@ async function runTests() {
         ];
         const originalFindFirst = (prisma.decisionAudit as any).findFirst;
         (prisma.decisionAudit as any).findFirst = async (args: any) => {
-            if (args?.where?.classification === 'ORDER_FILLED' && args?.where?.metadata?.equals === 'trade_1') {
+            const classVal = typeof args?.where?.classification === 'string'
+                ? args.where.classification
+                : args?.where?.classification?.equals;
+            if (classVal === 'ORDER_FILLED' && args?.where?.metadata?.equals === 'trade_1') {
                 return { classification: 'ORDER_FILLED', createdAt: new Date(), metadata: { tradeId: 'trade_1' } } as any;
             }
             return null;
@@ -464,7 +482,8 @@ async function runTests() {
 
         // Scenario D: Old SIGNAL (No fill beyond timeout)
         mockFindMany = async () => [
-            { classification: 'SIGNAL', createdAt: new Date(Date.now() - 4000 * 1000), metadata: { tradeId: 'trade_3', symbol: 'BTCUSDT' } }
+            { classification: 'SIGNAL', createdAt: new Date(Date.now() - 4000 * 1000), metadata: { tradeId: 'trade_3', symbol: 'BTCUSDT' } },
+            { classification: 'SIGNAL', createdAt: new Date(Date.now() - 10 * 1000), metadata: { tradeId: 'trade_4', symbol: 'BTCUSDT' } }
         ];
         (prisma.decisionAudit as any).findFirst = async () => null;
         mockAlerting.alertsSent = [];
