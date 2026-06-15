@@ -700,50 +700,65 @@ export class OperationsWatchdogService {
                     }
                 });
 
-                for (const oldSignal of oldSignals) {
-                    const meta = oldSignal.metadata as Record<string, any> || {};
-                    const tradeId = meta.tradeId;
+                // Extract unique, valid trade IDs from old signals
+                const tradeIds = Array.from(new Set(
+                    oldSignals
+                        .map(s => (s.metadata as Record<string, any> || {}).tradeId)
+                        .filter((id): id is string | number => id !== undefined && id !== null && id !== '')
+                ));
 
-                    if (tradeId === undefined || tradeId === null || tradeId === '') {
-                        // Skip correlation if tradeId is missing
-                        continue;
-                    }
-
-                    // Perform database correlation for corresponding fill event
-                    const matchingFill = await prisma.decisionAudit.findFirst({
+                if (tradeIds.length > 0) {
+                    // Query all matching fill events in a single batch
+                    const matchingFills = await prisma.decisionAudit.findMany({
                         where: {
                             classification: {
                                 equals: 'ORDER_FILLED',
                                 mode: 'insensitive'
                             },
-                            createdAt: { gte: oldSignal.createdAt },
-                            metadata: {
-                                path: ['tradeId'],
-                                equals: String(tradeId)
-                            }
+                            OR: tradeIds.map(id => ({
+                                metadata: {
+                                    path: ['tradeId'],
+                                    equals: String(id)
+                                }
+                            }))
                         }
                     });
 
-                    if (!matchingFill) {
-                        const msg = `Signal tradeId=${tradeId} symbol=${meta.symbol || 'unknown'} has been unfilled for more than ${MVP_CONFIG.OPERATIONS.SIGNAL_FILL_TIMEOUT_MS / 60000} minutes.`;
-                        console.error(`🚨 [OperationsWatchdog] SIGNAL FILL TIMEOUT: ${msg}`);
-                        
-                        await this.alertingService.sendAlert({
-                            level: 'WARNING',
-                            title: 'Signal Fill Timeout',
-                            message: `WARNING: Signal generated at ${oldSignal.createdAt.toISOString()} for symbol ${meta.symbol || 'unknown'} (Trade ID: ${tradeId}) has not been filled after ${(MVP_CONFIG.OPERATIONS.SIGNAL_FILL_TIMEOUT_MS / 60000).toFixed(0)} minutes.`,
-                            dedupKey: `signal_fill_timeout_${tradeId}`
+                    for (const oldSignal of oldSignals) {
+                        const meta = oldSignal.metadata as Record<string, any> || {};
+                        const tradeId = meta.tradeId;
+
+                        if (tradeId === undefined || tradeId === null || tradeId === '') {
+                            continue;
+                        }
+
+                        // Check in-memory list for a matching fill created at or after the signal
+                        const hasMatchingFill = matchingFills.some(f => {
+                            const fMeta = f.metadata as Record<string, any> || {};
+                            return String(fMeta.tradeId) === String(tradeId) && f.createdAt >= oldSignal.createdAt;
                         });
 
-                        return {
-                            source: 'ORDER_PIPELINE',
-                            healthy: false,
-                            checkedAt: new Date(),
-                            checkDurationMs: Date.now() - checkStart,
-                            severity: 'WARNING',
-                            message: msg,
-                            metadata: this.enrichMetadata('ORDER_PIPELINE', metadata)
-                        };
+                        if (!hasMatchingFill) {
+                            const msg = `Signal tradeId=${tradeId} symbol=${meta.symbol || 'unknown'} has been unfilled for more than ${MVP_CONFIG.OPERATIONS.SIGNAL_FILL_TIMEOUT_MS / 60000} minutes.`;
+                            console.error(`🚨 [OperationsWatchdog] SIGNAL FILL TIMEOUT: ${msg}`);
+                            
+                            await this.alertingService.sendAlert({
+                                level: 'WARNING',
+                                title: 'Signal Fill Timeout',
+                                message: `WARNING: Signal generated at ${oldSignal.createdAt.toISOString()} for symbol ${meta.symbol || 'unknown'} (Trade ID: ${tradeId}) has not been filled after ${(MVP_CONFIG.OPERATIONS.SIGNAL_FILL_TIMEOUT_MS / 60000).toFixed(0)} minutes.`,
+                                dedupKey: `signal_fill_timeout_${tradeId}`
+                            });
+
+                            return {
+                                source: 'ORDER_PIPELINE',
+                                healthy: false,
+                                checkedAt: new Date(),
+                                checkDurationMs: Date.now() - checkStart,
+                                severity: 'WARNING',
+                                message: msg,
+                                metadata: this.enrichMetadata('ORDER_PIPELINE', metadata)
+                            };
+                        }
                     }
                 }
             }

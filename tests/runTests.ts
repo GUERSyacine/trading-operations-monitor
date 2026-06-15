@@ -383,6 +383,7 @@ async function runTests() {
         assert(mockAlerting.alertsSent.some((a: any) => a.title === 'Market Data Telemetry Stale'), 'Triggers dynamic stale warning alert.');
 
         // 4.5 checkOrderPipeline
+        const originalFindFirst = (prisma.decisionAudit as any).findFirst;
         // Scenario A: Only ORDER telemetry
         mockFindMany = async () => [
             { classification: 'ORDER', createdAt: new Date() },
@@ -397,19 +398,11 @@ async function runTests() {
 
         // Scenario B: SIGNAL + FILL telemetry (Normal flow)
         mockFindMany = async () => [
-            { classification: 'SIGNAL', createdAt: new Date(), metadata: { tradeId: 'trade_1', symbol: 'BTCUSDT' } },
-            { classification: 'ORDER_FILLED', createdAt: new Date(), metadata: { tradeId: 'trade_1', symbol: 'BTCUSDT' } }
+            { classification: 'SIGNAL', createdAt: new Date(), metadata: { tradeId: 'trade_2', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_FILLED', createdAt: new Date(), metadata: { tradeId: 'trade_2', symbol: 'BTCUSDT' } },
+            { classification: 'SIGNAL', createdAt: new Date(Date.now() - 6000 * 1000), metadata: { tradeId: 'trade_1', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_FILLED', createdAt: new Date(Date.now() - 5000 * 1000), metadata: { tradeId: 'trade_1', symbol: 'BTCUSDT' } }
         ];
-        const originalFindFirst = (prisma.decisionAudit as any).findFirst;
-        (prisma.decisionAudit as any).findFirst = async (args: any) => {
-            const classVal = typeof args?.where?.classification === 'string'
-                ? args.where.classification
-                : args?.where?.classification?.equals;
-            if (classVal === 'ORDER_FILLED' && args?.where?.metadata?.equals === 'trade_1') {
-                return { classification: 'ORDER_FILLED', createdAt: new Date(), metadata: { tradeId: 'trade_1' } } as any;
-            }
-            return null;
-        };
         mockAlerting.alertsSent = [];
         const pipelineB = await watchdog.checkOrderPipeline();
         assert(pipelineB.healthy === true, 'Pipeline check should pass when SIGNAL has matching ORDER_FILLED (PARTIAL visibility).');
