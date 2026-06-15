@@ -638,48 +638,97 @@ export class OperationsWatchdogService {
             let signals = 0;
             let created = 0;
             let sent = 0;
+            let ack = 0;
             let filled = 0;
             let failed = 0;
+            let completedOrders = 0;
 
             for (const audit of audits) {
                 const classification = audit.classification.toUpperCase();
                 if (classification === 'SIGNAL') signals++;
                 else if (classification === 'ORDER_CREATED') created++;
                 else if (classification === 'ORDER_SENT') sent++;
-                else if (classification === 'ORDER_FILLED' || classification === 'ORDER') {
-                    filled++;
-                    sent++; // Implicitly sent if filled or logged under default ORDER
-                } else if (classification === 'ORDER_FAILED') failed++;
+                else if (classification === 'ORDER_ACK') ack++;
+                else if (classification === 'ORDER_FILLED') filled++;
+                else if (classification === 'ORDER') completedOrders++;
+                else if (classification === 'ORDER_FAILED') failed++;
             }
+
+            // Stage 5: Upgrade Pipeline Visibility Model
+            let pipelineVisibility: 'LIMITED' | 'PARTIAL' | 'FULL' = 'LIMITED';
+            let visibilityReason = 'Adapter only emits ORDER completion telemetry.';
+
+            if (signals > 0 || filled > 0 || created > 0 || failed > 0) {
+                pipelineVisibility = 'PARTIAL';
+                visibilityReason = 'Ingesting SIGNAL and ORDER_FILLED events via Freqtrade webhooks.';
+            }
+
+            const observedFillRatio = signals > 0 ? Number((filled / signals).toFixed(4)) : 1.0;
 
             const metadata = {
                 windowMs,
                 signals,
                 created,
                 sent,
+                ack,
                 filled,
-                failed
+                failed,
+                completedOrders,
+                pipelineVisibility,
+                visibilityReason,
+                observedFillRatio
             };
 
-            if ((signals > 0 || created > 0) && sent === 0 && failed === 0) {
-                const msg = `Signals=${signals}, Created=${created}, Sent=${sent}. Orders are created but not being dispatched!`;
-                console.error(`🚨 [OperationsWatchdog] ORDER PIPELINE BLOCKED: ${msg}`);
-                
-                await this.alertingService.sendAlert({
-                    level: 'CRITICAL',
-                    title: 'Order Pipeline Blocked',
-                    message: `CRITICAL PIPELINE FAILURE: Signals generated (${signals}) or orders created (${created}) but 0 orders were sent to the broker in the last ${(windowMs / 60000).toFixed(0)} minutes. Check connection or execution logs!`,
-                    dedupKey: 'order_pipeline_blocked_critical'
-                });
-                return {
-                    source: 'ORDER_PIPELINE',
-                    healthy: false,
-                    checkedAt: new Date(),
-                    checkDurationMs: Date.now() - checkStart,
-                    severity: 'CRITICAL',
-                    message: msg,
-                    metadata: this.enrichMetadata('ORDER_PIPELINE', metadata)
-                };
+            // Stage 6: Pipeline Validation Logic for PARTIAL visibility
+            if (pipelineVisibility === 'PARTIAL') {
+                const oldSignals = audits.filter(a => 
+                    a.classification.toUpperCase() === 'SIGNAL' && 
+                    (Date.now() - a.createdAt.getTime()) > MVP_CONFIG.OPERATIONS.SIGNAL_FILL_TIMEOUT_MS
+                );
+
+                for (const oldSignal of oldSignals) {
+                    const meta = oldSignal.metadata as Record<string, any> || {};
+                    const tradeId = meta.tradeId;
+
+                    if (tradeId === undefined || tradeId === null || tradeId === '') {
+                        // Skip correlation if tradeId is missing
+                        continue;
+                    }
+
+                    // Perform database correlation for corresponding fill event
+                    const matchingFill = await prisma.decisionAudit.findFirst({
+                        where: {
+                            classification: 'ORDER_FILLED',
+                            createdAt: { gte: oldSignal.createdAt },
+                            metadata: {
+                                path: ['tradeId'],
+                                equals: String(tradeId)
+                            }
+                        }
+                    });
+
+                    if (!matchingFill) {
+                        const msg = `Signal tradeId=${tradeId} symbol=${meta.symbol || 'unknown'} has been unfilled for more than ${MVP_CONFIG.OPERATIONS.SIGNAL_FILL_TIMEOUT_MS / 60000} minutes.`;
+                        console.error(`🚨 [OperationsWatchdog] SIGNAL FILL TIMEOUT: ${msg}`);
+                        
+                        await this.alertingService.sendAlert({
+                            level: 'WARNING',
+                            title: 'Signal Fill Timeout',
+                            message: `WARNING: Signal generated at ${oldSignal.createdAt.toISOString()} for symbol ${meta.symbol || 'unknown'} (Trade ID: ${tradeId}) has not been filled after ${(MVP_CONFIG.OPERATIONS.SIGNAL_FILL_TIMEOUT_MS / 60000).toFixed(0)} minutes.`,
+                            dedupKey: `signal_fill_timeout_${tradeId}`
+                        });
+
+                        return {
+                            source: 'ORDER_PIPELINE',
+                            healthy: false,
+                            checkedAt: new Date(),
+                            checkDurationMs: Date.now() - checkStart,
+                            severity: 'WARNING',
+                            message: msg,
+                            metadata: this.enrichMetadata('ORDER_PIPELINE', metadata)
+                        };
+                    }
+                }
             }
 
             return {

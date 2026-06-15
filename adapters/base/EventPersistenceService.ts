@@ -1,7 +1,7 @@
 import { prisma } from '../../prisma';
 
 export interface NormalizedEvent {
-    classification: 'HEARTBEAT' | 'SIGNAL' | 'ORDER' | 'BROKER_CONNECTION' | 'MARKET_DATA';
+    classification: 'HEARTBEAT' | 'SIGNAL' | 'ORDER' | 'BROKER_CONNECTION' | 'MARKET_DATA' | 'ORDER_FILLED';
     systemRiskState?: string;
     rejectionReason?: string;
     metadata?: Record<string, any>;

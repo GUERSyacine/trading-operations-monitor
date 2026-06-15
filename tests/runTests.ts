@@ -9,6 +9,8 @@ import { IncidentManager } from '../layer-B(Assessement)/IncidentManager';
 import { ReportingService } from '../layer-C(reporting)/ReportingService';
 import { AlertingService } from '../layer-D(notification)/alerting/AlertingService';
 import { prisma } from '../prisma';
+import { FreqtradeWebhookReceiver } from '../layer-A(observation)/layer1(infrastructure_monitoring)/FreqtradeWebhookReceiver';
+import { EventPersistenceService } from '../adapters/base/EventPersistenceService';
 
 async function runTests() {
     console.log('====================================================');
@@ -366,27 +368,112 @@ async function runTests() {
         assert(mockAlerting.alertsSent.some((a: any) => a.title === 'Market Data Telemetry Stale'), 'Triggers dynamic stale warning alert.');
 
         // 4.5 checkOrderPipeline
-        // Scenario A: Normal pipeline (Healthy)
+        // Scenario A: Only ORDER telemetry
         mockFindMany = async () => [
-            { classification: 'SIGNAL', createdAt: new Date() },
-            { classification: 'ORDER_CREATED', createdAt: new Date() },
-            { classification: 'ORDER_SENT', createdAt: new Date() }
+            { classification: 'ORDER', createdAt: new Date() },
+            { classification: 'ORDER', createdAt: new Date() }
         ];
         mockAlerting.alertsSent = [];
-        const pipelineHealthy = await watchdog.checkOrderPipeline();
-        assert(pipelineHealthy.healthy === true, 'Pipeline check should pass when signals and created orders have matching sent logs.');
-        assert(pipelineHealthy.source === 'ORDER_PIPELINE', 'Pipeline source should be ORDER_PIPELINE.');
+        const pipelineA = await watchdog.checkOrderPipeline();
+        assert(pipelineA.healthy === true, 'Pipeline check should pass when only ORDER telemetry is present (LIMITED visibility).');
+        assert(pipelineA.metadata?.pipelineVisibility === 'LIMITED', 'Pipeline visibility should be LIMITED.');
+        assert(pipelineA.metadata?.observedFillRatio === 1.0, 'observedFillRatio should default to 1.0 under LIMITED visibility.');
+        assert(mockAlerting.alertsSent.length === 0, 'No alert should trigger under LIMITED visibility.');
 
-        // Scenario B: Blocked pipeline (Unhealthy)
+        // Scenario B: SIGNAL + FILL telemetry (Normal flow)
         mockFindMany = async () => [
-            { classification: 'SIGNAL', createdAt: new Date() },
-            { classification: 'ORDER_CREATED', createdAt: new Date() }
-            // Missing ORDER_SENT!
+            { classification: 'SIGNAL', createdAt: new Date(), metadata: { tradeId: 'trade_1', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_FILLED', createdAt: new Date(), metadata: { tradeId: 'trade_1', symbol: 'BTCUSDT' } }
         ];
+        const originalFindFirst = (prisma.decisionAudit as any).findFirst;
+        (prisma.decisionAudit as any).findFirst = async (args: any) => {
+            if (args?.where?.classification === 'ORDER_FILLED' && args?.where?.metadata?.equals === 'trade_1') {
+                return { classification: 'ORDER_FILLED', createdAt: new Date(), metadata: { tradeId: 'trade_1' } } as any;
+            }
+            return null;
+        };
         mockAlerting.alertsSent = [];
-        const pipelineBlocked = await watchdog.checkOrderPipeline();
-        assert(pipelineBlocked.healthy === false, 'Pipeline check should fail if orders are created but 0 are sent.');
-        assert(mockAlerting.alertsSent.length === 1 && mockAlerting.alertsSent[0].title === 'Order Pipeline Blocked', 'Triggers order pipeline blocked critical alert.');
+        const pipelineB = await watchdog.checkOrderPipeline();
+        assert(pipelineB.healthy === true, 'Pipeline check should pass when SIGNAL has matching ORDER_FILLED (PARTIAL visibility).');
+        assert(pipelineB.metadata?.pipelineVisibility === 'PARTIAL', 'Pipeline visibility should be PARTIAL.');
+        assert(pipelineB.metadata?.observedFillRatio === 1.0, 'observedFillRatio should be 1.0 (1 signal, 1 fill).');
+        assert(mockAlerting.alertsSent.length === 0, 'No alert should trigger under normal flow.');
+
+        // Scenario C: Recent SIGNAL (No fill yet, within timeout)
+        mockFindMany = async () => [
+            { classification: 'SIGNAL', createdAt: new Date(Date.now() - 10 * 1000), metadata: { tradeId: 'trade_2', symbol: 'BTCUSDT' } }
+        ];
+        (prisma.decisionAudit as any).findFirst = async () => null;
+        mockAlerting.alertsSent = [];
+        const pipelineC = await watchdog.checkOrderPipeline();
+        assert(pipelineC.healthy === true, 'Pipeline check should pass for a recent signal within grace period.');
+        assert(pipelineC.metadata?.pipelineVisibility === 'PARTIAL', 'Pipeline visibility should be PARTIAL.');
+        assert(pipelineC.metadata?.observedFillRatio === 0.0, 'observedFillRatio should be 0.0.');
+        assert(mockAlerting.alertsSent.length === 0, 'No alert should trigger for recent unfilled signal.');
+
+        // Scenario E: Webhook Ingestion Integration
+        const receiver = new FreqtradeWebhookReceiver(new EventPersistenceService(), 9876, '127.0.0.1');
+        receiver.start();
+
+        let persistedEvents: any[] = [];
+        const originalCreate = (prisma.decisionAudit as any).create;
+        (prisma.decisionAudit as any).create = async (args: any) => {
+            persistedEvents.push(args.data);
+            return args.data as any;
+        };
+
+        const response1 = await fetch('http://127.0.0.1:9876/webhooks/freqtrade', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                type: 'entry',
+                trade_id: 101,
+                symbol: 'ETH/USDT',
+                strategy: 'TREND_RIDER',
+                direction: 'long',
+                price: 3200,
+                amount: 0.5
+            })
+        });
+        const resJson1 = await response1.json() as any;
+        assert(response1.status === 200, 'Webhook receiver should return status 200 for SIGNAL.');
+        assert(resJson1.status === 'success', 'SIGNAL ingestion should be successful.');
+        assert(persistedEvents.length === 1 && persistedEvents[0].classification === 'SIGNAL', 'Persists SIGNAL event.');
+        assert(persistedEvents[0].metadata.symbol === 'ETHUSDT', 'Symbol is normalized to ETHUSDT.');
+
+        persistedEvents = [];
+        const response2 = await fetch('http://127.0.0.1:9876/webhooks/freqtrade', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                type: 'entry_fill',
+                trade_id: 101,
+                order_id: 'order_abc',
+                symbol: 'ETH/USDT',
+                price: 3205,
+                amount: 0.5
+            })
+        });
+        const resJson2 = await response2.json() as any;
+        assert(response2.status === 200, 'Webhook receiver should return 200 for fill.');
+        assert(persistedEvents.length === 1 && persistedEvents[0].classification === 'ORDER_FILLED', 'Persists ORDER_FILLED event.');
+        assert(persistedEvents[0].metadata.orderId === 'order_abc', 'orderId is stored correctly.');
+
+        (prisma.decisionAudit as any).create = originalCreate;
+        await receiver.stop();
+
+        // Scenario D: Old SIGNAL (No fill beyond timeout)
+        mockFindMany = async () => [
+            { classification: 'SIGNAL', createdAt: new Date(Date.now() - 4000 * 1000), metadata: { tradeId: 'trade_3', symbol: 'BTCUSDT' } }
+        ];
+        (prisma.decisionAudit as any).findFirst = async () => null;
+        mockAlerting.alertsSent = [];
+        const pipelineD = await watchdog.checkOrderPipeline();
+        assert(pipelineD.healthy === false, 'Pipeline check should fail when a signal exceeds the fill timeout without a corresponding fill.');
+        assert(pipelineD.severity === 'WARNING', 'Pipeline failure has WARNING severity.');
+        assert(mockAlerting.alertsSent.length === 1 && mockAlerting.alertsSent[0].title === 'Signal Fill Timeout', 'Triggers Signal Fill Timeout warning alert.');
+
+        (prisma.decisionAudit as any).findFirst = originalFindFirst;
 
         // 4.6 checkExchangeAck
         // Scenario A: Responding normally (Healthy)

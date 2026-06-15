@@ -46,6 +46,7 @@ export const MVP_CONFIG = {
         EXCHANGE_ACK_WINDOW_MS:    envNumber(process.env.OPS_EXCHANGE_ACK_WINDOW_MS,    15 * MINUTE),
         EXCHANGE_ACK_MAX_TIMEOUTS: envNumber(process.env.OPS_EXCHANGE_ACK_MAX_TIMEOUTS, 3),
         LATENCY_THRESHOLD_MS:      envNumber(process.env.OPS_LATENCY_THRESHOLD_MS,      1 * SECOND),
-        LATENCY_ROLLING_COUNT:     envNumber(process.env.OPS_LATENCY_ROLLING_COUNT,     5)
+        LATENCY_ROLLING_COUNT:     envNumber(process.env.OPS_LATENCY_ROLLING_COUNT,     5),
+        SIGNAL_FILL_TIMEOUT_MS:    envNumber(process.env.OPS_SIGNAL_FILL_TIMEOUT_MS,    1 * HOUR)
     }
 };
