@@ -414,14 +414,14 @@ export class OperationsWatchdogService {
 
             if (newestTicks.length === 0) {
                 const msg = 'No market data updates globally.';
-                console.warn(`⚠️ [OperationsWatchdog] MARKET DATA FEED STALE: ${msg}`);
+                console.warn(`⚠️ [OperationsWatchdog] MARKET DATA TELEMETRY STALE: ${msg}`);
                 
                 await this.alertingService.sendAlert({
                     level: 'WARNING',
-                    title: 'Market Data Feed Stale',
-                    message: 'WARNING: Market data updates are stale globally! No events found.',
+                    title: 'Market Data Telemetry Stale',
+                    message: 'WARNING: Market data telemetry is stale globally! No events found.',
                     entityId: 'global',
-                    dedupKey: 'market_data_stale:global'
+                    dedupKey: 'market_data_telemetry_stale:global'
                 });
                 return {
                     source: 'MARKET_DATA',
@@ -433,6 +433,7 @@ export class OperationsWatchdogService {
                     metadata: this.enrichMetadata('MARKET_DATA', {
                         maxStalenessMs,
                         tickCount: 0,
+                        telemetryAgeMs: null,
                         latestTickAgeMs: null,
                         latestTickTimestamp: null
                     })
@@ -491,18 +492,20 @@ export class OperationsWatchdogService {
                 take: 20
             });
 
-            // 2. Freshness check
+            const telemetryAgeMs = Date.now() - newestTick.createdAt.getTime();
             const latestTickAgeMs = Date.now() - newestMarketTs;
-            if (latestTickAgeMs > maxStalenessMs) {
-                const msg = `Market data globally is stale. Age: ${(latestTickAgeMs / 1000).toFixed(0)} seconds (threshold: ${(maxStalenessMs / 1000).toFixed(0)}s).`;
-                console.warn(`⚠️ [OperationsWatchdog] MARKET DATA FEED STALE: ${msg}`);
+
+            // 2. Telemetry Freshness check
+            if (telemetryAgeMs > maxStalenessMs) {
+                const msg = `Market data telemetry is stale. Age: ${(telemetryAgeMs / 1000).toFixed(0)} seconds (threshold: ${(maxStalenessMs / 1000).toFixed(0)}s).`;
+                console.warn(`⚠️ [OperationsWatchdog] MARKET DATA TELEMETRY STALE: ${msg}`);
 
                 await this.alertingService.sendAlert({
                     level: 'WARNING',
-                    title: 'Market Data Feed Stale',
-                    message: `WARNING: Market data updates are stale globally! Last update was ${(latestTickAgeMs / 1000).toFixed(0)}s ago.`,
+                    title: 'Market Data Telemetry Stale',
+                    message: `WARNING: Market data telemetry is stale globally! Last event received was ${(telemetryAgeMs / 1000).toFixed(0)}s ago.`,
                     entityId: 'global',
-                    dedupKey: 'market_data_stale:global'
+                    dedupKey: 'market_data_telemetry_stale:global'
                 });
                 return {
                     source: 'MARKET_DATA',
@@ -514,6 +517,7 @@ export class OperationsWatchdogService {
                     metadata: this.enrichMetadata('MARKET_DATA', {
                         maxStalenessMs,
                         tickCount: history.length,
+                        telemetryAgeMs,
                         latestTickAgeMs,
                         latestTickTimestamp: new Date(newestMarketTs),
                         sourceSystem,
@@ -522,7 +526,7 @@ export class OperationsWatchdogService {
                 };
             }
 
-            // 3. Progression check (only run if we have at least 2 events for this sourceSystem)
+            // 3. Market Progression check (only run if we have at least 2 events for this sourceSystem)
             if (history.length >= 2) {
                 let oldestSameTsEvent = newestTick;
                 for (let i = 1; i < history.length; i++) {
@@ -568,6 +572,7 @@ export class OperationsWatchdogService {
                         metadata: this.enrichMetadata('MARKET_DATA', {
                             maxStalenessMs,
                             tickCount: history.length,
+                            telemetryAgeMs,
                             latestTickAgeMs,
                             latestTickTimestamp: new Date(newestMarketTs),
                             sourceSystem,
@@ -586,6 +591,7 @@ export class OperationsWatchdogService {
                 metadata: this.enrichMetadata('MARKET_DATA', {
                     maxStalenessMs,
                     tickCount: history.length,
+                    telemetryAgeMs,
                     latestTickAgeMs,
                     latestTickTimestamp: new Date(newestMarketTs),
                     sourceSystem,

@@ -312,7 +312,7 @@ async function runTests() {
         mockAlerting.alertsSent = [];
         const feedStale = await watchdog.checkMarketDataFeed(30 * 1000);
         assert(feedStale.healthy === false, 'Market data feed should fail if no ticks received in window.');
-        assert(mockAlerting.alertsSent.length === 1 && mockAlerting.alertsSent[0].title === 'Market Data Feed Stale', 'Triggers market feed stale warning alert.');
+        assert(mockAlerting.alertsSent.length === 1 && mockAlerting.alertsSent[0].title === 'Market Data Telemetry Stale', 'Triggers market telemetry stale warning alert.');
 
         // Scenario C: Malformed metadata (Unhealthy)
         mockFindMany = async () => [
@@ -324,15 +324,15 @@ async function runTests() {
         assert(feedMalformed.severity === 'WARNING', 'Malformed metadata check has WARNING severity.');
         assert(mockAlerting.alertsSent.some((a: any) => a.title === 'Market Data Telemetry Failure'), 'Triggers malformed warning alert.');
 
-        // Scenario D: Stale metadata (Unhealthy)
+        // Scenario D: Stale telemetry (Unhealthy)
         mockFindMany = async () => [
-            { classification: 'MARKET_DATA', createdAt: new Date(), metadata: { lastMarketTimestamp: Date.now() - 120 * 1000, timeframe: '5m', sourceSystem: 'freqtrade', symbol: 'BTCUSDT' } }
+            { classification: 'MARKET_DATA', createdAt: new Date(Date.now() - 120 * 1000), metadata: { lastMarketTimestamp: Date.now(), timeframe: '5m', sourceSystem: 'freqtrade', symbol: 'BTCUSDT' } }
         ];
         mockAlerting.alertsSent = [];
         const feedStaleTs = await watchdog.checkMarketDataFeed(60 * 1000);
-        assert(feedStaleTs.healthy === false, 'Market data feed should fail if lastMarketTimestamp is too old.');
-        assert(feedStaleTs.severity === 'WARNING', 'Stale metadata check has WARNING severity.');
-        assert(mockAlerting.alertsSent.some((a: any) => a.title === 'Market Data Feed Stale'), 'Triggers stale warning alert.');
+        assert(feedStaleTs.healthy === false, 'Market data feed should fail if telemetry is too old.');
+        assert(feedStaleTs.severity === 'WARNING', 'Stale telemetry check has WARNING severity.');
+        assert(mockAlerting.alertsSent.some((a: any) => a.title === 'Market Data Telemetry Stale'), 'Triggers stale telemetry warning alert.');
 
         // Scenario E: Stuck metadata (Unhealthy)
         const stuckTs = Date.now() - 10 * 1000;
