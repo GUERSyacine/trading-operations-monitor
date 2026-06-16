@@ -759,6 +759,26 @@ export class OperationsWatchdogService {
             let tradesWithLifecycleTelemetry = 0;
             const totalTradesAnalyzed = uniqueTradeIds.size;
 
+            let validTrades = 0;
+            let invalidTrades = 0;
+            let incompleteTrades = 0;
+            let terminalTrades = 0;
+            let tradesWithSkippedStages = 0;
+            let duplicateEventsObserved = 0;
+
+            // Map event classifications to state values for chronological sequence validation
+            const getEventStateValue = (classification: string): number => {
+                const upper = classification.toUpperCase();
+                if (upper === 'SIGNAL') return 0;
+                if (upper === 'ORDER_CREATED') return 1;
+                if (upper === 'ORDER_SUBMITTED' || upper === 'ORDER_SENT') return 2;
+                if (upper === 'ORDER_ACKNOWLEDGED' || upper === 'ORDER_ACK') return 3;
+                if (upper === 'ORDER_OPEN') return 4;
+                if (upper === 'ORDER_PARTIALLY_FILLED') return 5;
+                if (['ORDER_FILLED', 'ORDER_CANCELLED', 'EXCHANGE_REJECTED', 'ORDER_FAILED', 'ORDER'].includes(upper)) return 6;
+                return -1;
+            };
+
             for (const tradeId of uniqueTradeIds) {
                 const associatedOrders = tradeToOrdersMap.get(tradeId) || new Set<string>();
                 
@@ -791,7 +811,84 @@ export class OperationsWatchdogService {
                 if (hasLifecycle) {
                     tradesWithLifecycleTelemetry++;
                 }
+
+                // Run state machine transition validator on trade timeline
+                let isInvalid = false;
+                let hasSkipped = false;
+                let lastStateValue = -1;
+                let lastClassification: string | undefined = undefined;
+                const terminalStatesSeen = new Set<string>();
+
+                for (let i = 0; i < tradeAudits.length; i++) {
+                    const audit = tradeAudits[i];
+                    const classification = audit.classification.toUpperCase();
+                    const stateVal = getEventStateValue(classification);
+
+                    if (stateVal === -1) {
+                        continue; // Skip unrecognized classifications
+                    }
+
+                    // Duplicate event detection (includes sequential PARTIALLY_FILLED events)
+                    if (lastClassification && classification === lastClassification) {
+                        duplicateEventsObserved++;
+                        continue;
+                    }
+
+                    if (lastStateValue !== -1) {
+                        // 1. Invalid Transition: from terminal (6) back to active (< 6)
+                        if (lastStateValue === 6 && stateVal < 6) {
+                            isInvalid = true;
+                        }
+
+                        // 2. Backward Transition: from later state to earlier state
+                        if (stateVal < lastStateValue) {
+                            isInvalid = true;
+                        }
+
+                        // 3. Skipped Stage: jump in progression steps
+                        if (stateVal > lastStateValue + 1) {
+                            hasSkipped = true;
+                        }
+                    } else {
+                        // First event in timeline: if it starts after SIGNAL (0), it has skipped some initial stages (e.g. missing SIGNAL)
+                        if (stateVal > 0) {
+                            hasSkipped = true;
+                        }
+                    }
+
+                    // 4. Terminal Mutation Guard
+                    if (stateVal === 6) {
+                        terminalStatesSeen.add(classification);
+                        if (terminalStatesSeen.size > 1) {
+                            isInvalid = true;
+                        }
+                    }
+
+                    lastStateValue = stateVal;
+                    lastClassification = classification;
+                }
+
+                if (lastStateValue !== -1) {
+                    if (isInvalid) {
+                        invalidTrades++;
+                    } else if (lastStateValue < 6) {
+                        incompleteTrades++;
+                    } else {
+                        validTrades++;
+                    }
+
+                    if (lastStateValue === 6) {
+                        terminalTrades++;
+                    }
+
+                    if (hasSkipped) {
+                        tradesWithSkippedStages++;
+                    }
+                }
             }
+
+            const validOrInvalidCount = validTrades + invalidTrades;
+            const lifecycleConfidenceScore = validOrInvalidCount > 0 ? Number((validTrades / validOrInvalidCount).toFixed(4)) : 1.0;
 
             let eligibleSignalsCount = 0;
             let filledEligibleSignalsCount = 0;
@@ -1100,7 +1197,14 @@ export class OperationsWatchdogService {
                         totalTradesAnalyzed,
                         tradesWithLifecycleTelemetry,
                         intermediateEventsObserved,
-                        correlationConflicts
+                        correlationConflicts,
+                        validTrades,
+                        invalidTrades,
+                        incompleteTrades,
+                        terminalTrades, // Note: terminalTrades represents a separate completeness dimension and is not mutually exclusive with validTrades or invalidTrades.
+                        tradesWithSkippedStages,
+                        duplicateEventsObserved,
+                        lifecycleConfidenceScore
                     },
                     analytics: {
                         unfilledSignalCount,

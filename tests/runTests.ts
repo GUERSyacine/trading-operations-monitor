@@ -616,6 +616,67 @@ async function runTests() {
         const checkH2 = await watchdog.checkOrderPipeline(5 * 60 * 1000);
         assert(checkH2.metadata?.observability?.lifecycle?.correlationConflicts === 1, 'Scenario H2 should register 1 correlation conflict.');
 
+        // Scenario I: Lifecycle Integrity Validation (Phase 3B)
+        console.log('   > Running Scenario I: Lifecycle Integrity Validation...');
+        // Test I1 (Valid Timeline with Skipped Stages): SIGNAL -> ORDER_FILLED directly
+        mockFindMany = async () => [
+            { classification: 'SIGNAL', createdAt: new Date(Date.now() - 50 * 1000), metadata: { tradeId: 't100', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_FILLED', createdAt: new Date(Date.now() - 10 * 1000), metadata: { tradeId: 't100', symbol: 'BTCUSDT' } }
+        ];
+        const checkI1 = await watchdog.checkOrderPipeline(5 * 60 * 1000);
+        assert(checkI1.metadata?.observability?.lifecycle?.validTrades === 1, 'Scenario I1: validTrades should be 1.');
+        assert(checkI1.metadata?.observability?.lifecycle?.tradesWithSkippedStages === 1, 'Scenario I1: tradesWithSkippedStages should be 1.');
+        assert(checkI1.metadata?.observability?.lifecycle?.invalidTrades === 0, 'Scenario I1: invalidTrades should be 0.');
+        assert(checkI1.metadata?.observability?.lifecycle?.incompleteTrades === 0, 'Scenario I1: incompleteTrades should be 0.');
+        assert(checkI1.metadata?.observability?.lifecycle?.terminalTrades === 1, 'Scenario I1: terminalTrades should be 1.');
+        assert(checkI1.metadata?.observability?.lifecycle?.lifecycleConfidenceScore === 1.0, 'Scenario I1: confidence score should be 1.0.');
+
+        // Test I2 (Invalid Timeline with Backward Transition): ORDER_FILLED -> ORDER_OPEN
+        mockFindMany = async () => [
+            { classification: 'SIGNAL', createdAt: new Date(Date.now() - 50 * 1000), metadata: { tradeId: 't100', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_FILLED', createdAt: new Date(Date.now() - 40 * 1000), metadata: { tradeId: 't100', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_OPEN', createdAt: new Date(Date.now() - 30 * 1000), metadata: { tradeId: 't100', symbol: 'BTCUSDT' } }
+        ];
+        const checkI2 = await watchdog.checkOrderPipeline(5 * 60 * 1000);
+        assert(checkI2.metadata?.observability?.lifecycle?.invalidTrades === 1, 'Scenario I2: invalidTrades should be 1.');
+        assert(checkI2.metadata?.observability?.lifecycle?.validTrades === 0, 'Scenario I2: validTrades should be 0.');
+        assert(checkI2.metadata?.observability?.lifecycle?.incompleteTrades === 0, 'Scenario I2: incompleteTrades should be 0.');
+        assert(checkI2.metadata?.observability?.lifecycle?.lifecycleConfidenceScore === 0.0, 'Scenario I2: confidence score should be 0.0.');
+
+        // Test I3 (Incomplete Trade): SIGNAL -> ORDER_CREATED
+        mockFindMany = async () => [
+            { classification: 'SIGNAL', createdAt: new Date(Date.now() - 50 * 1000), metadata: { tradeId: 't100', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_CREATED', createdAt: new Date(Date.now() - 40 * 1000), metadata: { tradeId: 't100', symbol: 'BTCUSDT' } }
+        ];
+        const checkI3 = await watchdog.checkOrderPipeline(5 * 60 * 1000);
+        assert(checkI3.metadata?.observability?.lifecycle?.incompleteTrades === 1, 'Scenario I3: incompleteTrades should be 1.');
+        assert(checkI3.metadata?.observability?.lifecycle?.validTrades === 0, 'Scenario I3: validTrades should be 0.');
+        assert(checkI3.metadata?.observability?.lifecycle?.invalidTrades === 0, 'Scenario I3: invalidTrades should be 0.');
+        assert(checkI3.metadata?.observability?.lifecycle?.terminalTrades === 0, 'Scenario I3: terminalTrades should be 0.');
+        assert(checkI3.metadata?.observability?.lifecycle?.lifecycleConfidenceScore === 1.0, 'Scenario I3: confidence score should be 1.0 (incomplete ignored).');
+
+        // Test I4 (Duplicate Events): SIGNAL -> ORDER_SUBMITTED -> ORDER_SUBMITTED -> ORDER_FILLED
+        mockFindMany = async () => [
+            { classification: 'SIGNAL', createdAt: new Date(Date.now() - 50 * 1000), metadata: { tradeId: 't100', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_SUBMITTED', createdAt: new Date(Date.now() - 40 * 1000), metadata: { tradeId: 't100', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_SUBMITTED', createdAt: new Date(Date.now() - 30 * 1000), metadata: { tradeId: 't100', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_FILLED', createdAt: new Date(Date.now() - 20 * 1000), metadata: { tradeId: 't100', symbol: 'BTCUSDT' } }
+        ];
+        const checkI4 = await watchdog.checkOrderPipeline(5 * 60 * 1000);
+        assert(checkI4.metadata?.observability?.lifecycle?.validTrades === 1, 'Scenario I4: validTrades should be 1.');
+        assert(checkI4.metadata?.observability?.lifecycle?.duplicateEventsObserved === 1, 'Scenario I4: duplicateEventsObserved should be 1.');
+
+        // Test I5 (Terminal Mutation): SIGNAL -> ORDER_OPEN -> ORDER_CANCELLED -> ORDER_FILLED
+        mockFindMany = async () => [
+            { classification: 'SIGNAL', createdAt: new Date(Date.now() - 50 * 1000), metadata: { tradeId: 't100', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_OPEN', createdAt: new Date(Date.now() - 40 * 1000), metadata: { tradeId: 't100', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_CANCELLED', createdAt: new Date(Date.now() - 30 * 1000), metadata: { tradeId: 't100', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_FILLED', createdAt: new Date(Date.now() - 20 * 1000), metadata: { tradeId: 't100', symbol: 'BTCUSDT' } }
+        ];
+        const checkI5 = await watchdog.checkOrderPipeline(5 * 60 * 1000);
+        assert(checkI5.metadata?.observability?.lifecycle?.invalidTrades === 1, 'Scenario I5: invalidTrades should be 1.');
+        assert(checkI5.metadata?.observability?.lifecycle?.validTrades === 0, 'Scenario I5: validTrades should be 0.');
+
         // Reset mocks
         mockCreate = async (args: any) => args.data as any;
         (prisma.decisionAudit as any).findFirst = originalFindFirst;
