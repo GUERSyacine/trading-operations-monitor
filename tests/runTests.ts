@@ -392,8 +392,9 @@ async function runTests() {
         mockAlerting.alertsSent = [];
         const pipelineA = await watchdog.checkOrderPipeline();
         assert(pipelineA.healthy === true, 'Pipeline check should pass when only ORDER telemetry is present (LIMITED visibility).');
-        assert(pipelineA.metadata?.pipelineVisibility === 'LIMITED', 'Pipeline visibility should be LIMITED.');
-        assert(pipelineA.metadata?.observedFillRatio === 1.0, 'observedFillRatio should default to 1.0 under LIMITED visibility.');
+        assert(pipelineA.metadata?.observability?.pipelineVisibility === 'LIMITED', 'Pipeline visibility should be LIMITED.');
+        assert(pipelineA.metadata?.observability?.coverage?.coverageRatio === 1.0, 'coverageRatio should default to 1.0 under LIMITED visibility.');
+        assert(pipelineA.metadata?.observability?.confidence?.score === 'LOW', 'Confidence score should be LOW under LIMITED visibility.');
         assert(mockAlerting.alertsSent.length === 0, 'No alert should trigger under LIMITED visibility.');
 
         // Scenario B: SIGNAL + FILL telemetry (Normal flow)
@@ -406,8 +407,9 @@ async function runTests() {
         mockAlerting.alertsSent = [];
         const pipelineB = await watchdog.checkOrderPipeline();
         assert(pipelineB.healthy === true, 'Pipeline check should pass when SIGNAL has matching ORDER_FILLED (PARTIAL visibility).');
-        assert(pipelineB.metadata?.pipelineVisibility === 'PARTIAL', 'Pipeline visibility should be PARTIAL.');
-        assert(pipelineB.metadata?.observedFillRatio === 1.0, 'observedFillRatio should be 1.0 (1 signal, 1 fill).');
+        assert(pipelineB.metadata?.observability?.pipelineVisibility === 'PARTIAL', 'Pipeline visibility should be PARTIAL.');
+        assert(pipelineB.metadata?.observability?.confidence?.score === 'HIGH', 'Confidence score should be HIGH.');
+        assert(pipelineB.metadata?.observability?.coverage?.coverageRatio === 1.0, 'coverageRatio should be 1.0 (1 signal, 1 fill).');
         assert(mockAlerting.alertsSent.length === 0, 'No alert should trigger under normal flow.');
 
         // Scenario C: Recent SIGNAL (No fill yet, within timeout)
@@ -418,8 +420,9 @@ async function runTests() {
         mockAlerting.alertsSent = [];
         const pipelineC = await watchdog.checkOrderPipeline();
         assert(pipelineC.healthy === true, 'Pipeline check should pass for a recent signal within grace period.');
-        assert(pipelineC.metadata?.pipelineVisibility === 'PARTIAL', 'Pipeline visibility should be PARTIAL.');
-        assert(pipelineC.metadata?.observedFillRatio === 0.0, 'observedFillRatio should be 0.0.');
+        assert(pipelineC.metadata?.observability?.pipelineVisibility === 'PARTIAL', 'Pipeline visibility should be PARTIAL.');
+        assert(pipelineC.metadata?.observability?.coverage?.coverageRatio === 1.0, 'coverageRatio should be 1.0.');
+        assert(pipelineC.metadata?.observability?.confidence?.score === 'HIGH', 'Confidence score should be HIGH.');
         assert(mockAlerting.alertsSent.length === 0, 'No alert should trigger for recent unfilled signal.');
 
         // Scenario E: Webhook Ingestion Integration
@@ -483,7 +486,21 @@ async function runTests() {
         const pipelineD = await watchdog.checkOrderPipeline();
         assert(pipelineD.healthy === false, 'Pipeline check should fail when a signal exceeds the fill timeout without a corresponding fill.');
         assert(pipelineD.severity === 'WARNING', 'Pipeline failure has WARNING severity.');
+        assert(pipelineD.metadata?.observability?.confidence?.score === 'HIGH', 'Confidence score should remain HIGH (good telemetry).');
+        assert(pipelineD.metadata?.observability?.coverage?.coverageRatio === 0.0, 'coverageRatio should be 0.0 (1 eligible signal, 0 fills).');
         assert(mockAlerting.alertsSent.length === 1 && mockAlerting.alertsSent[0].title === 'Signal Fill Timeout', 'Triggers Signal Fill Timeout warning alert.');
+
+        // Scenario F: Schema Drift (Signal without tradeId)
+        mockFindMany = async () => [
+            { classification: 'SIGNAL', createdAt: new Date(Date.now() - 10 * 1000), metadata: { symbol: 'BTCUSDT' } }
+        ];
+        mockAlerting.alertsSent = [];
+        const pipelineF = await watchdog.checkOrderPipeline();
+        assert(pipelineF.healthy === true, 'Pipeline check remains healthy for recent signals.');
+        assert(pipelineF.metadata?.observability?.pipelineVisibility === 'PARTIAL', 'Pipeline visibility is PARTIAL.');
+        assert(pipelineF.metadata?.observability?.confidence?.score === 'LOW', 'Confidence score is LOW due to missing tradeId.');
+        assert(pipelineF.metadata?.observability?.correlation?.signalsWithoutTradeId === 1, 'Signals without tradeId is 1.');
+        assert(mockAlerting.alertsSent.length === 1 && mockAlerting.alertsSent[0].title === 'Observability Schema Drift', 'Triggers Observability Schema Drift warning alert.');
 
         (prisma.decisionAudit as any).findFirst = originalFindFirst;
 

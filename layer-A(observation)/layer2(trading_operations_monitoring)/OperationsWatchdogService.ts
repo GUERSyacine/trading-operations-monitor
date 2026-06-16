@@ -643,9 +643,20 @@ export class OperationsWatchdogService {
             let failed = 0;
             let completedOrders = 0;
 
+            let signalsWithTradeId = 0;
+            let signalsWithoutTradeId = 0;
+
             for (const audit of audits) {
                 const classification = audit.classification.toUpperCase();
-                if (classification === 'SIGNAL') signals++;
+                if (classification === 'SIGNAL') {
+                    signals++;
+                    const meta = audit.metadata as Record<string, any> || {};
+                    if (meta.tradeId !== undefined && meta.tradeId !== null && meta.tradeId !== '') {
+                        signalsWithTradeId++;
+                    } else {
+                        signalsWithoutTradeId++;
+                    }
+                }
                 else if (classification === 'ORDER_CREATED') created++;
                 else if (classification === 'ORDER_SENT') sent++;
                 else if (classification === 'ORDER_ACK') ack++;
@@ -663,36 +674,57 @@ export class OperationsWatchdogService {
                 visibilityReason = 'Ingesting SIGNAL and ORDER_FILLED events via Freqtrade webhooks.';
             }
 
-            const observedFillRatio = signals > 0 ? Number((filled / signals).toFixed(4)) : 1.0;
+            let eligibleSignalsCount = 0;
+            let filledEligibleSignalsCount = 0;
+            let unfilledSignalCount = 0;
+            let maxUnfilledAgeMs = 0;
+            let totalUnfilledAgeMs = 0;
+            
+            const failureMsgs: string[] = [];
+            const failedTradeIds: string[] = [];
+            let pipelineHealthy = true;
 
-            const metadata = {
-                windowMs,
-                signals,
-                created,
-                sent,
-                ack,
-                filled,
-                failed,
-                completedOrders,
-                pipelineVisibility,
-                visibilityReason,
-                observedFillRatio
-            };
+            const totalSignalsSliding = signalsWithTradeId + signalsWithoutTradeId;
+            const correlationQualityRatio = totalSignalsSliding > 0 ? Number((signalsWithTradeId / totalSignalsSliding).toFixed(4)) : 1.0;
+
+            // Confidence is strictly derived from telemetry quality, not trading outcome
+            let confidenceScore: 'LOW' | 'MEDIUM' | 'HIGH' = 'LOW';
+            if (pipelineVisibility === 'PARTIAL') {
+                if (correlationQualityRatio >= 0.95) {
+                    confidenceScore = 'HIGH';
+                } else if (correlationQualityRatio >= 0.70) {
+                    confidenceScore = 'MEDIUM';
+                } else {
+                    confidenceScore = 'LOW';
+                }
+            } else {
+                confidenceScore = 'LOW';
+            }
+
+            // Schema drift alert: warning when signals lack tradeId in webhook mode
+            if (pipelineVisibility === 'PARTIAL' && signalsWithoutTradeId > 0) {
+                console.error(`🚨 [OperationsWatchdog] OBSERVABILITY SCHEMA DRIFT DETECTED: ${signalsWithoutTradeId} signal(s) lack tradeId.`);
+                await this.alertingService.sendAlert({
+                    level: 'WARNING',
+                    title: 'Observability Schema Drift',
+                    message: `WARNING: Ingested webhook signals lack tradeId (${signalsWithoutTradeId} signal(s) in the last ${windowMs / 60000} minutes). Webhook payload normalization or Freqtrade integration schema may be broken.`,
+                    dedupKey: 'observability_schema_drift'
+                });
+            }
 
             // Stage 6: Pipeline Validation Logic for PARTIAL visibility
             if (pipelineVisibility === 'PARTIAL') {
                 const timeoutThreshold = new Date(Date.now() - MVP_CONFIG.OPERATIONS.SIGNAL_FILL_TIMEOUT_MS);
                 const maxLookback = new Date(Date.now() - (7 * 24 * 60 * 60 * 1000)); // 7 days safety cutoff
 
-                const oldSignals = await prisma.decisionAudit.findMany({
+                const lookbackSignals = await prisma.decisionAudit.findMany({
                     where: {
                         classification: {
                             equals: 'SIGNAL',
                             mode: 'insensitive'
                         },
                         createdAt: {
-                            gte: maxLookback,
-                            lte: timeoutThreshold
+                            gte: maxLookback
                         }
                     },
                     orderBy: {
@@ -700,22 +732,23 @@ export class OperationsWatchdogService {
                     }
                 });
 
-                // Extract unique, valid trade IDs from old signals
-                const tradeIds = Array.from(new Set(
-                    oldSignals
+                // Extract unique, valid trade IDs from lookback signals
+                const lookbackTradeIds = Array.from(new Set(
+                    lookbackSignals
                         .map(s => (s.metadata as Record<string, any> || {}).tradeId)
                         .filter((id): id is string | number => id !== undefined && id !== null && id !== '')
                 ));
 
-                if (tradeIds.length > 0) {
+                let matchingFills: any[] = [];
+                if (lookbackTradeIds.length > 0) {
                     // Query all matching fill events in a single batch
-                    const matchingFills = await prisma.decisionAudit.findMany({
+                    matchingFills = await prisma.decisionAudit.findMany({
                         where: {
                             classification: {
                                 equals: 'ORDER_FILLED',
                                 mode: 'insensitive'
                             },
-                            OR: tradeIds.map(id => ({
+                            OR: lookbackTradeIds.map(id => ({
                                 metadata: {
                                     path: ['tradeId'],
                                     equals: String(id)
@@ -723,26 +756,46 @@ export class OperationsWatchdogService {
                             }))
                         }
                     });
+                }
 
-                    let pipelineHealthy = true;
-                    const failureMsgs: string[] = [];
-                    const failedTradeIds: string[] = [];
+                for (const signal of lookbackSignals) {
+                    const meta = signal.metadata as Record<string, any> || {};
+                    const tradeId = meta.tradeId;
 
-                    for (const oldSignal of oldSignals) {
-                        const meta = oldSignal.metadata as Record<string, any> || {};
-                        const tradeId = meta.tradeId;
+                    const isEligible = signal.createdAt <= timeoutThreshold;
+                    if (isEligible) {
+                        eligibleSignalsCount++;
+                    }
 
-                        if (tradeId === undefined || tradeId === null || tradeId === '') {
-                            continue;
+                    if (tradeId === undefined || tradeId === null || tradeId === '') {
+                        if (isEligible) {
+                            unfilledSignalCount++;
+                            const ageMs = Date.now() - signal.createdAt.getTime();
+                            if (ageMs > maxUnfilledAgeMs) {
+                                maxUnfilledAgeMs = ageMs;
+                            }
+                            totalUnfilledAgeMs += ageMs;
                         }
+                        continue;
+                    }
 
-                        // Check in-memory list for a matching fill created at or after the signal
-                        const hasMatchingFill = matchingFills.some(f => {
-                            const fMeta = f.metadata as Record<string, any> || {};
-                            return String(fMeta.tradeId) === String(tradeId) && f.createdAt >= oldSignal.createdAt;
-                        });
+                    // Check in-memory list for a matching fill created at or after the signal
+                    const hasMatchingFill = matchingFills.some(f => {
+                        const fMeta = f.metadata as Record<string, any> || {};
+                        return String(fMeta.tradeId) === String(tradeId) && f.createdAt >= signal.createdAt;
+                    });
 
-                        if (!hasMatchingFill) {
+                    if (isEligible) {
+                        if (hasMatchingFill) {
+                            filledEligibleSignalsCount++;
+                        } else {
+                            unfilledSignalCount++;
+                            const ageMs = Date.now() - signal.createdAt.getTime();
+                            if (ageMs > maxUnfilledAgeMs) {
+                                maxUnfilledAgeMs = ageMs;
+                            }
+                            totalUnfilledAgeMs += ageMs;
+
                             pipelineHealthy = false;
                             const msg = `Signal tradeId=${tradeId} symbol=${meta.symbol || 'unknown'} has been unfilled for more than ${MVP_CONFIG.OPERATIONS.SIGNAL_FILL_TIMEOUT_MS / 60000} minutes.`;
                             console.error(`🚨 [OperationsWatchdog] SIGNAL FILL TIMEOUT: ${msg}`);
@@ -752,27 +805,57 @@ export class OperationsWatchdogService {
                             await this.alertingService.sendAlert({
                                 level: 'WARNING',
                                 title: 'Signal Fill Timeout',
-                                message: `WARNING: Signal generated at ${oldSignal.createdAt.toISOString()} for symbol ${meta.symbol || 'unknown'} (Trade ID: ${tradeId}) has not been filled after ${(MVP_CONFIG.OPERATIONS.SIGNAL_FILL_TIMEOUT_MS / 60000).toFixed(0)} minutes.`,
+                                message: `WARNING: Signal generated at ${signal.createdAt.toISOString()} for symbol ${meta.symbol || 'unknown'} (Trade ID: ${tradeId}) has not been filled after ${(MVP_CONFIG.OPERATIONS.SIGNAL_FILL_TIMEOUT_MS / 60000).toFixed(0)} minutes.`,
                                 dedupKey: `signal_fill_timeout_${tradeId}`
                             });
                         }
                     }
+                }
+            }
 
-                    if (!pipelineHealthy) {
-                        return {
-                            source: 'ORDER_PIPELINE',
-                            healthy: false,
-                            checkedAt: new Date(),
-                            checkDurationMs: Date.now() - checkStart,
-                            severity: 'WARNING',
-                            message: failureMsgs.join(' | '),
-                            metadata: this.enrichMetadata('ORDER_PIPELINE', {
-                                ...metadata,
-                                failedTradeIds
-                            })
-                        };
+            const coverageRatio = eligibleSignalsCount > 0 ? Number((filledEligibleSignalsCount / eligibleSignalsCount).toFixed(4)) : 1.0;
+            const oldestUnfilledMinutes = maxUnfilledAgeMs > 0 ? Number((maxUnfilledAgeMs / 60000).toFixed(1)) : 0.0;
+            const averageUnfilledMinutes = unfilledSignalCount > 0 ? Number(((totalUnfilledAgeMs / unfilledSignalCount) / 60000).toFixed(1)) : 0.0;
+
+            const metadata = {
+                observability: {
+                    pipelineVisibility,
+                    visibilityReason,
+                    coverage: {
+                        signalsObserved: signals,
+                        eligibleSignals: eligibleSignalsCount,
+                        filledEligibleSignals: filledEligibleSignalsCount,
+                        coverageRatio
+                    },
+                    correlation: {
+                        signalsWithTradeId,
+                        signalsWithoutTradeId,
+                        correlationQualityRatio
+                    },
+                    confidence: {
+                        score: confidenceScore
+                    },
+                    analytics: {
+                        unfilledSignalCount,
+                        oldestUnfilledMinutes,
+                        averageUnfilledMinutes
                     }
                 }
+            };
+
+            if (!pipelineHealthy) {
+                return {
+                    source: 'ORDER_PIPELINE',
+                    healthy: false,
+                    checkedAt: new Date(),
+                    checkDurationMs: Date.now() - checkStart,
+                    severity: 'WARNING',
+                    message: failureMsgs.join(' | '),
+                    metadata: this.enrichMetadata('ORDER_PIPELINE', {
+                        ...metadata,
+                        failedTradeIds
+                    })
+                };
             }
 
             return {
