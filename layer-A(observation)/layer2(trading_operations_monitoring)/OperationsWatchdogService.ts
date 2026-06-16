@@ -677,6 +677,7 @@ export class OperationsWatchdogService {
             let eligibleSignalsCount = 0;
             let filledEligibleSignalsCount = 0;
             let unfilledSignalCount = 0;
+            let uncorrelatableSignalCount = 0;
             let maxUnfilledAgeMs = 0;
             let totalUnfilledAgeMs = 0;
             
@@ -769,12 +770,7 @@ export class OperationsWatchdogService {
 
                     if (tradeId === undefined || tradeId === null || tradeId === '') {
                         if (isEligible) {
-                            unfilledSignalCount++;
-                            const ageMs = Date.now() - signal.createdAt.getTime();
-                            if (ageMs > maxUnfilledAgeMs) {
-                                maxUnfilledAgeMs = ageMs;
-                            }
-                            totalUnfilledAgeMs += ageMs;
+                            uncorrelatableSignalCount++;
                         }
                         continue;
                     }
@@ -813,9 +809,155 @@ export class OperationsWatchdogService {
                 }
             }
 
-            const coverageRatio = eligibleSignalsCount > 0 ? Number((filledEligibleSignalsCount / eligibleSignalsCount).toFixed(4)) : 1.0;
+            const correlatableEligibleSignals = eligibleSignalsCount - uncorrelatableSignalCount;
+            const coverageRatio = correlatableEligibleSignals > 0 ? Number((filledEligibleSignalsCount / correlatableEligibleSignals).toFixed(4)) : 1.0;
             const oldestUnfilledMinutes = maxUnfilledAgeMs > 0 ? Number((maxUnfilledAgeMs / 60000).toFixed(1)) : 0.0;
             const averageUnfilledMinutes = unfilledSignalCount > 0 ? Number(((totalUnfilledAgeMs / unfilledSignalCount) / 60000).toFixed(1)) : 0.0;
+
+            // --- 24-HOUR TREND & HEALTHY-BASELINE ANALYTICS ---
+            const cutoff24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+            const historicalAudits = await prisma.decisionAudit.findMany({
+                where: {
+                    classification: {
+                        equals: 'OBSERVABILITY_METRICS',
+                        mode: 'insensitive'
+                    },
+                    createdAt: {
+                        gte: cutoff24h
+                    }
+                },
+                orderBy: {
+                    createdAt: 'desc'
+                }
+            });
+
+            const pastCoverageRatios: number[] = [];
+            const pastCorrelationRatios: number[] = [];
+            let lowConfidenceCount = 0;
+            let mediumConfidenceCount = 0;
+            let highConfidenceCount = 0;
+
+            for (const h of historicalAudits) {
+                const meta = h.metadata as Record<string, any> || {};
+                const obs = meta.observability || {};
+                const cov = obs.coverage || {};
+                const corr = obs.correlation || {};
+                const conf = obs.confidence || {};
+
+                if (typeof cov.coverageRatio === 'number') {
+                    pastCoverageRatios.push(cov.coverageRatio);
+                }
+                if (typeof corr.correlationQualityRatio === 'number') {
+                    pastCorrelationRatios.push(corr.correlationQualityRatio);
+                }
+
+                const score = (conf.score || '').toUpperCase();
+                if (score === 'LOW') {
+                    lowConfidenceCount++;
+                } else if (score === 'MEDIUM') {
+                    mediumConfidenceCount++;
+                } else if (score === 'HIGH') {
+                    highConfidenceCount++;
+                }
+            }
+
+            // Include current confidence check in the 24h counters
+            if (confidenceScore === 'LOW') {
+                lowConfidenceCount++;
+            } else if (confidenceScore === 'MEDIUM') {
+                mediumConfidenceCount++;
+            } else if (confidenceScore === 'HIGH') {
+                highConfidenceCount++;
+            }
+
+            // Helpers for P95 and Average
+            const getP95Value = (values: number[], defaultValue: number): number => {
+                if (values.length === 0) return defaultValue;
+                const sorted = [...values].sort((a, b) => a - b);
+                const idx = Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95));
+                return sorted[idx];
+            };
+
+            const getAverageValue = (values: number[], defaultValue: number): number => {
+                if (values.length === 0) return defaultValue;
+                const sum = values.reduce((a, b) => a + b, 0);
+                return Number((sum / values.length).toFixed(4));
+            };
+
+            const historical24hAverageCoverage = getAverageValue(pastCoverageRatios, 1.0);
+            const historical24hAverageCorrelation = getAverageValue(pastCorrelationRatios, 1.0);
+            const historical24hP95Coverage = getP95Value(pastCoverageRatios, 1.0);
+            const historical24hP95Correlation = getP95Value(pastCorrelationRatios, 1.0);
+
+            // Compute change relative to P95 baseline
+            const coverageRatioChange = Number((coverageRatio - historical24hP95Coverage).toFixed(4));
+            const correlationQualityRatioChange = Number((correlationQualityRatio - historical24hP95Correlation).toFixed(4));
+
+            // Sustained Degradation Check (requires drop for 3 consecutive checks)
+            let coverageDegradedSustained = false;
+            let correlationDegradedSustained = false;
+
+            let hasMinHistory = false;
+            if (historicalAudits.length >= 5) {
+                const oldestAudit = historicalAudits[historicalAudits.length - 1];
+                const timeDiffMs = Date.now() - oldestAudit.createdAt.getTime();
+                if (timeDiffMs >= 60 * 60 * 1000) {
+                    hasMinHistory = true;
+                }
+            }
+
+            if (hasMinHistory && historicalAudits.length >= 2) {
+                const check1 = historicalAudits[0];
+                const check2 = historicalAudits[1];
+
+                const meta1 = check1.metadata as Record<string, any> || {};
+                const obs1 = meta1.observability || {};
+                const c1 = obs1.coverage?.coverageRatio;
+                const r1 = obs1.correlation?.correlationQualityRatio;
+
+                const meta2 = check2.metadata as Record<string, any> || {};
+                const obs2 = meta2.observability || {};
+                const c2 = obs2.coverage?.coverageRatio;
+                const r2 = obs2.correlation?.correlationQualityRatio;
+
+                if (typeof c1 === 'number' && typeof c2 === 'number') {
+                    const chgCurrent = coverageRatio - historical24hP95Coverage;
+                    const chg1 = c1 - historical24hP95Coverage;
+                    const chg2 = c2 - historical24hP95Coverage;
+
+                    if (chgCurrent <= -0.15 && chg1 <= -0.15 && chg2 <= -0.15) {
+                        coverageDegradedSustained = true;
+                    }
+                }
+
+                if (typeof r1 === 'number' && typeof r2 === 'number') {
+                    const chgCurrent = correlationQualityRatio - historical24hP95Correlation;
+                    const chg1 = r1 - historical24hP95Correlation;
+                    const chg2 = r2 - historical24hP95Correlation;
+
+                    if (chgCurrent <= -0.10 && chg1 <= -0.10 && chg2 <= -0.10) {
+                        correlationDegradedSustained = true;
+                    }
+                }
+            }
+
+            if (coverageDegradedSustained) {
+                await this.alertingService.sendAlert({
+                    level: 'WARNING',
+                    title: 'Observability Coverage Degradation Trend',
+                    message: `WARNING: Observability coverage has suffered sustained degradation. Current: ${coverageRatio.toFixed(4)} vs 24h P95: ${historical24hP95Coverage.toFixed(4)} (Change: ${coverageRatioChange.toFixed(4)}) for 3 consecutive checks.`,
+                    dedupKey: 'coverage_degradation_trend'
+                });
+            }
+
+            if (correlationDegradedSustained) {
+                await this.alertingService.sendAlert({
+                    level: 'WARNING',
+                    title: 'Observability Correlation Degradation Trend',
+                    message: `WARNING: Observability correlation has suffered sustained degradation. Current: ${correlationQualityRatio.toFixed(4)} vs 24h P95: ${historical24hP95Correlation.toFixed(4)} (Change: ${correlationQualityRatioChange.toFixed(4)}) for 3 consecutive checks.`,
+                    dedupKey: 'correlation_degradation_trend'
+                });
+            }
 
             const metadata = {
                 observability: {
@@ -837,34 +979,51 @@ export class OperationsWatchdogService {
                     },
                     analytics: {
                         unfilledSignalCount,
+                        uncorrelatableSignalCount,
                         oldestUnfilledMinutes,
                         averageUnfilledMinutes
+                    },
+                    trends: {
+                        historical24hAverageCoverage,
+                        historical24hAverageCorrelation,
+                        historical24hP95Coverage,
+                        historical24hP95Correlation,
+                        coverageRatioChange,
+                        correlationQualityRatioChange,
+                        lowConfidenceChecks24h: lowConfidenceCount,
+                        mediumConfidenceChecks24h: mediumConfidenceCount,
+                        highConfidenceChecks24h: highConfidenceCount
                     }
                 }
             };
 
-            if (!pipelineHealthy) {
-                return {
-                    source: 'ORDER_PIPELINE',
-                    healthy: false,
-                    checkedAt: new Date(),
-                    checkDurationMs: Date.now() - checkStart,
-                    severity: 'WARNING',
-                    message: failureMsgs.join(' | '),
-                    metadata: this.enrichMetadata('ORDER_PIPELINE', {
-                        ...metadata,
-                        failedTradeIds
-                    })
-                };
-            }
-
-            return {
+            const returnVal: HealthCheckResult = {
                 source: 'ORDER_PIPELINE',
-                healthy: true,
+                healthy: pipelineHealthy,
                 checkedAt: new Date(),
                 checkDurationMs: Date.now() - checkStart,
-                metadata: this.enrichMetadata('ORDER_PIPELINE', metadata)
+                severity: pipelineHealthy ? undefined : ('WARNING' as const),
+                message: pipelineHealthy ? undefined : failureMsgs.join(' | '),
+                metadata: this.enrichMetadata('ORDER_PIPELINE', pipelineHealthy ? metadata : {
+                    ...metadata,
+                    failedTradeIds
+                })
             };
+
+            // Stage 7: Persist current observability state (excluding itself from current calculations)
+            try {
+                await prisma.decisionAudit.create({
+                    data: {
+                        classification: 'OBSERVABILITY_METRICS',
+                        systemRiskState: pipelineHealthy ? 'NORMAL' : 'DEGRADED',
+                        metadata: metadata
+                    }
+                });
+            } catch (persistErr: any) {
+                console.error('[OperationsWatchdog] Failed to persist observability metrics snapshot:', persistErr?.message || persistErr);
+            }
+
+            return returnVal;
         } catch (error: any) {
             console.error('[OperationsWatchdog] Failed to check order pipeline:', error?.message || error);
             return {

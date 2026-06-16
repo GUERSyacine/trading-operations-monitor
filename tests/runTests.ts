@@ -134,8 +134,11 @@ async function runTests() {
         // Dynamically override prisma.decisionAudit query handlers
         let mockFindFirst: any = async () => null;
         let mockFindMany: any = async () => [];
+        const opsOriginalCreate = (prisma.decisionAudit as any).create;
+        let mockCreate: any = async (args: any) => args.data as any;
 
         (prisma.decisionAudit as any).findFirst = async (args: any) => mockFindFirst(args);
+        (prisma.decisionAudit as any).create = async (args: any) => mockCreate(args);
         (prisma.decisionAudit as any).findMany = async (args: any) => {
             let filtered = await mockFindMany(args);
             if (args?.where?.classification) {
@@ -430,7 +433,7 @@ async function runTests() {
         receiver.start();
 
         let persistedEvents: any[] = [];
-        const originalCreate = (prisma.decisionAudit as any).create;
+        const webhookOriginalCreate = (prisma.decisionAudit as any).create;
         (prisma.decisionAudit as any).create = async (args: any) => {
             persistedEvents.push(args.data);
             return args.data as any;
@@ -473,7 +476,7 @@ async function runTests() {
         assert(persistedEvents.length === 1 && persistedEvents[0].classification === 'ORDER_FILLED', 'Persists ORDER_FILLED event.');
         assert(persistedEvents[0].metadata.orderId === 'order_abc', 'orderId is stored correctly.');
 
-        (prisma.decisionAudit as any).create = originalCreate;
+        (prisma.decisionAudit as any).create = webhookOriginalCreate;
         await receiver.stop();
 
         // Scenario D: Old SIGNAL (No fill beyond timeout)
@@ -502,6 +505,83 @@ async function runTests() {
         assert(pipelineF.metadata?.observability?.correlation?.signalsWithoutTradeId === 1, 'Signals without tradeId is 1.');
         assert(mockAlerting.alertsSent.length === 1 && mockAlerting.alertsSent[0].title === 'Observability Schema Drift', 'Triggers Observability Schema Drift warning alert.');
 
+        // Scenario G: Sustained Degradation & Trends (Phase 2C)
+        const mockHealthyHistory = Array.from({ length: 10 }, (_, i) => ({
+            classification: 'OBSERVABILITY_METRICS',
+            createdAt: new Date(Date.now() - (i + 1) * 30 * 60 * 1000), // every 30 mins
+            metadata: {
+                observability: {
+                    pipelineVisibility: 'PARTIAL',
+                    coverage: { coverageRatio: 1.0 },
+                    correlation: { correlationQualityRatio: 1.0 },
+                    confidence: { score: 'HIGH' }
+                }
+            }
+        }));
+
+        let persistedObservabilitySnapshots: any[] = [];
+        mockCreate = async (args: any) => {
+            if (args.data.classification === 'OBSERVABILITY_METRICS') {
+                persistedObservabilitySnapshots.push(args.data);
+            }
+            return args.data as any;
+        };
+
+        const runScenarioGCheck = async (degradedHistoryCount: number) => {
+            const history = [...mockHealthyHistory];
+            for (let i = 0; i < degradedHistoryCount; i++) {
+                history[i] = {
+                    classification: 'OBSERVABILITY_METRICS',
+                    createdAt: new Date(Date.now() - (i + 1) * 60 * 1000), // 1 or 2 mins ago
+                    metadata: {
+                        observability: {
+                            pipelineVisibility: 'PARTIAL',
+                            coverage: { coverageRatio: 0.80 },
+                            correlation: { correlationQualityRatio: 0.85 },
+                            confidence: { score: 'MEDIUM' }
+                        }
+                    }
+                };
+            }
+
+            const activeAudits = [
+                { classification: 'SIGNAL', createdAt: new Date(Date.now() - 70 * 60 * 1000), metadata: { tradeId: 't1', symbol: 'BTCUSDT' } }, // eligible, filled
+                { classification: 'SIGNAL', createdAt: new Date(Date.now() - 70 * 60 * 1000), metadata: { tradeId: 't2', symbol: 'BTCUSDT' } }, // eligible, unfilled
+                { classification: 'SIGNAL', createdAt: new Date(Date.now() - 70 * 60 * 1000), metadata: { symbol: 'BTCUSDT' } }, // eligible, uncorrelatable
+                { classification: 'SIGNAL', createdAt: new Date(Date.now() - 10 * 1000), metadata: { tradeId: 't4', symbol: 'BTCUSDT' } }, // not eligible
+                { classification: 'SIGNAL', createdAt: new Date(Date.now() - 10 * 1000), metadata: { tradeId: 't5', symbol: 'BTCUSDT' } }, // not eligible
+                { classification: 'ORDER_FILLED', createdAt: new Date(Date.now() - 65 * 60 * 1000), metadata: { tradeId: 't1', symbol: 'BTCUSDT' } }
+            ];
+
+            mockFindMany = async () => [...activeAudits, ...history];
+            mockAlerting.alertsSent = [];
+
+            return await watchdog.checkOrderPipeline(2 * 60 * 60 * 1000);
+        };
+
+        persistedObservabilitySnapshots = [];
+        const checkG1 = await runScenarioGCheck(0);
+        assert(checkG1.healthy === false, 'Scenario G1: Pipeline check 1 should be unhealthy.');
+        assert(checkG1.metadata?.observability?.coverage?.eligibleSignals === 3, 'Scenario G1: check 1 eligibleSignals = 3.');
+        assert(checkG1.metadata?.observability?.analytics?.uncorrelatableSignalCount === 1, 'Scenario G1: check 1 uncorrelatableSignalCount = 1.');
+        assert(checkG1.metadata?.observability?.coverage?.coverageRatio === 0.50, 'Scenario G1: check 1 coverageRatio = 0.50.');
+        assert(checkG1.metadata?.observability?.correlation?.correlationQualityRatio === 0.80, 'Scenario G1: check 1 correlationQualityRatio = 0.80.');
+        assert(checkG1.metadata?.observability?.trends?.historical24hP95Coverage === 1.0, 'Scenario G1: check 1 P95 coverage = 1.0.');
+        assert(checkG1.metadata?.observability?.trends?.historical24hP95Correlation === 1.0, 'Scenario G1: check 1 P95 correlation = 1.0.');
+        assert(checkG1.metadata?.observability?.trends?.coverageRatioChange === -0.50, 'Scenario G1: check 1 coverageRatioChange = -0.50.');
+        assert(checkG1.metadata?.observability?.trends?.correlationQualityRatioChange === -0.20, 'Scenario G1: check 1 correlationQualityRatioChange = -0.20.');
+        assert(checkG1.metadata?.observability?.trends?.highConfidenceChecks24h === 10, 'Scenario G1: check 1 highConfidenceChecks24h = 10.');
+        assert(mockAlerting.alertsSent.filter((a: any) => a.title.includes('Degradation Trend')).length === 0, 'Scenario G1: No trend alert on single check drop.');
+        assert(persistedObservabilitySnapshots.length === 1, 'Scenario G1: Snapshot was successfully persisted.');
+
+        const checkG2 = await runScenarioGCheck(1);
+        assert(mockAlerting.alertsSent.filter((a: any) => a.title.includes('Degradation Trend')).length === 0, 'Scenario G2: No trend alert on second consecutive drop.');
+
+        const checkG3 = await runScenarioGCheck(2);
+        assert(mockAlerting.alertsSent.some((a: any) => a.title === 'Observability Coverage Degradation Trend'), 'Scenario G3: Fires coverage degradation trend alert on 3 consecutive drops.');
+        assert(mockAlerting.alertsSent.some((a: any) => a.title === 'Observability Correlation Degradation Trend'), 'Scenario G3: Fires correlation degradation trend alert on 3 consecutive drops.');
+
+        mockCreate = async (args: any) => args.data as any;
         (prisma.decisionAudit as any).findFirst = originalFindFirst;
 
         // 4.6 checkExchangeAck
@@ -600,6 +680,8 @@ async function runTests() {
         assert(freqHealthyB.healthy === true, 'STRATEGY_B should succeed.');
         assert((watchdog as any).tradeFrequencyFailures.get('STRATEGY_A') === 3, 'STRATEGY_A failures count is still 3.');
         assert((watchdog as any).tradeFrequencyFailures.get('STRATEGY_B') === 0, 'STRATEGY_B failures count is reset to 0.');
+
+        (prisma.decisionAudit as any).create = opsOriginalCreate;
 
         // ----------------------------------------------------
         // LAYER 1: Infrastructure Health Checks Tests
