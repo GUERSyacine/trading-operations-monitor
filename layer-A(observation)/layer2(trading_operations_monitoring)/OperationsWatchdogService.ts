@@ -637,9 +637,13 @@ export class OperationsWatchdogService {
 
             let signals = 0;
             let created = 0;
-            let sent = 0;
+            let submitted = 0;
             let ack = 0;
+            let open = 0;
+            let partiallyFilled = 0;
             let filled = 0;
+            let cancelled = 0;
+            let rejected = 0;
             let failed = 0;
             let completedOrders = 0;
 
@@ -658,20 +662,135 @@ export class OperationsWatchdogService {
                     }
                 }
                 else if (classification === 'ORDER_CREATED') created++;
-                else if (classification === 'ORDER_SENT') sent++;
-                else if (classification === 'ORDER_ACK') ack++;
+                else if (classification === 'ORDER_SUBMITTED' || classification === 'ORDER_SENT') submitted++;
+                else if (classification === 'ORDER_ACKNOWLEDGED' || classification === 'ORDER_ACK') ack++;
+                else if (classification === 'ORDER_OPEN') open++;
+                else if (classification === 'ORDER_PARTIALLY_FILLED') partiallyFilled++;
                 else if (classification === 'ORDER_FILLED') filled++;
-                else if (classification === 'ORDER') completedOrders++;
+                else if (classification === 'ORDER_CANCELLED') cancelled++;
+                else if (classification === 'EXCHANGE_REJECTED') rejected++;
                 else if (classification === 'ORDER_FAILED') failed++;
+                else if (classification === 'ORDER') completedOrders++;
             }
 
+            const intermediateEventsObserved = created + submitted + ack + open + partiallyFilled + cancelled + rejected + failed;
+
             // Stage 5: Upgrade Pipeline Visibility Model
+            let hasCorrelatableIntermediate = false;
+            for (const audit of audits) {
+                const classification = audit.classification.toUpperCase();
+                const isIntermediate = [
+                    'ORDER_CREATED',
+                    'ORDER_SUBMITTED',
+                    'ORDER_SENT',
+                    'ORDER_ACKNOWLEDGED',
+                    'ORDER_ACK',
+                    'ORDER_OPEN',
+                    'ORDER_PARTIALLY_FILLED',
+                    'ORDER_CANCELLED',
+                    'EXCHANGE_REJECTED',
+                    'ORDER_FAILED'
+                ].includes(classification);
+
+                if (isIntermediate) {
+                    const meta = audit.metadata as Record<string, any> || {};
+                    const hasTradeId = meta.tradeId !== undefined && meta.tradeId !== null && meta.tradeId !== '';
+                    const hasOrderId = meta.orderId !== undefined && meta.orderId !== null && meta.orderId !== '';
+                    if (hasTradeId || hasOrderId) {
+                        hasCorrelatableIntermediate = true;
+                        break;
+                    }
+                }
+            }
+
             let pipelineVisibility: 'LIMITED' | 'PARTIAL' | 'FULL' = 'LIMITED';
             let visibilityReason = 'Adapter only emits ORDER completion telemetry.';
 
-            if (signals > 0 || filled > 0 || created > 0 || failed > 0) {
+            if (signals > 0 && hasCorrelatableIntermediate) {
+                pipelineVisibility = 'FULL';
+                visibilityReason = 'Ingesting SIGNAL and correlatable intermediate order lifecycle events.';
+            } else if (signals > 0 || filled > 0 || created > 0 || failed > 0) {
                 pipelineVisibility = 'PARTIAL';
                 visibilityReason = 'Ingesting SIGNAL and ORDER_FILLED events via Freqtrade webhooks.';
+            }
+
+            // Two-Stage Correlation Model & Reconstruction Engine
+            const uniqueTradeIds = new Set<string>();
+            for (const audit of audits) {
+                const meta = audit.metadata as Record<string, any> || {};
+                const tId = meta.tradeId;
+                if (tId !== undefined && tId !== null && tId !== '') {
+                    uniqueTradeIds.add(String(tId));
+                }
+            }
+
+            const orderToTradeMap = new Map<string, string>();
+            let correlationConflicts = 0;
+
+            for (const audit of audits) {
+                const meta = audit.metadata as Record<string, any> || {};
+                const tId = meta.tradeId;
+                const oId = meta.orderId;
+
+                if (tId !== undefined && tId !== null && tId !== '' && oId !== undefined && oId !== null && oId !== '') {
+                    const tradeIdStr = String(tId);
+                    const orderIdStr = String(oId);
+
+                    if (orderToTradeMap.has(orderIdStr)) {
+                        const existingTradeId = orderToTradeMap.get(orderIdStr);
+                        if (existingTradeId !== tradeIdStr) {
+                            correlationConflicts++;
+                            console.warn(`[OperationsWatchdog] Correlation conflict: orderId ${orderIdStr} maps to both tradeId ${existingTradeId} and ${tradeIdStr}`);
+                        }
+                    } else {
+                        orderToTradeMap.set(orderIdStr, tradeIdStr);
+                    }
+                }
+            }
+
+            const tradeToOrdersMap = new Map<string, Set<string>>();
+            for (const [orderId, tradeId] of orderToTradeMap.entries()) {
+                if (!tradeToOrdersMap.has(tradeId)) {
+                    tradeToOrdersMap.set(tradeId, new Set<string>());
+                }
+                tradeToOrdersMap.get(tradeId)!.add(orderId);
+            }
+
+            let tradesWithLifecycleTelemetry = 0;
+            const totalTradesAnalyzed = uniqueTradeIds.size;
+
+            for (const tradeId of uniqueTradeIds) {
+                const associatedOrders = tradeToOrdersMap.get(tradeId) || new Set<string>();
+                
+                const tradeAudits = audits.filter(audit => {
+                    const meta = audit.metadata as Record<string, any> || {};
+                    const tId = meta.tradeId !== undefined && meta.tradeId !== null ? String(meta.tradeId) : undefined;
+                    const oId = meta.orderId !== undefined && meta.orderId !== null ? String(meta.orderId) : undefined;
+                    
+                    return tId === tradeId || (oId !== undefined && associatedOrders.has(oId));
+                });
+
+                tradeAudits.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+                const hasLifecycle = tradeAudits.some(audit => {
+                    const classification = audit.classification.toUpperCase();
+                    return [
+                        'ORDER_CREATED',
+                        'ORDER_SUBMITTED',
+                        'ORDER_SENT',
+                        'ORDER_ACKNOWLEDGED',
+                        'ORDER_ACK',
+                        'ORDER_OPEN',
+                        'ORDER_PARTIALLY_FILLED',
+                        'ORDER_CANCELLED',
+                        'EXCHANGE_REJECTED',
+                        'ORDER_FAILED'
+                    ].includes(classification);
+                });
+
+                if (hasLifecycle) {
+                    tradesWithLifecycleTelemetry++;
+                }
             }
 
             let eligibleSignalsCount = 0;
@@ -690,7 +809,7 @@ export class OperationsWatchdogService {
 
             // Confidence is strictly derived from telemetry quality, not trading outcome
             let confidenceScore: 'LOW' | 'MEDIUM' | 'HIGH' = 'LOW';
-            if (pipelineVisibility === 'PARTIAL') {
+            if (pipelineVisibility === 'PARTIAL' || pipelineVisibility === 'FULL') {
                 if (correlationQualityRatio >= 0.95) {
                     confidenceScore = 'HIGH';
                 } else if (correlationQualityRatio >= 0.70) {
@@ -976,6 +1095,12 @@ export class OperationsWatchdogService {
                     },
                     confidence: {
                         score: confidenceScore
+                    },
+                    lifecycle: {
+                        totalTradesAnalyzed,
+                        tradesWithLifecycleTelemetry,
+                        intermediateEventsObserved,
+                        correlationConflicts
                     },
                     analytics: {
                         unfilledSignalCount,

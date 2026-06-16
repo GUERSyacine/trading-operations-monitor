@@ -84,11 +84,43 @@ export class FreqtradeWebhookReceiver {
         const normalizedType = type.toLowerCase();
 
         // 1. Determine classification
-        let classification: 'SIGNAL' | 'ORDER_FILLED';
+        let classification:
+            | 'SIGNAL'
+            | 'ORDER_FILLED'
+            | 'ORDER_CREATED'
+            | 'ORDER_SUBMITTED'
+            | 'ORDER_ACKNOWLEDGED'
+            | 'ORDER_OPEN'
+            | 'ORDER_PARTIALLY_FILLED'
+            | 'ORDER_CANCELLED'
+            | 'EXCHANGE_REJECTED'
+            | 'ORDER_FAILED';
+
         if (normalizedType === 'entry' || normalizedType === 'exit') {
             classification = 'SIGNAL';
         } else if (normalizedType === 'entry_fill' || normalizedType === 'exit_fill') {
             classification = 'ORDER_FILLED';
+        } else if (
+            normalizedType === 'entry_cancel' ||
+            normalizedType === 'exit_cancel' ||
+            normalizedType === 'order_cancelled' ||
+            normalizedType === 'order_cancel'
+        ) {
+            classification = 'ORDER_CANCELLED';
+        } else if (normalizedType === 'order_created') {
+            classification = 'ORDER_CREATED';
+        } else if (normalizedType === 'order_submitted' || normalizedType === 'order_sent') {
+            classification = 'ORDER_SUBMITTED';
+        } else if (normalizedType === 'order_acknowledged' || normalizedType === 'order_ack') {
+            classification = 'ORDER_ACKNOWLEDGED';
+        } else if (normalizedType === 'order_open') {
+            classification = 'ORDER_OPEN';
+        } else if (normalizedType === 'order_partially_filled' || normalizedType === 'order_partial_fill') {
+            classification = 'ORDER_PARTIALLY_FILLED';
+        } else if (normalizedType === 'exchange_rejected') {
+            classification = 'EXCHANGE_REJECTED';
+        } else if (normalizedType === 'order_failed') {
+            classification = 'ORDER_FAILED';
         } else {
             // Ignore other webhook event types (or throw, but ignoring keeps it robust)
             console.warn(`[WebhookReceiver] Received unhandled webhook event type: ${type}`);

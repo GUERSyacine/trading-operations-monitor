@@ -584,6 +584,42 @@ async function runTests() {
         mockCreate = async (args: any) => args.data as any;
         (prisma.decisionAudit as any).findFirst = originalFindFirst;
 
+        // Scenario H: Full Visibility Foundation (Phase 3A)
+        console.log('   > Running Scenario H: Full Visibility Foundation...');
+        // Scenario H1: Complete lifecycle (SIGNAL -> ORDER_CREATED -> ORDER_SUBMITTED -> ORDER_ACKNOWLEDGED -> ORDER_OPEN -> PARTIALLY_FILLED -> FILLED)
+        // With Two-Stage Correlation: ORDER_OPEN, ORDER_ACKNOWLEDGED, and ORDER_PARTIALLY_FILLED are correlated by orderId (since they have orderId but no tradeId).
+        mockFindMany = async () => [
+            { classification: 'SIGNAL', createdAt: new Date(Date.now() - 50 * 1000), metadata: { tradeId: 't100', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_CREATED', createdAt: new Date(Date.now() - 40 * 1000), metadata: { tradeId: 't100', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_SUBMITTED', createdAt: new Date(Date.now() - 35 * 1000), metadata: { tradeId: 't100', orderId: 'ord100', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_ACKNOWLEDGED', createdAt: new Date(Date.now() - 30 * 1000), metadata: { orderId: 'ord100', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_OPEN', createdAt: new Date(Date.now() - 25 * 1000), metadata: { orderId: 'ord100', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_PARTIALLY_FILLED', createdAt: new Date(Date.now() - 20 * 1000), metadata: { orderId: 'ord100', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_FILLED', createdAt: new Date(Date.now() - 10 * 1000), metadata: { tradeId: 't100', orderId: 'ord100', symbol: 'BTCUSDT' } }
+        ];
+
+        mockAlerting.alertsSent = [];
+        const checkH1 = await watchdog.checkOrderPipeline(5 * 60 * 1000);
+        assert(checkH1.healthy === true, 'Scenario H1 should be healthy.');
+        assert(checkH1.metadata?.observability?.pipelineVisibility === 'FULL', 'Scenario H1 visibility should be FULL.');
+        assert(checkH1.metadata?.observability?.lifecycle?.totalTradesAnalyzed === 1, 'Scenario H1 should analyze 1 trade.');
+        assert(checkH1.metadata?.observability?.lifecycle?.tradesWithLifecycleTelemetry === 1, 'Scenario H1 should have lifecycle telemetry for 1 trade.');
+        assert(checkH1.metadata?.observability?.lifecycle?.intermediateEventsObserved === 5, 'Scenario H1 should observe 5 intermediate events (created, submitted, ack, open, partiallyFilled).');
+        assert(checkH1.metadata?.observability?.lifecycle?.correlationConflicts === 0, 'Scenario H1 should have 0 correlation conflicts.');
+
+        // Scenario H2: Correlation Conflict Detection
+        mockFindMany = async () => [
+            { classification: 'SIGNAL', createdAt: new Date(Date.now() - 50 * 1000), metadata: { tradeId: 't100', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_SUBMITTED', createdAt: new Date(Date.now() - 40 * 1000), metadata: { tradeId: 't100', orderId: 'ord100', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_SUBMITTED', createdAt: new Date(Date.now() - 30 * 1000), metadata: { tradeId: 't200', orderId: 'ord100', symbol: 'BTCUSDT' } } // Conflict! Same orderId, different tradeId
+        ];
+        const checkH2 = await watchdog.checkOrderPipeline(5 * 60 * 1000);
+        assert(checkH2.metadata?.observability?.lifecycle?.correlationConflicts === 1, 'Scenario H2 should register 1 correlation conflict.');
+
+        // Reset mocks
+        mockCreate = async (args: any) => args.data as any;
+        (prisma.decisionAudit as any).findFirst = originalFindFirst;
+
         // 4.6 checkExchangeAck
         // Scenario A: Responding normally (Healthy)
         mockFindMany = async () => [

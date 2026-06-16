@@ -1,7 +1,21 @@
 import { prisma } from '../../prisma';
 
 export interface NormalizedEvent {
-    classification: 'HEARTBEAT' | 'SIGNAL' | 'ORDER' | 'BROKER_CONNECTION' | 'MARKET_DATA' | 'ORDER_FILLED';
+    classification:
+        | 'HEARTBEAT'
+        | 'SIGNAL'
+        | 'ORDER'
+        | 'BROKER_CONNECTION'
+        | 'MARKET_DATA'
+        | 'ORDER_FILLED'
+        | 'ORDER_CREATED'
+        | 'ORDER_SUBMITTED'
+        | 'ORDER_ACKNOWLEDGED'
+        | 'ORDER_OPEN'
+        | 'ORDER_PARTIALLY_FILLED'
+        | 'ORDER_CANCELLED'
+        | 'EXCHANGE_REJECTED'
+        | 'ORDER_FAILED';
     systemRiskState?: string;
     rejectionReason?: string;
     metadata?: Record<string, any>;
