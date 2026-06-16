@@ -181,6 +181,45 @@ export class FreqtradeAdapter extends TradingAdapter {
     }
 
     /**
+     * HTTP POST wrapper targeting Freqtrade API with Basic Auth.
+     */
+    private async apiPostRequest(endpoint: string): Promise<any> {
+        const auth = Buffer.from(`${this.config.username}:${this.config.password}`).toString('base64');
+        
+        const base = this.config.baseUrl.endsWith('/') ? this.config.baseUrl.slice(0, -1) : this.config.baseUrl;
+        const url = `${base}${endpoint}`;
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Basic ${auth}`,
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Freqtrade API returned status code ${response.status}`);
+        }
+
+        return response.json();
+    }
+
+    /**
+     * Trigger active capital protection halt action.
+     */
+    async executeActiveHalt(type: 'STOP_BUY' | 'STOP'): Promise<void> {
+        const endpoint = type === 'STOP_BUY' ? '/stopbuy' : '/stop';
+        console.warn(`🚨 [FreqtradeAdapter] EXECUTING CAPITAL PROTECTION ACTIVE HALT: ${type} via ${endpoint}`);
+        try {
+            await this.apiPostRequest(endpoint);
+        } catch (error: any) {
+            console.error(`[FreqtradeAdapter] Failed to execute active halt ${type}:`, error?.message || error);
+            throw error; // Propagate error for testing/orchestration validation
+        }
+    }
+
+    /**
      * Poll and check market data feed freshness across whitelisted pairs.
      * Emits a single aggregated MARKET_DATA event.
      */

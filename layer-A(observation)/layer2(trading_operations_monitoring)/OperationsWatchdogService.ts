@@ -3,6 +3,7 @@ import { AlertingService } from '../../layer-D(notification)/alerting/AlertingSe
 import { HealthCheckResult } from '../types';
 import { MVP_CONFIG } from '../../mvpConfig';
 import { IncidentManager } from '../../layer-B(Assessement)/IncidentManager';
+import { FreqtradeAdapter } from '../../adapters/freqtrade/FreqtradeAdapter';
 
 export interface TradeMetrics {
     pnl: number;
@@ -11,16 +12,84 @@ export interface TradeMetrics {
     latencyMs: number;
 }
 
+export enum RiskViolationType {
+    LOW_CONFIDENCE = 'LOW_CONFIDENCE',
+    BACKWARD_TRANSITION = 'BACKWARD_TRANSITION',
+    TERMINAL_MUTATION = 'TERMINAL_MUTATION',
+    INVALID_TRANSITION = 'INVALID_TRANSITION'
+}
+
+export interface ProtectionAction {
+    execute(): Promise<void>;
+}
+
+export class AlertOnlyAction implements ProtectionAction {
+    constructor(
+        protected incidentManager: IncidentManager,
+        protected reason: string,
+        protected violationType: RiskViolationType
+    ) {}
+
+    async execute(): Promise<void> {
+        await this.incidentManager.reportIncident({
+            level: 'CRITICAL',
+            source: 'LIFECYCLE_INTEGRITY',
+            reason: `CRITICAL: Execution Risk Protection Triggered (Type: ${this.violationType}, Reason: ${this.reason})`
+        });
+    }
+}
+
+export class StopBuyAction extends AlertOnlyAction {
+    constructor(
+        incidentManager: IncidentManager,
+        reason: string,
+        violationType: RiskViolationType,
+        private adapter?: FreqtradeAdapter
+    ) {
+        super(incidentManager, reason, violationType);
+    }
+
+    override async execute(): Promise<void> {
+        await super.execute();
+        if (this.adapter) {
+            await this.adapter.executeActiveHalt('STOP_BUY');
+        }
+    }
+}
+
+export class StopAction extends AlertOnlyAction {
+    constructor(
+        incidentManager: IncidentManager,
+        reason: string,
+        violationType: RiskViolationType,
+        private adapter?: FreqtradeAdapter
+    ) {
+        super(incidentManager, reason, violationType);
+    }
+
+    override async execute(): Promise<void> {
+        await super.execute();
+        if (this.adapter) {
+            await this.adapter.executeActiveHalt('STOP');
+        }
+    }
+}
+
 export class OperationsWatchdogService {
     constructor(
         protected alertingService: AlertingService,
         protected incidentManager: IncidentManager,
+        protected freqtradeAdapter?: FreqtradeAdapter,
         protected allowedInactivityMs: number = MVP_CONFIG.OPERATIONS.HEARTBEAT_TIMEOUT_MS
     ) {}
 
     protected heartbeatFailures = 0;
     protected brokerFailures = 0;
     protected tradeFrequencyFailures = new Map<string, number>();
+
+    protected consecutiveConfidenceBreaches = 0;
+    protected consecutiveStructuralViolations = 0;
+    protected lastActiveViolationType?: RiskViolationType;
 
     protected enrichMetadata(source: string, customMeta: Record<string, any> = {}): Record<string, any> {
         return {
@@ -817,6 +886,7 @@ export class OperationsWatchdogService {
                 let hasSkipped = false;
                 let lastStateValue = -1;
                 let lastClassification: string | undefined = undefined;
+                let violationType: RiskViolationType | undefined = undefined;
                 const terminalStatesSeen = new Set<string>();
 
                 for (let i = 0; i < tradeAudits.length; i++) {
@@ -838,11 +908,13 @@ export class OperationsWatchdogService {
                         // 1. Invalid Transition: from terminal (6) back to active (< 6)
                         if (lastStateValue === 6 && stateVal < 6) {
                             isInvalid = true;
+                            violationType = RiskViolationType.INVALID_TRANSITION;
                         }
 
                         // 2. Backward Transition: from later state to earlier state
                         if (stateVal < lastStateValue) {
                             isInvalid = true;
+                            violationType = RiskViolationType.BACKWARD_TRANSITION;
                         }
 
                         // 3. Skipped Stage: jump in progression steps
@@ -861,6 +933,7 @@ export class OperationsWatchdogService {
                         terminalStatesSeen.add(classification);
                         if (terminalStatesSeen.size > 1) {
                             isInvalid = true;
+                            violationType = RiskViolationType.TERMINAL_MUTATION;
                         }
                     }
 
@@ -871,6 +944,9 @@ export class OperationsWatchdogService {
                 if (lastStateValue !== -1) {
                     if (isInvalid) {
                         invalidTrades++;
+                        if (violationType) {
+                            this.lastActiveViolationType = violationType;
+                        }
                     } else if (lastStateValue < 6) {
                         incompleteTrades++;
                     } else {
@@ -1250,6 +1326,77 @@ export class OperationsWatchdogService {
                 });
             } catch (persistErr: any) {
                 console.error('[OperationsWatchdog] Failed to persist observability metrics snapshot:', persistErr?.message || persistErr);
+            }
+
+            // --- Phase 3C: Execution Risk Protection Engine ---
+            let riskLevel: 'NORMAL' | 'WARNING' | 'CRITICAL' = 'NORMAL';
+            let activeViolation: RiskViolationType | undefined = undefined;
+            let activeReason = '';
+
+            // 1. Evaluate Confidence Degradation
+            if (lifecycleConfidenceScore < MVP_CONFIG.RISK_PROTECTION.CONFIDENCE_WARNING_THRESHOLD) {
+                this.consecutiveConfidenceBreaches++;
+            } else {
+                this.consecutiveConfidenceBreaches = 0;
+            }
+
+            // 2. Evaluate Structural Violations
+            if (invalidTrades > 0) {
+                this.consecutiveStructuralViolations++;
+            } else {
+                this.consecutiveStructuralViolations = 0;
+            }
+
+            // Determine Risk Level & Active Violation details
+            if (this.consecutiveStructuralViolations >= MVP_CONFIG.RISK_PROTECTION.CONSECUTIVE_STRUCTURAL_CRITICAL) {
+                riskLevel = 'CRITICAL';
+                activeViolation = this.lastActiveViolationType || RiskViolationType.INVALID_TRANSITION;
+                activeReason = `Sustained Structural Integrity Violations (${this.consecutiveStructuralViolations} consecutive cycles)`;
+            } else if (this.consecutiveConfidenceBreaches >= MVP_CONFIG.RISK_PROTECTION.CONSECUTIVE_CONFIDENCE_CRITICAL) {
+                riskLevel = 'CRITICAL';
+                activeViolation = RiskViolationType.LOW_CONFIDENCE;
+                activeReason = `Sustained Confidence Score Degradation (${this.consecutiveConfidenceBreaches} consecutive cycles under threshold ${MVP_CONFIG.RISK_PROTECTION.CONFIDENCE_WARNING_THRESHOLD})`;
+            } else if (this.consecutiveStructuralViolations >= MVP_CONFIG.RISK_PROTECTION.CONSECUTIVE_STRUCTURAL_WARNING) {
+                riskLevel = 'WARNING';
+                activeViolation = this.lastActiveViolationType || RiskViolationType.INVALID_TRANSITION;
+                activeReason = `Structural Integrity Violation observed (${this.consecutiveStructuralViolations} consecutive cycle)`;
+            } else if (this.consecutiveConfidenceBreaches >= MVP_CONFIG.RISK_PROTECTION.CONSECUTIVE_CONFIDENCE_WARNING) {
+                riskLevel = 'WARNING';
+                activeViolation = RiskViolationType.LOW_CONFIDENCE;
+                activeReason = `Confidence Score Degradation observed (${this.consecutiveConfidenceBreaches} consecutive cycles)`;
+            }
+
+            // Execute Risk Escalation Actions
+            if (riskLevel === 'CRITICAL' && activeViolation) {
+                console.error(`🚨 [OperationsWatchdog] CRITICAL RISK BREACH: ${activeReason} (${activeViolation})`);
+                
+                // Resolve ProtectionAction
+                let action: ProtectionAction;
+                const protectionMode = MVP_CONFIG.RISK_PROTECTION.PROTECTION_MODE;
+
+                if (protectionMode === 'STOP_BUY') {
+                    action = new StopBuyAction(this.incidentManager, activeReason, activeViolation, this.freqtradeAdapter);
+                } else if (protectionMode === 'STOP') {
+                    action = new StopAction(this.incidentManager, activeReason, activeViolation, this.freqtradeAdapter);
+                } else {
+                    action = new AlertOnlyAction(this.incidentManager, activeReason, activeViolation);
+                }
+
+                try {
+                    await action.execute();
+                } catch (actionErr: any) {
+                    console.error('[OperationsWatchdog] Failed to execute ProtectionAction:', actionErr.message || actionErr);
+                }
+            } else if (riskLevel === 'WARNING' && activeViolation) {
+                console.warn(`⚠️ [OperationsWatchdog] RISK WARNING: ${activeReason} (${activeViolation})`);
+                await this.incidentManager.reportIncident({
+                    level: 'HIGH',
+                    source: 'LIFECYCLE_INTEGRITY',
+                    reason: `WARNING: Execution Risk Warning (Type: ${activeViolation}, Reason: ${activeReason})`
+                });
+            } else {
+                // Restore state: Resolve incident if active
+                await this.incidentManager.resolveIncidentBySource('LIFECYCLE_INTEGRITY');
             }
 
             return returnVal;

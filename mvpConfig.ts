@@ -48,5 +48,16 @@ export const MVP_CONFIG = {
         LATENCY_THRESHOLD_MS:      envNumber(process.env.OPS_LATENCY_THRESHOLD_MS,      1 * SECOND),
         LATENCY_ROLLING_COUNT:     envNumber(process.env.OPS_LATENCY_ROLLING_COUNT,     5),
         SIGNAL_FILL_TIMEOUT_MS:    envNumber(process.env.OPS_SIGNAL_FILL_TIMEOUT_MS,    1 * HOUR)
+    },
+    RISK_PROTECTION: {
+        PROTECTION_MODE: (process.env.RISK_PROTECTION_MODE || 'ALERT_ONLY') as CapitalProtectionMode,
+        CONFIDENCE_WARNING_THRESHOLD: envNumber(process.env.RISK_CONFIDENCE_WARNING, 0.95),
+        CONFIDENCE_CRITICAL_THRESHOLD: envNumber(process.env.RISK_CONFIDENCE_CRITICAL, 0.80),
+        CONSECUTIVE_CONFIDENCE_WARNING: envNumber(process.env.RISK_CONFIDENCE_BREACHES_WARNING, 3),
+        CONSECUTIVE_CONFIDENCE_CRITICAL: envNumber(process.env.RISK_CONFIDENCE_BREACHES_CRITICAL, 5),
+        CONSECUTIVE_STRUCTURAL_WARNING: envNumber(process.env.RISK_STRUCTURAL_BREACHES_WARNING, 1),
+        CONSECUTIVE_STRUCTURAL_CRITICAL: envNumber(process.env.RISK_STRUCTURAL_BREACHES_CRITICAL, 3)
     }
 };
+
+export type CapitalProtectionMode = 'ALERT_ONLY' | 'STOP_BUY' | 'STOP';

@@ -11,6 +11,7 @@ import { AlertingService } from '../layer-D(notification)/alerting/AlertingServi
 import { prisma } from '../prisma';
 import { FreqtradeWebhookReceiver } from '../layer-A(observation)/layer1(infrastructure_monitoring)/FreqtradeWebhookReceiver';
 import { EventPersistenceService } from '../adapters/base/EventPersistenceService';
+import { MVP_CONFIG } from '../mvpConfig';
 
 async function runTests() {
     console.log('====================================================');
@@ -118,6 +119,13 @@ async function runTests() {
             }
         };
 
+        let mockHaltCalled: 'STOP_BUY' | 'STOP' | null = null;
+        const mockAdapter: any = {
+            async executeActiveHalt(type: 'STOP_BUY' | 'STOP') {
+                mockHaltCalled = type;
+            }
+        };
+
         const mockIncidentManager: any = {
             incidentsReported: [] as any[],
             incidentsResolved: [] as any[],
@@ -129,7 +137,7 @@ async function runTests() {
             }
         };
 
-        const watchdog = new OperationsWatchdogService(mockAlerting, mockIncidentManager as any, 5 * 60 * 1000);
+        const watchdog = new OperationsWatchdogService(mockAlerting, mockIncidentManager as any, mockAdapter as any, 5 * 60 * 1000);
 
         // Dynamically override prisma.decisionAudit query handlers
         let mockFindFirst: any = async () => null;
@@ -676,6 +684,87 @@ async function runTests() {
         const checkI5 = await watchdog.checkOrderPipeline(5 * 60 * 1000);
         assert(checkI5.metadata?.observability?.lifecycle?.invalidTrades === 1, 'Scenario I5: invalidTrades should be 1.');
         assert(checkI5.metadata?.observability?.lifecycle?.validTrades === 0, 'Scenario I5: validTrades should be 0.');
+
+        // Scenario J: Execution Risk Protection (Phase 3C)
+        console.log('   > Running Scenario J: Execution Risk Protection...');
+
+        // Test J1: Mode = ALERT_ONLY, Structural Violation Warning (1 cycle) & Critical (3 cycles)
+        MVP_CONFIG.RISK_PROTECTION.PROTECTION_MODE = 'ALERT_ONLY';
+        (watchdog as any).consecutiveConfidenceBreaches = 0;
+        (watchdog as any).consecutiveStructuralViolations = 0;
+        mockHaltCalled = null;
+        mockIncidentManager.incidentsReported = [];
+        mockIncidentManager.incidentsResolved = [];
+
+        // Run 1: Structural violation (invalidTrades > 0) -> Warning
+        mockFindMany = async () => [
+            { classification: 'SIGNAL', createdAt: new Date(Date.now() - 50 * 1000), metadata: { tradeId: 't100', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_FILLED', createdAt: new Date(Date.now() - 40 * 1000), metadata: { tradeId: 't100', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_OPEN', createdAt: new Date(Date.now() - 30 * 1000), metadata: { tradeId: 't100', symbol: 'BTCUSDT' } } // backward transition
+        ];
+
+        const checkJ1_1 = await watchdog.checkOrderPipeline(5 * 60 * 1000);
+        assert((watchdog as any).consecutiveStructuralViolations === 1, 'Run 1: consecutiveStructuralViolations should be 1.');
+        assert(mockIncidentManager.incidentsReported.length === 1, 'Run 1: Should report 1 warning incident.');
+        assert(mockIncidentManager.incidentsReported[0].level === 'HIGH', 'Run 1: Incident level should be HIGH.');
+        assert(mockIncidentManager.incidentsReported[0].reason.includes('BACKWARD_TRANSITION'), 'Run 1: Reason should include BACKWARD_TRANSITION.');
+        assert(mockHaltCalled === null, 'Run 1: No halt called in ALERT_ONLY mode.');
+
+        // Run 2: Structural violation
+        await watchdog.checkOrderPipeline(5 * 60 * 1000);
+        assert((watchdog as any).consecutiveStructuralViolations === 2, 'Run 2: consecutiveStructuralViolations should be 2.');
+
+        // Run 3: Structural violation -> Critical
+        await watchdog.checkOrderPipeline(5 * 60 * 1000);
+        assert((watchdog as any).consecutiveStructuralViolations === 3, 'Run 3: consecutiveStructuralViolations should be 3.');
+        assert(mockIncidentManager.incidentsReported.some((i: any) => i.level === 'CRITICAL' && i.reason.includes('Sustained Structural Integrity Violations')), 'Run 3: Critical incident reported.');
+        assert(mockHaltCalled === null, 'Run 3: No halt called since PROTECTION_MODE is ALERT_ONLY.');
+
+        // Test J2: Mode = STOP_BUY, Structural Violation triggers StopBuyAction
+        MVP_CONFIG.RISK_PROTECTION.PROTECTION_MODE = 'STOP_BUY';
+        (watchdog as any).consecutiveConfidenceBreaches = 0;
+        (watchdog as any).consecutiveStructuralViolations = 2; // pre-set to 2 to trigger on next run
+        mockHaltCalled = null;
+        mockIncidentManager.incidentsReported = [];
+
+        await watchdog.checkOrderPipeline(5 * 60 * 1000);
+        assert((watchdog as any).consecutiveStructuralViolations === 3, 'J2 Run: consecutiveStructuralViolations should reach 3.');
+        assert(mockHaltCalled === 'STOP_BUY', 'J2 Run: mockHaltCalled should be STOP_BUY.');
+        assert(mockIncidentManager.incidentsReported.some((i: any) => i.level === 'CRITICAL'), 'J2 Run: Critical incident reported.');
+
+        // Test J3: Mode = STOP, Structural Violation triggers StopAction
+        MVP_CONFIG.RISK_PROTECTION.PROTECTION_MODE = 'STOP';
+        (watchdog as any).consecutiveConfidenceBreaches = 0;
+        (watchdog as any).consecutiveStructuralViolations = 2; // pre-set to 2
+        mockHaltCalled = null;
+        mockIncidentManager.incidentsReported = [];
+
+        await watchdog.checkOrderPipeline(5 * 60 * 1000);
+        assert((watchdog as any).consecutiveStructuralViolations === 3, 'J3 Run: consecutiveStructuralViolations should reach 3.');
+        assert(mockHaltCalled === 'STOP', 'J3 Run: mockHaltCalled should be STOP.');
+
+        // Test J4: Confidence Breach Escalation (5 cycles)
+        MVP_CONFIG.RISK_PROTECTION.PROTECTION_MODE = 'STOP_BUY';
+        (watchdog as any).consecutiveConfidenceBreaches = 4; // pre-set to 4 to trigger on next run
+        (watchdog as any).consecutiveStructuralViolations = 0; // avoid structural trigger
+        mockHaltCalled = null;
+        mockIncidentManager.incidentsReported = [];
+
+        await watchdog.checkOrderPipeline(5 * 60 * 1000);
+        assert((watchdog as any).consecutiveConfidenceBreaches === 5, 'J4 Run: consecutiveConfidenceBreaches should reach 5.');
+        assert(mockHaltCalled === 'STOP_BUY', 'J4 Run: mockHaltCalled should be STOP_BUY due to confidence breach.');
+        assert(mockIncidentManager.incidentsReported.some((i: any) => i.level === 'CRITICAL' && i.reason.includes('LOW_CONFIDENCE')), 'J4 Run: Critical incident reported with LOW_CONFIDENCE reason.');
+
+        // Test J5: Recovery
+        mockFindMany = async () => [
+            { classification: 'SIGNAL', createdAt: new Date(Date.now() - 50 * 1000), metadata: { tradeId: 't100', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_FILLED', createdAt: new Date(Date.now() - 10 * 1000), metadata: { tradeId: 't100', symbol: 'BTCUSDT' } }
+        ];
+        mockIncidentManager.incidentsResolved = [];
+        await watchdog.checkOrderPipeline(5 * 60 * 1000);
+        assert((watchdog as any).consecutiveConfidenceBreaches === 0, 'Recovery: confidence breaches reset to 0.');
+        assert((watchdog as any).consecutiveStructuralViolations === 0, 'Recovery: structural violations reset to 0.');
+        assert(mockIncidentManager.incidentsResolved.some((r: any) => r.source === 'LIFECYCLE_INTEGRITY'), 'Recovery: resolves LIFECYCLE_INTEGRITY incident.');
 
         // Reset mocks
         mockCreate = async (args: any) => args.data as any;

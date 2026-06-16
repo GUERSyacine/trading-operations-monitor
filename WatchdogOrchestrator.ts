@@ -7,6 +7,7 @@ import { RuntimeMonitorService } from './runtime/RuntimeMonitorService';
 import { EventPersistenceService } from './adapters/base/EventPersistenceService';
 import { FreqtradeAdapter } from './adapters/freqtrade/FreqtradeAdapter';
 import { FreqtradeWebhookReceiver } from './layer-A(observation)/layer1(infrastructure_monitoring)/FreqtradeWebhookReceiver';
+import { MVP_CONFIG } from './mvpConfig';
 
 export class WatchdogOrchestrator {
     private alertingService: AlertingService;
@@ -33,8 +34,6 @@ export class WatchdogOrchestrator {
         this.alertingService = new AlertingService();
         this.incidentManager = new IncidentManager(this.alertingService);
         this.infraService = new InfrastructureWatchdogService(this.alertingService);
-        this.opsService = new OperationsWatchdogService(this.alertingService, this.incidentManager);
-        this.runtimeService = new RuntimeMonitorService(this.alertingService);
 
         const ftUrl = process.env.FREQTRADE_API_URL || 'http://localhost:8080/api/v1';
         const ftUser = process.env.FREQTRADE_API_USERNAME || 'freqtrader';
@@ -51,6 +50,14 @@ export class WatchdogOrchestrator {
             },
             persistence
         );
+
+        this.opsService = new OperationsWatchdogService(
+            this.alertingService,
+            this.incidentManager,
+            this.freqtradeAdapter,
+            MVP_CONFIG.OPERATIONS.HEARTBEAT_TIMEOUT_MS
+        );
+        this.runtimeService = new RuntimeMonitorService(this.alertingService);
         this.webhookReceiver = new FreqtradeWebhookReceiver(persistence);
     }
 
