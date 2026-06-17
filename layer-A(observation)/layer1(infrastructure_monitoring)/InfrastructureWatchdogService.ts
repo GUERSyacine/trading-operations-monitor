@@ -5,7 +5,7 @@ import { prisma } from '../../prisma';
 import { AlertingService } from '../../layer-D(notification)/alerting/AlertingService';
 import { MVP_CONFIG } from '../../mvpConfig';
 
-import { HealthCheckResult } from '../types';
+import { HealthCheckResult, HealthNode, HealthStatus } from '../types';
 
 export class InfrastructureWatchdogService {
     constructor(
@@ -815,5 +815,48 @@ export class InfrastructureWatchdogService {
             this.checkExchangeReachability(),
             this.checkDnsResolution()
         ]);
+    }
+
+    getInfrastructureSubtree(results: HealthCheckResult[]): HealthNode {
+        const checkedAt = new Date();
+        const sourceMap: Record<string, { id: string, name: string }> = {
+            'VM': { id: 'infra.vm_health', name: 'VM Health' },
+            'DOCKER': { id: 'infra.docker_health', name: 'Docker Health' },
+            'FREQTRADE': { id: 'infra.freqtrade_api', name: 'Freqtrade API' },
+            'NETWORK': { id: 'infra.host_network', name: 'Host Network' },
+            'EXCHANGE': { id: 'infra.exchange_reachability', name: 'Exchange Reachability' },
+            'DNS': { id: 'infra.dns_resolution', name: 'DNS Resolution' }
+        };
+
+        const children: HealthNode[] = results.map(r => {
+            const info = sourceMap[r.source] || { id: `infra.${r.source.toLowerCase()}`, name: r.source };
+            const status: HealthStatus = r.healthy 
+                ? 'HEALTHY' 
+                : (r.severity === 'WARNING' ? 'WARNING' : 'CRITICAL');
+            return {
+                id: info.id,
+                name: info.name,
+                status,
+                message: r.message,
+                checkedAt: r.checkedAt,
+                metrics: r.metadata
+            };
+        });
+
+        // Determine parent status: CRITICAL > WARNING > HEALTHY
+        let parentStatus: HealthStatus = 'HEALTHY';
+        if (children.some(c => c.status === 'CRITICAL')) {
+            parentStatus = 'CRITICAL';
+        } else if (children.some(c => c.status === 'WARNING')) {
+            parentStatus = 'WARNING';
+        }
+
+        return {
+            id: 'infrastructure',
+            name: 'Infrastructure',
+            status: parentStatus,
+            checkedAt,
+            children
+        };
     }
 }

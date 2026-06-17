@@ -257,4 +257,13 @@ export class IncidentManager {
             }
         }
     }
+
+    getActiveIncidentsCount(): number {
+        return this.globalIncidents.size + Object.keys(this.state.symbols).length;
+    }
+
+    isHalted(): boolean {
+        const lifecycleInc = this.globalIncidents.get('LIFECYCLE_INTEGRITY');
+        return !!(lifecycleInc && lifecycleInc.level === 'CRITICAL');
+    }
 }

@@ -8,6 +8,7 @@ import { ExecutionIntelligenceService } from '../layer-A(observation)/layer3(mar
 import { IncidentManager } from '../layer-B(Assessement)/IncidentManager';
 import { ReportingService } from '../layer-C(reporting)/ReportingService';
 import { AlertingService } from '../layer-D(notification)/alerting/AlertingService';
+import { HealthTreeService } from '../layer-B(Assessement)/HealthTreeService';
 import { prisma } from '../prisma';
 import { FreqtradeWebhookReceiver } from '../layer-A(observation)/layer1(infrastructure_monitoring)/FreqtradeWebhookReceiver';
 import { EventPersistenceService } from '../adapters/base/EventPersistenceService';
@@ -134,6 +135,28 @@ async function runTests() {
             },
             async resolveIncidentBySource(source: string, symbol: string | null = null) {
                 this.incidentsResolved.push({ source, symbol });
+            },
+            getActiveIncidentsCount() {
+                const active = new Set<string>();
+                for (const inc of this.incidentsReported) {
+                    active.add(inc.source);
+                }
+                for (const res of this.incidentsResolved) {
+                    active.delete(res.source);
+                }
+                return active.size;
+            },
+            isHalted() {
+                const active = new Set<string>();
+                for (const inc of this.incidentsReported) {
+                    if (inc.level === 'CRITICAL') {
+                        active.add(inc.source);
+                    }
+                }
+                for (const res of this.incidentsResolved) {
+                    active.delete(res.source);
+                }
+                return active.has('LIFECYCLE_INTEGRITY');
             }
         };
 
@@ -1157,6 +1180,78 @@ async function runTests() {
         assert(allResults.every(r => r.metadata?.serviceName === 'InfrastructureWatchdogService'), 'All infra check results include serviceName.');
         assert(allResults.every(r => r.metadata?.environment !== undefined), 'All infra check results include environment.');
         assert(allResults.every(r => r.metadata?.checkId !== undefined), 'All infra check results include checkId.');
+
+        // Scenario K: Hierarchical System Health Tree (Phase 3D)
+        console.log('   > Running Scenario K: Hierarchical System Health Tree...');
+        
+        const healthTreeService = new HealthTreeService(
+            mockIncidentManager as any,
+            infraWatchdog,
+            watchdog
+        );
+
+        // Run K1: Healthy system state
+        mockIncidentManager.incidentsReported = [];
+        mockIncidentManager.incidentsResolved = [];
+        (watchdog as any).lastPipelineMetadata = {
+            visibility: { level: 'FULL', coverageRatio: 1.0 },
+            lifecycle: { lifecycleConfidenceScore: 1.0, invalidTrades: 0 }
+        };
+
+        const treeHealthy = await healthTreeService.getSystemHealthTree(allResults, opsResults);
+        assert(treeHealthy.id === 'global', 'K1: Root node ID should be global.');
+        assert(treeHealthy.status === 'HEALTHY', 'K1: Root status should be HEALTHY when all subtrees are healthy.');
+        assert(treeHealthy.children?.length === 4, 'K1: Root should have exactly 4 children.');
+
+        const infraNode = treeHealthy.children?.find(c => c.id === 'infrastructure');
+        assert(infraNode !== undefined, 'K1: Should find infrastructure parent node.');
+        assert(infraNode?.status === 'HEALTHY', 'K1: Infrastructure parent should be HEALTHY.');
+        assert(infraNode?.children?.length === 6, 'K1: Infrastructure subtree should have 6 children.');
+
+        const opsNode = treeHealthy.children?.find(c => c.id === 'operations');
+        assert(opsNode !== undefined, 'K1: Should find operations parent node.');
+        assert(opsNode?.status === 'HEALTHY', 'K1: Operations parent should be HEALTHY.');
+        assert(opsNode?.children?.length === 3, 'K1: Operations subtree should have 3 sub-parents.');
+
+        const pipelineNode = treeHealthy.children?.find(c => c.id === 'execution_pipeline');
+        assert(pipelineNode !== undefined, 'K1: Should find execution pipeline parent node.');
+        assert(pipelineNode?.status === 'HEALTHY', 'K1: Execution pipeline parent should be HEALTHY.');
+
+        const protectionNode = treeHealthy.children?.find(c => c.id === 'protection');
+        assert(protectionNode !== undefined, 'K1: Should find protection parent node.');
+        assert(protectionNode?.status === 'HEALTHY', 'K1: Protection parent should be HEALTHY.');
+        assert(!!protectionNode?.children?.some(c => c.id === 'protection.mode'), 'K1: Includes Protection Mode node.');
+
+        // Run K2: Critical in Infrastructure DNS propagates up
+        const degradedInfraResults = allResults.map(r => r.source === 'DNS' ? { ...r, healthy: false, severity: 'CRITICAL' as const, message: 'DNS Fail' } : r);
+        const treeDegradedInfra = await healthTreeService.getSystemHealthTree(degradedInfraResults, opsResults);
+        
+        const infraNodeDegraded = treeDegradedInfra.children?.find(c => c.id === 'infrastructure');
+        assert(infraNodeDegraded?.status === 'CRITICAL', 'K2: Infrastructure parent status should propagate to CRITICAL.');
+        const dnsNodeDegraded = infraNodeDegraded?.children?.find(c => c.id === 'infra.dns_resolution');
+        assert(dnsNodeDegraded?.status === 'CRITICAL', 'K2: DNS child node status should be CRITICAL.');
+        assert(dnsNodeDegraded?.message === 'DNS Fail', 'K2: DNS child node message is captured.');
+        assert(treeDegradedInfra.status === 'CRITICAL', 'K2: Global root status should propagate to CRITICAL.');
+
+        // Run K3: Warning in VM Health propagates to Warning parent
+        const warningInfraResults = allResults.map(r => r.source === 'VM' ? { ...r, healthy: false, severity: 'WARNING' as const, message: 'High memory usage' } : r);
+        const treeWarningInfra = await healthTreeService.getSystemHealthTree(warningInfraResults, opsResults);
+        const infraNodeWarning = treeWarningInfra.children?.find(c => c.id === 'infrastructure');
+        assert(infraNodeWarning?.status === 'WARNING', 'K3: Infrastructure parent status should propagate to WARNING.');
+        assert(treeWarningInfra.status === 'WARNING', 'K3: Global root status should propagate to WARNING.');
+
+        // Run K4: Active Incident & Halt State in Protection Subtree
+        mockIncidentManager.incidentsReported = [
+            { level: 'CRITICAL', source: 'LIFECYCLE_INTEGRITY', reason: 'Structural integrity failure' }
+        ];
+        const treeHalted = await healthTreeService.getSystemHealthTree(allResults, opsResults);
+        const protectionNodeHalted = treeHalted.children?.find(c => c.id === 'protection');
+        assert(protectionNodeHalted?.status === 'CRITICAL', 'K4: Protection subtree propagates to CRITICAL on active halt.');
+        assert(treeHalted.status === 'CRITICAL', 'K4: Global root status propagates to CRITICAL on active halt.');
+        
+        const haltStateNode = protectionNodeHalted?.children?.find(c => c.id === 'protection.active_halt_state');
+        assert(haltStateNode?.status === 'CRITICAL', 'K4: halt state child status is CRITICAL.');
+        assert(haltStateNode?.message === 'Halt: ACTIVE', 'K4: halt state child message shows ACTIVE.');
     } catch (e: any) {
         console.error('❌ Operations Watchdog Service test crashed:', e.message || e);
     }

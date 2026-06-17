@@ -27,3 +27,15 @@ export interface HealthCheckResult {
     message?: string;
     metadata?: Record<string, any>;
 }
+
+export type HealthStatus = 'HEALTHY' | 'WARNING' | 'CRITICAL';
+
+export interface HealthNode {
+    id: string;
+    name: string;
+    status: HealthStatus;
+    message?: string;
+    checkedAt: Date;
+    children?: HealthNode[];
+    metrics?: Record<string, any>;
+}

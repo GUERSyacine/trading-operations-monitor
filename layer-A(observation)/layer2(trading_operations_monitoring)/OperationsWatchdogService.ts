@@ -1,6 +1,6 @@
 import { prisma } from '../../prisma';
 import { AlertingService } from '../../layer-D(notification)/alerting/AlertingService';
-import { HealthCheckResult } from '../types';
+import { HealthCheckResult, HealthNode, HealthStatus } from '../types';
 import { MVP_CONFIG } from '../../mvpConfig';
 import { IncidentManager } from '../../layer-B(Assessement)/IncidentManager';
 import { FreqtradeAdapter } from '../../adapters/freqtrade/FreqtradeAdapter';
@@ -90,6 +90,7 @@ export class OperationsWatchdogService {
     protected consecutiveConfidenceBreaches = 0;
     protected consecutiveStructuralViolations = 0;
     protected lastActiveViolationType?: RiskViolationType;
+    protected lastPipelineMetadata: any = null;
 
     protected enrichMetadata(source: string, customMeta: Record<string, any> = {}): Record<string, any> {
         return {
@@ -1301,6 +1302,7 @@ export class OperationsWatchdogService {
                     }
                 }
             };
+            this.lastPipelineMetadata = metadata;
 
             const returnVal: HealthCheckResult = {
                 source: 'ORDER_PIPELINE',
@@ -1610,5 +1612,171 @@ export class OperationsWatchdogService {
             this.checkExchangeAck(),
             this.checkLatency(strategyId)
         ]);
+    }
+
+    getOperationsSubtree(results: HealthCheckResult[]): HealthNode {
+        const checkedAt = new Date();
+
+        const findResult = (sources: string[]): HealthCheckResult | undefined => {
+            return results.find(r => sources.includes(r.source));
+        };
+
+        const mapToNode = (id: string, name: string, sources: string[]): HealthNode => {
+            const res = findResult(sources);
+            if (!res) {
+                return {
+                    id,
+                    name,
+                    status: 'HEALTHY',
+                    checkedAt,
+                    message: 'No recent checks executed.'
+                };
+            }
+            const status: HealthStatus = res.healthy 
+                ? 'HEALTHY' 
+                : (res.severity === 'WARNING' ? 'WARNING' : 'CRITICAL');
+            return {
+                id,
+                name,
+                status,
+                message: res.message,
+                checkedAt: res.checkedAt,
+                metrics: res.metadata
+            };
+        };
+
+        // 1. Bot Aliveness Sub-Parent
+        const heartbeatNode = mapToNode('ops.aliveness.heartbeat', 'Heartbeat Freshness', ['HEARTBEAT']);
+        const strategyNode = mapToNode('ops.aliveness.strategy_activity', 'Strategy Activity', ['TRADE_FREQUENCY', 'LATENCY']);
+        const alivenessChildren = [heartbeatNode, strategyNode];
+        let alivenessStatus: HealthStatus = 'HEALTHY';
+        if (alivenessChildren.some(c => c.status === 'CRITICAL')) {
+            alivenessStatus = 'CRITICAL';
+        } else if (alivenessChildren.some(c => c.status === 'WARNING')) {
+            alivenessStatus = 'WARNING';
+        }
+        const botAlivenessParent: HealthNode = {
+            id: 'ops.bot_aliveness',
+            name: 'Bot Aliveness',
+            status: alivenessStatus,
+            checkedAt,
+            children: alivenessChildren
+        };
+
+        // 2. Broker Connection Sub-Parent
+        const brokerConnNode = mapToNode('ops.broker.connection_status', 'Connection Status', ['BROKER_CONNECTION']);
+        const orderFlowNode = mapToNode('ops.broker.order_flow', 'Order Flow & ACK', ['EXCHANGE_ACK']);
+        const brokerChildren = [brokerConnNode, orderFlowNode];
+        let brokerStatus: HealthStatus = 'HEALTHY';
+        if (brokerChildren.some(c => c.status === 'CRITICAL')) {
+            brokerStatus = 'CRITICAL';
+        } else if (brokerChildren.some(c => c.status === 'WARNING')) {
+            brokerStatus = 'WARNING';
+        }
+        const brokerConnectionParent: HealthNode = {
+            id: 'ops.broker_connection',
+            name: 'Broker Connection',
+            status: brokerStatus,
+            checkedAt,
+            children: brokerChildren
+        };
+
+        // 3. Market Data Feed Sub-Parent
+        const marketFeedNode = mapToNode('ops.market.feed_freshness', 'Feed Freshness', ['MARKET_DATA']);
+        const marketChildren = [marketFeedNode];
+        let marketStatus: HealthStatus = 'HEALTHY';
+        if (marketChildren.some(c => c.status === 'CRITICAL')) {
+            marketStatus = 'CRITICAL';
+        } else if (marketChildren.some(c => c.status === 'WARNING')) {
+            marketStatus = 'WARNING';
+        }
+        const marketDataFeedParent: HealthNode = {
+            id: 'ops.market_data_feed',
+            name: 'Market Data Feed',
+            status: marketStatus,
+            checkedAt,
+            children: marketChildren
+        };
+
+        const children = [botAlivenessParent, brokerConnectionParent, marketDataFeedParent];
+
+        let parentStatus: HealthStatus = 'HEALTHY';
+        if (children.some(c => c.status === 'CRITICAL')) {
+            parentStatus = 'CRITICAL';
+        } else if (children.some(c => c.status === 'WARNING')) {
+            parentStatus = 'WARNING';
+        }
+
+        return {
+            id: 'operations',
+            name: 'Operations',
+            status: parentStatus,
+            checkedAt,
+            children
+        };
+    }
+
+    getExecutionPipelineSubtree(): HealthNode {
+        const checkedAt = new Date();
+        const meta = this.lastPipelineMetadata;
+        
+        const visibilityLevel = meta?.visibility?.level || 'NONE';
+        const lifecycleConfidence = meta?.lifecycle?.lifecycleConfidenceScore ?? 1.0;
+        const invalidTrades = meta?.lifecycle?.invalidTrades ?? 0;
+
+        // Pipeline Visibility Node
+        let visibilityStatus: HealthStatus = 'HEALTHY';
+        if (visibilityLevel === 'NONE') {
+            visibilityStatus = 'CRITICAL';
+        } else if (visibilityLevel === 'PARTIAL') {
+            visibilityStatus = 'WARNING';
+        }
+
+        const visibilityNode: HealthNode = {
+            id: 'execution.pipeline_visibility',
+            name: 'Pipeline Visibility',
+            status: visibilityStatus,
+            message: `Visibility depth: ${visibilityLevel}`,
+            checkedAt,
+            metrics: meta?.visibility || { level: visibilityLevel }
+        };
+
+        // Lifecycle Integrity Node
+        let integrityStatus: HealthStatus = 'HEALTHY';
+        if (invalidTrades > 0 || this.consecutiveStructuralViolations > 0) {
+            integrityStatus = this.consecutiveStructuralViolations >= MVP_CONFIG.RISK_PROTECTION.CONSECUTIVE_STRUCTURAL_CRITICAL 
+                ? 'CRITICAL' 
+                : 'WARNING';
+        } else if (lifecycleConfidence < MVP_CONFIG.RISK_PROTECTION.CONFIDENCE_WARNING_THRESHOLD) {
+            integrityStatus = this.consecutiveConfidenceBreaches >= MVP_CONFIG.RISK_PROTECTION.CONSECUTIVE_CONFIDENCE_CRITICAL
+                ? 'CRITICAL'
+                : 'WARNING';
+        }
+
+        const integrityNode: HealthNode = {
+            id: 'execution.lifecycle_integrity',
+            name: 'Lifecycle Integrity',
+            status: integrityStatus,
+            message: `Confidence Score: ${(lifecycleConfidence * 100).toFixed(1)}% | Invalid trades: ${invalidTrades}`,
+            checkedAt,
+            metrics: meta?.lifecycle || { lifecycleConfidenceScore: lifecycleConfidence, invalidTrades }
+        };
+
+        const children = [visibilityNode, integrityNode];
+
+        let parentStatus: HealthStatus = 'HEALTHY';
+        if (children.some(c => c.status === 'CRITICAL')) {
+            parentStatus = 'CRITICAL';
+        } else if (children.some(c => c.status === 'WARNING')) {
+            parentStatus = 'WARNING';
+        }
+
+        return {
+            id: 'execution_pipeline',
+            name: 'Execution Pipeline',
+            status: parentStatus,
+            checkedAt,
+            children
+        };
     }
 }
