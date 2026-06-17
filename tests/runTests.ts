@@ -1194,8 +1194,10 @@ async function runTests() {
         mockIncidentManager.incidentsReported = [];
         mockIncidentManager.incidentsResolved = [];
         (watchdog as any).lastPipelineMetadata = {
-            visibility: { level: 'FULL', coverageRatio: 1.0 },
-            lifecycle: { lifecycleConfidenceScore: 1.0, invalidTrades: 0 }
+            observability: {
+                pipelineVisibility: 'FULL',
+                lifecycle: { lifecycleConfidenceScore: 1.0, invalidTrades: 0 }
+            }
         };
 
         const treeHealthy = await healthTreeService.getSystemHealthTree(allResults, opsResults);

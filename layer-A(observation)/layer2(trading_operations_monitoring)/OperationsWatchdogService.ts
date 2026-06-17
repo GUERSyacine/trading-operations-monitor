@@ -1720,9 +1720,9 @@ export class OperationsWatchdogService {
         const checkedAt = new Date();
         const meta = this.lastPipelineMetadata;
         
-        const visibilityLevel = meta?.visibility?.level || 'NONE';
-        const lifecycleConfidence = meta?.lifecycle?.lifecycleConfidenceScore ?? 1.0;
-        const invalidTrades = meta?.lifecycle?.invalidTrades ?? 0;
+        const visibilityLevel = meta?.observability?.pipelineVisibility || 'NONE';
+        const lifecycleConfidence = meta?.observability?.lifecycle?.lifecycleConfidenceScore ?? 1.0;
+        const invalidTrades = meta?.observability?.lifecycle?.invalidTrades ?? 0;
 
         // Pipeline Visibility Node
         let visibilityStatus: HealthStatus = 'HEALTHY';
@@ -1738,7 +1738,7 @@ export class OperationsWatchdogService {
             status: visibilityStatus,
             message: `Visibility depth: ${visibilityLevel}`,
             checkedAt,
-            metrics: meta?.visibility || { level: visibilityLevel }
+            metrics: meta?.observability || { level: visibilityLevel }
         };
 
         // Lifecycle Integrity Node
@@ -1759,7 +1759,7 @@ export class OperationsWatchdogService {
             status: integrityStatus,
             message: `Confidence Score: ${(lifecycleConfidence * 100).toFixed(1)}% | Invalid trades: ${invalidTrades}`,
             checkedAt,
-            metrics: meta?.lifecycle || { lifecycleConfidenceScore: lifecycleConfidence, invalidTrades }
+            metrics: meta?.observability?.lifecycle || { lifecycleConfidenceScore: lifecycleConfidence, invalidTrades }
         };
 
         const children = [visibilityNode, integrityNode];
