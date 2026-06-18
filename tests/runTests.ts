@@ -487,7 +487,7 @@ async function runTests() {
         assert(response1.status === 200, 'Webhook receiver should return status 200 for SIGNAL.');
         assert(resJson1.status === 'success', 'SIGNAL ingestion should be successful.');
         assert(persistedEvents.length === 1 && persistedEvents[0].classification === 'SIGNAL', 'Persists SIGNAL event.');
-        assert(persistedEvents[0].metadata.symbol === 'ETHUSDT', 'Symbol is normalized to ETHUSDT.');
+        assert((persistedEvents[0].metadata as any).lifecycleEvent.symbol === 'ETHUSDT', 'Symbol is normalized to ETHUSDT.');
 
         persistedEvents = [];
         const response2 = await fetch('http://127.0.0.1:9876/webhooks/freqtrade', {
@@ -505,7 +505,7 @@ async function runTests() {
         const resJson2 = await response2.json() as any;
         assert(response2.status === 200, 'Webhook receiver should return 200 for fill.');
         assert(persistedEvents.length === 1 && persistedEvents[0].classification === 'ORDER_FILLED', 'Persists ORDER_FILLED event.');
-        assert(persistedEvents[0].metadata.orderId === 'order_abc', 'orderId is stored correctly.');
+        assert((persistedEvents[0].metadata as any).lifecycleEvent.orderId === 'order_abc', 'orderId is stored correctly.');
 
         (prisma.decisionAudit as any).create = webhookOriginalCreate;
         await receiver.stop();

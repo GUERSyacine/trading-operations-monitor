@@ -1,9 +1,12 @@
 import { TradingAdapter, AdapterConfig } from '../base/TradingAdapter';
 import { EventPersistenceService } from '../base/EventPersistenceService';
+import { TelemetryMapper } from '../../layer-A(observation)/TelemetryMapper';
+import { LifecycleEventType } from '../../layer-A(observation)/types';
 
 export class FreqtradeAdapter extends TradingAdapter {
     private activeExchange = 'binance';
     private hasFetchedConfig = false;
+    private lastKnownOrderStatus = new Map<string, string>();
 
     constructor(
         config: AdapterConfig,
@@ -11,6 +14,7 @@ export class FreqtradeAdapter extends TradingAdapter {
     ) {
         super(config, 'freqtrade');
     }
+
 
     /**
      * Polling logic called periodically by the base TradingAdapter.
@@ -108,44 +112,53 @@ export class FreqtradeAdapter extends TradingAdapter {
         }
     }
 
-    /**
-     * Ingest trade executions from Freqtrade historical trades endpoint.
-     */
     private async pollOrders(): Promise<void> {
         try {
             const tradesData = await this.apiRequest('/trades');
             if (tradesData && Array.isArray(tradesData.trades)) {
+                const observedAt = Date.now();
                 for (const trade of tradesData.trades) {
                     if (Array.isArray(trade.orders)) {
                         for (const order of trade.orders) {
                             if (!order.order_id) continue;
+
+                            const status = typeof order.status === 'string' ? order.status.toLowerCase() : '';
+                            const cacheKey = String(order.order_id);
                             
-                            // Check if this specific order is already registered
-                            const exists = await this.persistence.hasOrderEvent(order.order_id);
-                            if (!exists) {
-                                const symbol = order.pair.replace('/', '');
-                                const orderTimestamp = order.order_filled_timestamp || order.order_timestamp || Date.now();
-                                
-                                await this.persistence.persistEvent({
-                                    classification: 'ORDER',
-                                    systemRiskState: 'NORMAL',
-                                    createdAt: new Date(orderTimestamp),
-                                    metadata: {
-                                        adapter: 'freqtrade',
-                                        adapterVersion: '1.0.0',
-                                        sourceSystem: this.sourceSystem,
-                                        orderId: order.order_id,
-                                        freqtradeOrderId: order.order_id,
-                                        freqtradeTradeId: trade.trade_id,
-                                        strategyId: trade.strategy || 'SampleStrategy',
-                                        symbol: symbol,
-                                        side: order.ft_order_side.toUpperCase(),
-                                        price: order.average || order.price,
-                                        amount: order.filled || order.amount
-                                    }
-                                });
-                                console.log(`[FreqtradeAdapter] Ingested new execution order: ${order.order_id} (${symbol})`);
+                            // 1. Cache Check: Skip if order status has not changed
+                            const lastStatus = this.lastKnownOrderStatus.get(cacheKey);
+                            if (lastStatus === status) {
+                                continue;
                             }
+
+                            // Determine the lifecycle event type
+                            let eventType: LifecycleEventType;
+                            if (status === 'open') {
+                                eventType = 'ORDER_OPEN';
+                            } else if (status === 'closed') {
+                                eventType = 'ORDER_FILLED';
+                            } else if (status === 'cancelled') {
+                                eventType = 'ORDER_CANCELLED';
+                            } else {
+                                // Fallback
+                                if (order.filled && order.filled === order.amount) {
+                                    eventType = 'ORDER_FILLED';
+                                } else {
+                                    eventType = 'ORDER_OPEN';
+                                }
+                            }
+
+                            const event = TelemetryMapper.mapFreqtradePolledOrder(order, trade, eventType, observedAt);
+
+                            // 2. Database Check: query deterministic event ID to protect against VM restart
+                            const exists = await this.persistence.hasLifecycleEvent(event.eventId);
+                            if (!exists) {
+                                await this.persistence.persistLifecycleEvent(event, order);
+                                console.log(`[FreqtradeAdapter] Ingested new polled lifecycle event: ${event.eventType} for order ${order.order_id}`);
+                            }
+
+                            // Update optimization cache
+                            this.lastKnownOrderStatus.set(cacheKey, status);
                         }
                     }
                 }

@@ -39,3 +39,107 @@ export interface HealthNode {
     children?: HealthNode[];
     metrics?: Record<string, any>;
 }
+
+export type LifecycleEventType =
+    | 'SIGNAL'
+    | 'ORDER_CREATED'
+    | 'ORDER_SUBMITTED'
+    | 'ORDER_ACKNOWLEDGED'
+    | 'ORDER_OPEN'
+    | 'ORDER_PARTIALLY_FILLED'
+    | 'ORDER_FILLED'
+    | 'ORDER_CANCELLED'
+    | 'EXCHANGE_REJECTED'
+    | 'ORDER_FAILED';
+
+export type LifecycleSource =
+    | 'FREQTRADE'
+    | 'SIMULATOR'
+    | 'BINANCE'
+    | 'BYBIT';
+
+export type PipelineVisibilityLevel =
+    | 'NONE'
+    | 'PARTIAL'
+    | 'FULL';
+
+export interface LifecycleEvent {
+    schemaVersion: 1;
+    eventId: string;
+    tradeId: string;
+    orderId?: string;
+    correlationId?: string;
+    eventType: LifecycleEventType;
+    source: LifecycleSource;
+    captureMethod: 'WEBHOOK' | 'POLLING';
+    eventTimestamp: number;
+    observedAt: number;
+    symbol?: string;
+    side?: 'BUY' | 'SELL';
+    price?: number;
+    amount?: number;
+}
+
+
+export interface SourceCapabilities {
+    source: LifecycleSource;
+    supportedEvents: LifecycleEventType[];
+    visibility: PipelineVisibilityLevel;
+}
+
+export const SOURCE_CAPABILITIES: Record<LifecycleSource, SourceCapabilities> = {
+    FREQTRADE: {
+        source: 'FREQTRADE',
+        visibility: 'PARTIAL',
+        supportedEvents: ['SIGNAL', 'ORDER_OPEN', 'ORDER_FILLED', 'ORDER_CANCELLED']
+    },
+    SIMULATOR: {
+        source: 'SIMULATOR',
+        visibility: 'FULL',
+        supportedEvents: [
+            'SIGNAL',
+            'ORDER_CREATED',
+            'ORDER_SUBMITTED',
+            'ORDER_ACKNOWLEDGED',
+            'ORDER_OPEN',
+            'ORDER_PARTIALLY_FILLED',
+            'ORDER_FILLED',
+            'ORDER_CANCELLED',
+            'EXCHANGE_REJECTED',
+            'ORDER_FAILED'
+        ]
+    },
+    BINANCE: {
+        source: 'BINANCE',
+        visibility: 'FULL',
+        supportedEvents: [
+            'SIGNAL',
+            'ORDER_CREATED',
+            'ORDER_SUBMITTED',
+            'ORDER_ACKNOWLEDGED',
+            'ORDER_OPEN',
+            'ORDER_PARTIALLY_FILLED',
+            'ORDER_FILLED',
+            'ORDER_CANCELLED',
+            'EXCHANGE_REJECTED',
+            'ORDER_FAILED'
+        ]
+    },
+    BYBIT: {
+        source: 'BYBIT',
+        visibility: 'FULL',
+        supportedEvents: [
+            'SIGNAL',
+            'ORDER_CREATED',
+            'ORDER_SUBMITTED',
+            'ORDER_ACKNOWLEDGED',
+            'ORDER_OPEN',
+            'ORDER_PARTIALLY_FILLED',
+            'ORDER_FILLED',
+            'ORDER_CANCELLED',
+            'EXCHANGE_REJECTED',
+            'ORDER_FAILED'
+        ]
+    }
+};
+
