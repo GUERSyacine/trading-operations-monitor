@@ -114,10 +114,37 @@ export class FreqtradeAdapter extends TradingAdapter {
 
     private async pollOrders(): Promise<void> {
         try {
-            const tradesData = await this.apiRequest('/trades');
-            if (tradesData && Array.isArray(tradesData.trades)) {
+            const [activeTrades, tradesData] = await Promise.all([
+                this.apiRequest('/status').catch(err => {
+                    console.error(`[FreqtradeAdapter] Failed to fetch active trades from /status:`, err.message || err);
+                    return [];
+                }),
+                this.apiRequest('/trades').catch(err => {
+                    console.error(`[FreqtradeAdapter] Failed to fetch historical trades from /trades:`, err.message || err);
+                    return { trades: [] };
+                })
+            ]);
+
+            const historicalTrades = tradesData && Array.isArray(tradesData.trades) ? tradesData.trades : [];
+            const merged = new Map<number, any>();
+
+            for (const trade of historicalTrades) {
+                if (trade && typeof trade.trade_id === 'number') {
+                    merged.set(trade.trade_id, trade);
+                }
+            }
+
+            for (const trade of activeTrades) {
+                if (trade && typeof trade.trade_id === 'number') {
+                    merged.set(trade.trade_id, trade); // Authoritative overwrite
+                }
+            }
+
+            const allTrades = Array.from(merged.values());
+
+            if (allTrades.length > 0) {
                 const observedAt = Date.now();
-                for (const trade of tradesData.trades) {
+                for (const trade of allTrades) {
                     if (Array.isArray(trade.orders)) {
                         for (const order of trade.orders) {
                             if (!order.order_id) continue;

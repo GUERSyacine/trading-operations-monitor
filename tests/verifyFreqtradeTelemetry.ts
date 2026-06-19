@@ -106,6 +106,9 @@ async function runVerification() {
         if (endpoint === '/trades') {
             return mockTrades;
         }
+        if (endpoint === '/status') {
+            return [];
+        }
         return { exchange: 'binance' };
     };
 
