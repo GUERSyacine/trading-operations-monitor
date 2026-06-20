@@ -7,6 +7,7 @@ import { RuntimeMonitorService } from './runtime/RuntimeMonitorService';
 import { EventPersistenceService } from './adapters/base/EventPersistenceService';
 import { FreqtradeAdapter } from './adapters/freqtrade/FreqtradeAdapter';
 import { FreqtradeWebhookReceiver } from './layer-A(observation)/layer1(infrastructure_monitoring)/FreqtradeWebhookReceiver';
+import { FreqtradeWebSocketAdapter } from './layer-A(observation)/layer1(infrastructure_monitoring)/FreqtradeWebSocketAdapter';
 import { MVP_CONFIG } from './mvpConfig';
 
 export class WatchdogOrchestrator {
@@ -17,6 +18,7 @@ export class WatchdogOrchestrator {
     private runtimeService: RuntimeMonitorService;
     private freqtradeAdapter: FreqtradeAdapter;
     private webhookReceiver: FreqtradeWebhookReceiver;
+    private freqtradeWsAdapter: FreqtradeWebSocketAdapter;
 
     // Concurrency flags
     private infraRunning = false;
@@ -59,6 +61,15 @@ export class WatchdogOrchestrator {
         );
         this.runtimeService = new RuntimeMonitorService(this.alertingService);
         this.webhookReceiver = new FreqtradeWebhookReceiver(persistence);
+
+        const ftWsToken = process.env.FREQTRADE_WS_TOKEN || 'bUSvW1ejp16EhdFuhZB_E81ZEcZssGxVSg';
+        this.freqtradeWsAdapter = new FreqtradeWebSocketAdapter(
+            {
+                baseUrl: ftUrl,
+                wsToken: ftWsToken
+            },
+            persistence
+        );
     }
 
     /**
@@ -101,6 +112,9 @@ export class WatchdogOrchestrator {
         console.log('[Orchestrator] Starting Freqtrade Webhook Receiver...');
         this.webhookReceiver.start();
 
+        console.log('[Orchestrator] Starting Freqtrade WebSocket Ingestion Adapter...');
+        this.freqtradeWsAdapter.connect();
+
         console.log('[Orchestrator] Launching scheduler intervals...');
 
         // 1. Infrastructure checks (Default: 60s)
@@ -137,6 +151,9 @@ export class WatchdogOrchestrator {
 
         console.log('[Orchestrator] Stopping Freqtrade Webhook Receiver...');
         await this.webhookReceiver.stop();
+
+        console.log('[Orchestrator] Stopping Freqtrade WebSocket Ingestion Adapter...');
+        this.freqtradeWsAdapter.disconnect();
 
         if (this.infraInterval) clearInterval(this.infraInterval);
         if (this.opsInterval) clearInterval(this.opsInterval);

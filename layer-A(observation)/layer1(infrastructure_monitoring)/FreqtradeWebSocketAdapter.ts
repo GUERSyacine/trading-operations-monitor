@@ -1,4 +1,6 @@
 import WebSocket from 'ws';
+import { EventPersistenceService } from '../../adapters/base/EventPersistenceService';
+import { TelemetryMapper } from '../TelemetryMapper';
 
 export interface FreqtradeWebSocketAdapterConfig {
     baseUrl: string; // e.g. http://localhost:8080/api/v1
@@ -11,7 +13,10 @@ export class FreqtradeWebSocketAdapter {
     private reconnectTimeout: NodeJS.Timeout | null = null;
     private shouldReconnect = true;
 
-    constructor(private config: FreqtradeWebSocketAdapterConfig) {}
+    constructor(
+        private config: FreqtradeWebSocketAdapterConfig,
+        private persistence: EventPersistenceService
+    ) {}
 
     /**
      * Establish connection to Freqtrade WebSocket server.
@@ -70,13 +75,25 @@ export class FreqtradeWebSocketAdapter {
             this.subscribe();
         });
 
-        this.ws.on('message', (rawData: WebSocket.Data) => {
+        this.ws.on('message', async (rawData: WebSocket.Data) => {
+            const observedAt = Date.now();
             try {
                 const messageStr = rawData.toString();
-                const message = JSON.parse(messageStr);
-                console.log('[WS RAW]', message);
+                const payload = JSON.parse(messageStr);
+                console.log('[WS RAW]', payload);
+
+                const event = TelemetryMapper.mapFreqtradeWebSocket(payload, observedAt);
+                if (event) {
+                    const exists = await this.persistence.hasLifecycleEvent(event.eventId);
+                    if (!exists) {
+                        await this.persistence.persistLifecycleEvent(event, payload);
+                        console.log(`[WS] Persisted event: ${event.eventType} for trade ${event.tradeId}`);
+                    } else {
+                        console.log(`[WS] Duplicate event ignored: ${event.eventId}`);
+                    }
+                }
             } catch (err: any) {
-                console.error(`[WS] Failed to parse raw message: ${err.message}`);
+                console.error(`[WS] Failed to parse/process message: ${err.message || err}`);
             }
         });
 

@@ -71,9 +71,10 @@ export interface LifecycleEvent {
     correlationId?: string;
     eventType: LifecycleEventType;
     source: LifecycleSource;
-    captureMethod: 'WEBHOOK' | 'POLLING';
+    captureMethod: 'WEBHOOK' | 'POLLING' | 'WEBSOCKET';
     eventTimestamp: number;
     observedAt: number;
+    occurredAt?: number;
     symbol?: string;
     side?: 'BUY' | 'SELL';
     price?: number;

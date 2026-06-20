@@ -1,4 +1,5 @@
 import { FreqtradeWebSocketAdapter } from '../layer-A(observation)/layer1(infrastructure_monitoring)/FreqtradeWebSocketAdapter';
+import { EventPersistenceService } from '../adapters/base/EventPersistenceService';
 
 async function runTest() {
     console.log('🧪 Starting Level 1 Freqtrade WebSocket PoC Verification...');
@@ -10,7 +11,8 @@ async function runTest() {
         password: 'password123'
     };
 
-    const wsAdapter = new FreqtradeWebSocketAdapter(config);
+    const persistence = new EventPersistenceService();
+    const wsAdapter = new FreqtradeWebSocketAdapter(config, persistence);
     wsAdapter.connect();
 
     // Wait for connection to establish

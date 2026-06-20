@@ -143,4 +143,80 @@ export class TelemetryMapper {
             amount
         };
     }
+
+    /**
+     * Map a raw WebSocket event payload from Freqtrade into a LifecycleEvent.
+     */
+    static mapFreqtradeWebSocket(payload: any, observedAt: number): LifecycleEvent | null {
+        if (!payload || typeof payload !== 'object') {
+            return null;
+        }
+
+        const type = payload.type;
+        if (!type || typeof type !== 'string') {
+            return null;
+        }
+
+        const normalizedType = type.toLowerCase();
+        let eventType: LifecycleEventType;
+
+        if (normalizedType === 'entry' || normalizedType === 'exit') {
+            eventType = 'ORDER_CREATED';
+        } else if (normalizedType === 'entry_fill' || normalizedType === 'exit_fill') {
+            eventType = 'ORDER_FILLED';
+        } else if (normalizedType === 'entry_cancel' || normalizedType === 'exit_cancel') {
+            eventType = 'ORDER_CANCELLED';
+        } else {
+            return null;
+        }
+
+        const tradeId = payload.trade_id !== undefined && payload.trade_id !== null ? String(payload.trade_id) : 'unknown';
+        const orderId = payload.order_id !== undefined && payload.order_id !== null ? String(payload.order_id) : undefined;
+        const symbol = typeof payload.pair === 'string' ? payload.pair.replace('/', '') : undefined;
+
+        // Side mapping:
+        // Entries/Entry cancellations: direction Long -> BUY, direction Short -> SELL.
+        // Exits/Exit cancellations: direction Long -> SELL (selling out of position), direction Short -> BUY (buying to cover short).
+        let side: 'BUY' | 'SELL' | undefined = undefined;
+        if (typeof payload.direction === 'string') {
+            const dirUpper = payload.direction.toUpperCase();
+            const isEntry = normalizedType.startsWith('entry');
+            if (dirUpper === 'LONG' || dirUpper === 'BUY') {
+                side = isEntry ? 'BUY' : 'SELL';
+            } else if (dirUpper === 'SHORT' || dirUpper === 'SELL') {
+                side = isEntry ? 'SELL' : 'BUY';
+            }
+        }
+
+        const price = payload.order_rate || payload.close_rate || payload.open_rate || payload.limit;
+        const amount = payload.amount;
+
+        // Occurred timestamp from Freqtrade internal clock
+        const rawDate = payload.open_date || payload.close_date;
+        const occurredAt = rawDate ? new Date(rawDate).getTime() : undefined;
+
+        // eventTimestamp is the observed time as required by the watchdog audit timing
+        const eventTimestamp = observedAt;
+
+        // Deterministic eventId: `FREQTRADE:${tradeId}:${eventType}:${eventTimestamp}`
+        const eventId = `FREQTRADE:${tradeId}:${eventType}:${eventTimestamp}`;
+
+        return {
+            schemaVersion: 1,
+            eventId,
+            tradeId,
+            orderId,
+            eventType,
+            source: 'FREQTRADE',
+            captureMethod: 'WEBSOCKET',
+            eventTimestamp,
+            observedAt,
+            occurredAt,
+            symbol,
+            side,
+            price: price !== undefined && price !== null ? Number(price) : undefined,
+            amount: amount !== undefined && amount !== null ? Number(amount) : undefined
+        };
+    }
 }
+
