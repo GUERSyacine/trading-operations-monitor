@@ -21,6 +21,13 @@ export class IncidentManager {
     constructor(private alertingService?: AlertingService) {}
 
     /**
+     * Helper to build a composite incident key to avoid key collisions on symbol-level.
+     */
+    private buildIncidentKey(symbol: string, source: string): string {
+        return `${symbol}:${source}`;
+    }
+
+    /**
      * Rehydrate state from database on startup to handle crashes/restarts gracefully.
      */
     async init(): Promise<void> {
@@ -34,7 +41,8 @@ export class IncidentManager {
             for (const record of activeIncidents) {
                 const detectedAtNum = Number(record.detectedAt);
                 if (record.symbol) {
-                    this.state.symbols[record.symbol] = {
+                    const key = this.buildIncidentKey(record.symbol, record.source);
+                    this.state.symbols[key] = {
                         symbol: record.symbol,
                         level: record.level as IncidentSeverity,
                         source: record.source,
@@ -91,7 +99,8 @@ export class IncidentManager {
 
         // 1. Deduplication / Cooldown Guard (Noise Prevention)
         if (isSymbolSpecific) {
-            const activeSymbolIncident = this.state.symbols[incident.symbol];
+            const key = this.buildIncidentKey(incident.symbol, incident.source);
+            const activeSymbolIncident = this.state.symbols[key];
             if (activeSymbolIncident && activeSymbolIncident.level === incident.level && activeSymbolIncident.reason === incident.reason) {
                 // Duplicate incident, skip persistence & duplicate alert log rows
                 return;
@@ -107,7 +116,8 @@ export class IncidentManager {
         // 2. State & Database persistence execution
         if (isSymbolSpecific) {
             console.warn(`[IncidentManager] Symbol Incident: ${incident.symbol} -> ${incident.level} (${incident.reason})`);
-            this.state.symbols[incident.symbol] = incident as SymbolIncidentState;
+            const key = this.buildIncidentKey(incident.symbol, incident.source);
+            this.state.symbols[key] = incident as SymbolIncidentState;
             await this.persistIncident(incident.symbol, incident.level, incident.source, incident.reason, (incident as any).since || Date.now());
         } else {
             console.warn(`[IncidentManager] GLOBAL Incident: ${incident.level} (${incident.reason}) from source ${incident.source}`);
@@ -138,11 +148,11 @@ export class IncidentManager {
         const now = Date.now();
 
         // Check symbol-specific incidents for expiration
-        for (const symbol of Object.keys(this.state.symbols)) {
-            const incident = this.state.symbols[symbol];
+        for (const key of Object.keys(this.state.symbols)) {
+            const incident = this.state.symbols[key];
             if (now - incident.since > ttlMs) {
-                console.log(`[IncidentManager] TTL Expired. Automatically recovering symbol incident for ${symbol}`);
-                await this.resolveIncident(symbol);
+                console.log(`[IncidentManager] TTL Expired. Automatically recovering symbol incident for key ${key}`);
+                await this.resolveIncidentByKey(key);
             }
         }
 
@@ -178,8 +188,14 @@ export class IncidentManager {
     async resolveIncident(symbol: string | null): Promise<void> {
         const now = Date.now();
         if (symbol) {
-            if (this.state.symbols[symbol]) {
-                delete this.state.symbols[symbol];
+            let deletedCount = 0;
+            for (const key of Object.keys(this.state.symbols)) {
+                if (key === symbol || key.startsWith(symbol + ':')) {
+                    delete this.state.symbols[key];
+                    deletedCount++;
+                }
+            }
+            if (deletedCount > 0) {
                 // Update DB resolution
                 try {
                     await prisma.incident.updateMany({
@@ -213,11 +229,36 @@ export class IncidentManager {
         }
     }
 
+    async resolveIncidentByKey(key: string): Promise<void> {
+        const now = Date.now();
+        const active = this.state.symbols[key];
+        if (active) {
+            delete this.state.symbols[key];
+            try {
+                await prisma.incident.updateMany({
+                    where: {
+                        symbol: active.symbol,
+                        source: active.source,
+                        resolvedAt: null
+                    },
+                    data: {
+                        resolvedAt: BigInt(now)
+                    }
+                });
+                console.log(`[IncidentManager] Resolved DB incident for key ${key}`);
+            } catch (error: any) {
+                console.error(`[IncidentManager] Failed to resolve DB incident for key ${key}:`, error?.message || error);
+            }
+        }
+    }
+
     async resolveIncidentBySource(source: string, symbol: string | null = null): Promise<void> {
         const now = Date.now();
         if (symbol) {
-            const active = this.state.symbols[symbol];
-            if (active && active.source === source) {
+            const key = this.buildIncidentKey(symbol, source);
+            const active = this.state.symbols[key] || this.state.symbols[symbol]; // Fallback for legacy key
+            if (active) {
+                delete this.state.symbols[key];
                 delete this.state.symbols[symbol];
                 try {
                     await prisma.incident.updateMany({

@@ -8,6 +8,7 @@ import { EventPersistenceService } from './adapters/base/EventPersistenceService
 import { FreqtradeAdapter } from './adapters/freqtrade/FreqtradeAdapter';
 import { FreqtradeWebhookReceiver } from './layer-A(observation)/layer1(infrastructure_monitoring)/FreqtradeWebhookReceiver';
 import { FreqtradeWebSocketAdapter } from './layer-A(observation)/layer1(infrastructure_monitoring)/FreqtradeWebSocketAdapter';
+import { LifecycleAnomalyDetector } from './layer-B(Assessement)/LifecycleAnomalyDetector';
 import { MVP_CONFIG } from './mvpConfig';
 
 export class WatchdogOrchestrator {
@@ -19,18 +20,21 @@ export class WatchdogOrchestrator {
     private freqtradeAdapter: FreqtradeAdapter;
     private webhookReceiver: FreqtradeWebhookReceiver;
     private freqtradeWsAdapter: FreqtradeWebSocketAdapter;
+    private anomalyDetector: LifecycleAnomalyDetector;
 
     // Concurrency flags
     private infraRunning = false;
     private opsRunning = false;
     private runtimeRunning = false;
     private resolutionRunning = false;
+    private anomalyRunning = false;
 
     // Schedulers
     private infraInterval?: NodeJS.Timeout;
     private opsInterval?: NodeJS.Timeout;
     private runtimeInterval?: NodeJS.Timeout;
     private resolutionInterval?: NodeJS.Timeout;
+    private anomalyInterval?: NodeJS.Timeout;
 
     constructor() {
         this.alertingService = new AlertingService();
@@ -70,6 +74,8 @@ export class WatchdogOrchestrator {
             },
             persistence
         );
+
+        this.anomalyDetector = new LifecycleAnomalyDetector(this.incidentManager);
     }
 
     /**
@@ -133,9 +139,14 @@ export class WatchdogOrchestrator {
         const resolutionTime = Number(process.env.WATCHDOG_RESOLUTION_INTERVAL_MS) || 30_000;
         this.resolutionInterval = setInterval(() => this.runResolutionLoop(), resolutionTime);
 
+        // 5. Lifecycle Anomaly Detector check (Default: 30s)
+        const anomalyTime = Number(process.env.WATCHDOG_ANOMALY_INTERVAL_MS) || 30_000;
+        this.anomalyInterval = setInterval(() => this.runAnomalyLoop(), anomalyTime);
+
         // Execute immediately on startup
         this.runInfraLoop().catch(err => console.error('[Orchestrator] Initial infra execution failure:', err));
         this.runOpsLoop().catch(err => console.error('[Orchestrator] Initial ops execution failure:', err));
+        this.runAnomalyLoop().catch(err => console.error('[Orchestrator] Initial anomaly execution failure:', err));
 
         console.log('[Orchestrator] Watchdog Orchestrator initialized successfully.');
     }
@@ -159,6 +170,7 @@ export class WatchdogOrchestrator {
         if (this.opsInterval) clearInterval(this.opsInterval);
         if (this.runtimeInterval) clearInterval(this.runtimeInterval);
         if (this.resolutionInterval) clearInterval(this.resolutionInterval);
+        if (this.anomalyInterval) clearInterval(this.anomalyInterval);
 
         try {
             await prisma.$disconnect();
@@ -301,6 +313,27 @@ export class WatchdogOrchestrator {
             console.error('[Orchestrator] Error running Incident Auto-Resolution check:', err.message || err);
         } finally {
             this.resolutionRunning = false;
+        }
+    }
+
+    /**
+     * Loop: Lifecycle Anomaly Detector
+     */
+    private async runAnomalyLoop(): Promise<void> {
+        if (this.anomalyRunning) {
+            console.warn('[Orchestrator] Overlap detected: Anomaly loop execution is already active. Skipping current run.');
+            return;
+        }
+        this.anomalyRunning = true;
+        try {
+            console.log('[Orchestrator] Running Lifecycle Anomaly Detector...');
+            const stuckTimeout = Number(process.env.WATCHDOG_STUCK_TIMEOUT_MS) || 60_000;
+            const lookback = Number(process.env.WATCHDOG_ANOMALY_LOOKBACK_MS) || 3_600_000;
+            await this.anomalyDetector.checkAnomalies(stuckTimeout, lookback);
+        } catch (err: any) {
+            console.error('[Orchestrator] Fatal error in Anomaly loop:', err.message || err);
+        } finally {
+            this.anomalyRunning = false;
         }
     }
 }
