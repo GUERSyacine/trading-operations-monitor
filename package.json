@@ -9,10 +9,12 @@
   },
   "dependencies": {
     "@prisma/client": "^5.10.2",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.24",
+    "@types/ws": "^8.18.1",
     "prisma": "^5.10.2",
     "typescript": "^5.3.3"
   }
