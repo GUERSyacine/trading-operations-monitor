@@ -24,8 +24,31 @@ async function runTest() {
     wsAdapter.connect();
     await new Promise(resolve => setTimeout(resolve, 2000));
 
-    // 2. Trigger forceenter via REST
+    // 2. Query Freqtrade to find next trade ID and clean database BEFORE triggering
     const auth = Buffer.from(`${config.username}:${config.password}`).toString('base64');
+    console.log('🔍 Querying Freqtrade to find next trade ID...');
+    const tradesRes = await fetch(`${config.baseUrl}/trades`, {
+        headers: { 'Authorization': `Basic ${auth}`, 'Accept': 'application/json' }
+    });
+    if (!tradesRes.ok) {
+        wsAdapter.disconnect();
+        throw new Error(`Failed to query trades: ${tradesRes.status}`);
+    }
+    const tradesData = (await tradesRes.json()) as any;
+    const existingTrades = tradesData.trades || [];
+    const nextTradeId = String(Math.max(...existingTrades.map((t: any) => t.trade_id), 0) + 1);
+    console.log(`🔮 Next expected Trade ID: ${nextTradeId}. Cleaning database audits for it...`);
+
+    await prisma.decisionAudit.deleteMany({
+        where: {
+            metadata: {
+                path: ['lifecycleEvent', 'tradeId'],
+                equals: nextTradeId
+            }
+        }
+    });
+
+    // 3. Trigger forceenter via REST
     console.log('📡 Triggering forceenter for BTC/USDT...');
     const forceEnterRes = await fetch(`${config.baseUrl}/forceenter`, {
         method: 'POST',
@@ -51,9 +74,10 @@ async function runTest() {
 
     const tradeData = (await forceEnterRes.json()) as any;
     const tradeId = String(tradeData.trade_id);
-    console.log(`✅ Trade created with ID: ${tradeId}. Waiting for WebSocket event persistence...`);
+    console.log(`✅ Trade created successfully with ID: ${tradeId}.`);
+    console.log(`Waiting for WebSocket event persistence...`);
 
-    // 3. Wait to receive and persist the event
+    // 4. Wait to receive and persist the event
     await new Promise(resolve => setTimeout(resolve, 6000));
 
     // 4. Query the Database for verification
@@ -102,6 +126,11 @@ async function runTest() {
         assert.strictEqual(lifecycleEvent.symbol, 'BTCUSDT');
         assert.strictEqual(lifecycleEvent.side, 'BUY');
         console.log('✅ Assertion passed: normalized details (symbol: BTCUSDT, side: BUY) match exactly');
+
+        // Verify native telemetry details at the top level of metadata
+        assert.strictEqual(metadata.websocketEventType, 'entry');
+        assert.strictEqual(metadata.websocketDirection, 'Long');
+        console.log('✅ Assertion passed: metadata contains websocketEventType ("entry") and websocketDirection ("Long")');
 
     } catch (err: any) {
         console.error('❌ Verification assertions failed:', err.message);

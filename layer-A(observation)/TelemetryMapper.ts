@@ -198,8 +198,8 @@ export class TelemetryMapper {
         // eventTimestamp is the observed time as required by the watchdog audit timing
         const eventTimestamp = observedAt;
 
-        // Deterministic eventId: `FREQTRADE:${tradeId}:${eventType}:${eventTimestamp}`
-        const eventId = `FREQTRADE:${tradeId}:${eventType}:${eventTimestamp}`;
+        // Deterministic eventId: `FREQTRADE:${tradeId}:${payload.type}:${eventTimestamp}`
+        const eventId = `FREQTRADE:${tradeId}:${payload.type}:${eventTimestamp}`;
 
         return {
             schemaVersion: 1,

@@ -103,7 +103,9 @@ export class EventPersistenceService {
                     metadata: {
                         telemetrySource: event.source,
                         lifecycleEvent: event as any,
-                        rawPayload: rawPayload
+                        rawPayload: rawPayload,
+                        websocketEventType: rawPayload?.type || null,
+                        websocketDirection: rawPayload?.direction || null
                     } as any,
                     createdAt: new Date(event.observedAt)
                 }
