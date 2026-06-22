@@ -177,7 +177,22 @@ export class FreqtradeAdapter extends TradingAdapter {
 
                             const event = TelemetryMapper.mapFreqtradePolledOrder(order, trade, eventType, observedAt);
 
-                            // 2. Database Check: query deterministic event ID to protect against VM restart
+                            // 2. Cross-Source Deduplication Check: skip if this event has already been recorded
+                            if (eventType === 'ORDER_FILLED' || eventType === 'ORDER_CANCELLED') {
+                                const tradeId = String(trade.trade_id || 'unknown');
+                                const alreadyRecorded = await this.persistence.hasEquivalentLifecycleEvent(
+                                    tradeId,
+                                    eventType,
+                                    order.order_id ? String(order.order_id) : undefined
+                                );
+                                if (alreadyRecorded) {
+                                    // Update cache status to avoid querying next cycle
+                                    this.lastKnownOrderStatus.set(cacheKey, status);
+                                    continue;
+                                }
+                            }
+
+                            // 3. Database Check: query deterministic event ID to protect against VM restart
                             const exists = await this.persistence.hasLifecycleEvent(event.eventId);
                             if (!exists) {
                                 await this.persistence.persistLifecycleEvent(event, order);

@@ -135,4 +135,37 @@ export class EventPersistenceService {
             return false;
         }
     }
+
+    /**
+     * Check if a specific lifecycle event has already been recorded for a trade/order.
+     * Queries by orderId (if provided) or falls back to tradeId + eventType correlation.
+     * Prevents cross-source duplicate persistence.
+     */
+    async hasEquivalentLifecycleEvent(tradeId: string, eventType: LifecycleEventType, orderId?: string): Promise<boolean> {
+        try {
+            const whereClause: any = {
+                classification: eventType
+            };
+
+            if (orderId && orderId !== 'undefined' && orderId !== 'null') {
+                whereClause.metadata = {
+                    path: ['lifecycleEvent', 'orderId'],
+                    equals: orderId
+                };
+            } else {
+                whereClause.metadata = {
+                    path: ['lifecycleEvent', 'tradeId'],
+                    equals: tradeId
+                };
+            }
+
+            const existing = await prisma.decisionAudit.findFirst({
+                where: whereClause
+            });
+            return existing !== null;
+        } catch (error: any) {
+            console.error(`[EventPersistenceService] Failed to check equivalent lifecycle event for trade ${tradeId} (order ${orderId}):`, error?.message || error);
+            return false;
+        }
+    }
 }
