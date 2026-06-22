@@ -139,30 +139,72 @@ export class EventPersistenceService {
     /**
      * Check if a specific lifecycle event has already been recorded for a trade/order.
      * Queries by orderId (if provided) or falls back to tradeId + eventType correlation.
-     * Prevents cross-source duplicate persistence.
+     * Prevents cross-source duplicate persistence by auto-binding orderIds to unbound WebSocket events.
      */
     async hasEquivalentLifecycleEvent(tradeId: string, eventType: LifecycleEventType, orderId?: string): Promise<boolean> {
         try {
-            const whereClause: any = {
-                classification: eventType
-            };
-
+            // 1. If orderId is provided, first search for an exact match on orderId
             if (orderId && orderId !== 'undefined' && orderId !== 'null') {
-                whereClause.metadata = {
-                    path: ['lifecycleEvent', 'orderId'],
-                    equals: orderId
-                };
+                const exactMatch = await prisma.decisionAudit.findFirst({
+                    where: {
+                        classification: eventType,
+                        metadata: {
+                            path: ['lifecycleEvent', 'orderId'],
+                            equals: orderId
+                        }
+                    }
+                });
+                if (exactMatch) {
+                    return true;
+                }
+
+                // 2. If no exact match on orderId, search for any unbound record for the same tradeId
+                // (e.g. created by WebSocket which does not contain orderId)
+                const unboundMatches = await prisma.decisionAudit.findMany({
+                    where: {
+                        classification: eventType,
+                        metadata: {
+                            path: ['lifecycleEvent', 'tradeId'],
+                            equals: tradeId
+                        }
+                    }
+                });
+
+                for (const match of unboundMatches) {
+                    const metadata = match.metadata as any;
+                    const eventOrderId = metadata?.lifecycleEvent?.orderId;
+                    if (!eventOrderId || eventOrderId === 'undefined' || eventOrderId === 'null') {
+                        // Bind the orderId to this record to reconcile it!
+                        const updatedMetadata = {
+                            ...metadata,
+                            lifecycleEvent: {
+                                ...metadata.lifecycleEvent,
+                                orderId: orderId
+                            }
+                        };
+                        await prisma.decisionAudit.update({
+                            where: { id: match.id },
+                            data: { metadata: updatedMetadata }
+                        });
+                        console.log(`[EventPersistenceService] Reconciled and bound orderId ${orderId} to existing unbound ${eventType} event (trade ${tradeId})`);
+                        return true;
+                    }
+                }
             } else {
-                whereClause.metadata = {
-                    path: ['lifecycleEvent', 'tradeId'],
-                    equals: tradeId
-                };
+                // Fallback for when no orderId is provided (e.g. checking by tradeId only)
+                const existing = await prisma.decisionAudit.findFirst({
+                    where: {
+                        classification: eventType,
+                        metadata: {
+                            path: ['lifecycleEvent', 'tradeId'],
+                            equals: tradeId
+                        }
+                    }
+                });
+                return existing !== null;
             }
 
-            const existing = await prisma.decisionAudit.findFirst({
-                where: whereClause
-            });
-            return existing !== null;
+            return false;
         } catch (error: any) {
             console.error(`[EventPersistenceService] Failed to check equivalent lifecycle event for trade ${tradeId} (order ${orderId}):`, error?.message || error);
             return false;
