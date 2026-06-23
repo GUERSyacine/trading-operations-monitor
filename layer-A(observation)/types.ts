@@ -92,7 +92,7 @@ export const SOURCE_CAPABILITIES: Record<LifecycleSource, SourceCapabilities> = 
     FREQTRADE: {
         source: 'FREQTRADE',
         visibility: 'PARTIAL',
-        supportedEvents: ['SIGNAL', 'ORDER_OPEN', 'ORDER_FILLED', 'ORDER_CANCELLED']
+        supportedEvents: ['SIGNAL', 'ORDER_CREATED', 'ORDER_OPEN', 'ORDER_FILLED', 'ORDER_CANCELLED']
     },
     SIMULATOR: {
         source: 'SIMULATOR',

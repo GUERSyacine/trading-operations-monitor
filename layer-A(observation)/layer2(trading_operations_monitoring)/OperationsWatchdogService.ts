@@ -1,6 +1,6 @@
 import { prisma } from '../../prisma';
 import { AlertingService } from '../../layer-D(notification)/alerting/AlertingService';
-import { HealthCheckResult, HealthNode, HealthStatus } from '../types';
+import { HealthCheckResult, HealthNode, HealthStatus, SOURCE_CAPABILITIES, LifecycleSource, LifecycleEventType } from '../types';
 import { MVP_CONFIG } from '../../mvpConfig';
 import { IncidentManager } from '../../layer-B(Assessement)/IncidentManager';
 import { FreqtradeAdapter } from '../../adapters/freqtrade/FreqtradeAdapter';
@@ -849,6 +849,16 @@ export class OperationsWatchdogService {
                 return -1;
             };
 
+            const canonicalOrder: string[] = [
+                'SIGNAL',
+                'ORDER_CREATED',
+                'ORDER_SUBMITTED',
+                'ORDER_ACKNOWLEDGED',
+                'ORDER_OPEN',
+                'ORDER_PARTIALLY_FILLED',
+                'ORDER_FILLED'
+            ];
+
             for (const tradeId of uniqueTradeIds) {
                 const associatedOrders = tradeToOrdersMap.get(tradeId) || new Set<string>();
                 
@@ -861,6 +871,28 @@ export class OperationsWatchdogService {
                 });
 
                 tradeAudits.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+                // Determine source for this trade from audit metadata, defaulting to FREQTRADE
+                let tradeSource: LifecycleSource = 'FREQTRADE';
+                for (const audit of tradeAudits) {
+                    const meta = audit.metadata as Record<string, any> || {};
+                    const s = meta.lifecycleEvent?.source || meta.source;
+                    if (s) {
+                        tradeSource = String(s).toUpperCase() as LifecycleSource;
+                        break;
+                    }
+                }
+
+                const caps = SOURCE_CAPABILITIES[tradeSource] || SOURCE_CAPABILITIES.FREQTRADE;
+
+                const isStepSupportedBySource = (step: string): boolean => {
+                    if (step === 'ORDER_FILLED') {
+                        return caps.supportedEvents.some(e =>
+                            ['ORDER_FILLED', 'ORDER_CANCELLED', 'EXCHANGE_REJECTED', 'ORDER_FAILED'].includes(e.toUpperCase())
+                        );
+                    }
+                    return caps.supportedEvents.some(e => e.toUpperCase() === step);
+                };
 
                 const hasLifecycle = tradeAudits.some(audit => {
                     const classification = audit.classification.toUpperCase();
@@ -920,12 +952,24 @@ export class OperationsWatchdogService {
 
                         // 3. Skipped Stage: jump in progression steps
                         if (stateVal > lastStateValue + 1) {
-                            hasSkipped = true;
+                            for (let stepIdx = lastStateValue + 1; stepIdx < stateVal; stepIdx++) {
+                                const stepName = canonicalOrder[stepIdx];
+                                if (isStepSupportedBySource(stepName)) {
+                                    hasSkipped = true;
+                                    break;
+                                }
+                            }
                         }
                     } else {
-                        // First event in timeline: if it starts after SIGNAL (0), it has skipped some initial stages (e.g. missing SIGNAL)
+                        // First event in timeline: if it starts after SIGNAL (0), check if it skipped any supported initial stages
                         if (stateVal > 0) {
-                            hasSkipped = true;
+                            for (let stepIdx = 0; stepIdx < stateVal; stepIdx++) {
+                                const stepName = canonicalOrder[stepIdx];
+                                if (isStepSupportedBySource(stepName)) {
+                                    hasSkipped = true;
+                                    break;
+                                }
+                            }
                         }
                     }
 
