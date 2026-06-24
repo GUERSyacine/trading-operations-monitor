@@ -725,7 +725,9 @@ export class OperationsWatchdogService {
                 if (classification === 'SIGNAL') {
                     signals++;
                     const meta = audit.metadata as Record<string, any> || {};
-                    if (meta.tradeId !== undefined && meta.tradeId !== null && meta.tradeId !== '') {
+                    const lifecycle = meta.lifecycleEvent || {};
+                    const tradeId = meta.tradeId ?? lifecycle.tradeId;
+                    if (tradeId !== undefined && tradeId !== null && tradeId !== '') {
                         signalsWithTradeId++;
                     } else {
                         signalsWithoutTradeId++;
@@ -764,8 +766,11 @@ export class OperationsWatchdogService {
 
                 if (isIntermediate) {
                     const meta = audit.metadata as Record<string, any> || {};
-                    const hasTradeId = meta.tradeId !== undefined && meta.tradeId !== null && meta.tradeId !== '';
-                    const hasOrderId = meta.orderId !== undefined && meta.orderId !== null && meta.orderId !== '';
+                    const lifecycle = meta.lifecycleEvent || {};
+                    const tradeId = meta.tradeId ?? lifecycle.tradeId;
+                    const orderId = meta.orderId ?? lifecycle.orderId;
+                    const hasTradeId = tradeId !== undefined && tradeId !== null && tradeId !== '';
+                    const hasOrderId = orderId !== undefined && orderId !== null && orderId !== '';
                     if (hasTradeId || hasOrderId) {
                         hasCorrelatableIntermediate = true;
                         break;
@@ -788,7 +793,8 @@ export class OperationsWatchdogService {
             const uniqueTradeIds = new Set<string>();
             for (const audit of audits) {
                 const meta = audit.metadata as Record<string, any> || {};
-                const tId = meta.tradeId;
+                const lifecycle = meta.lifecycleEvent || {};
+                const tId = meta.tradeId ?? lifecycle.tradeId;
                 if (tId !== undefined && tId !== null && tId !== '') {
                     uniqueTradeIds.add(String(tId));
                 }
@@ -799,8 +805,9 @@ export class OperationsWatchdogService {
 
             for (const audit of audits) {
                 const meta = audit.metadata as Record<string, any> || {};
-                const tId = meta.tradeId;
-                const oId = meta.orderId;
+                const lifecycle = meta.lifecycleEvent || {};
+                const tId = meta.tradeId ?? lifecycle.tradeId;
+                const oId = meta.orderId ?? lifecycle.orderId;
 
                 if (tId !== undefined && tId !== null && tId !== '' && oId !== undefined && oId !== null && oId !== '') {
                     const tradeIdStr = String(tId);
@@ -864,8 +871,11 @@ export class OperationsWatchdogService {
                 
                 const tradeAudits = audits.filter(audit => {
                     const meta = audit.metadata as Record<string, any> || {};
-                    const tId = meta.tradeId !== undefined && meta.tradeId !== null ? String(meta.tradeId) : undefined;
-                    const oId = meta.orderId !== undefined && meta.orderId !== null ? String(meta.orderId) : undefined;
+                    const lifecycle = meta.lifecycleEvent || {};
+                    const rawTradeId = meta.tradeId ?? lifecycle.tradeId;
+                    const rawOrderId = meta.orderId ?? lifecycle.orderId;
+                    const tId = rawTradeId !== undefined && rawTradeId !== null ? String(rawTradeId) : undefined;
+                    const oId = rawOrderId !== undefined && rawOrderId !== null ? String(rawOrderId) : undefined;
                     
                     return tId === tradeId || (oId !== undefined && associatedOrders.has(oId));
                 });
@@ -1086,19 +1096,28 @@ export class OperationsWatchdogService {
                                 equals: 'ORDER_FILLED',
                                 mode: 'insensitive'
                             },
-                            OR: lookbackTradeIds.map(id => ({
-                                metadata: {
-                                    path: ['tradeId'],
-                                    equals: String(id)
+                            OR: lookbackTradeIds.flatMap(id => [
+                                {
+                                    metadata: {
+                                        path: ['tradeId'],
+                                        equals: String(id)
+                                    }
+                                },
+                                {
+                                    metadata: {
+                                        path: ['lifecycleEvent', 'tradeId'],
+                                        equals: String(id)
+                                    }
                                 }
-                            }))
+                            ])
                         }
                     });
                 }
 
                 for (const signal of lookbackSignals) {
                     const meta = signal.metadata as Record<string, any> || {};
-                    const tradeId = meta.tradeId;
+                    const lifecycle = meta.lifecycleEvent || {};
+                    const tradeId = meta.tradeId ?? lifecycle.tradeId;
 
                     const isEligible = signal.createdAt <= timeoutThreshold;
                     if (isEligible) {
@@ -1115,7 +1134,9 @@ export class OperationsWatchdogService {
                     // Check in-memory list for a matching fill created at or after the signal
                     const hasMatchingFill = matchingFills.some(f => {
                         const fMeta = f.metadata as Record<string, any> || {};
-                        return String(fMeta.tradeId) === String(tradeId) && f.createdAt >= signal.createdAt;
+                        const fLifecycle = fMeta.lifecycleEvent || {};
+                        const fTradeId = fMeta.tradeId ?? fLifecycle.tradeId;
+                        return String(fTradeId) === String(tradeId) && f.createdAt >= signal.createdAt;
                     });
 
                     if (isEligible) {
