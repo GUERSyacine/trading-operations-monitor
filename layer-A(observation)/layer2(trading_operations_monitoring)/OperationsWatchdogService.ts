@@ -801,7 +801,7 @@ export class OperationsWatchdogService {
                 visibilityReason = 'Ingesting SIGNAL and correlatable intermediate order lifecycle events.';
             } else if (signals > 0 || filled > 0 || created > 0 || failed > 0) {
                 pipelineVisibility = 'PARTIAL';
-                visibilityReason = 'Ingesting SIGNAL and ORDER_FILLED events via Freqtrade webhooks.';
+                visibilityReason = 'Ingesting SIGNAL and ORDER_FILLED events via Freqtrade WebSocket and Polling reconciliation.';
             }
 
             // Two-Stage Correlation Model & Reconstruction Engine
@@ -923,6 +923,12 @@ export class OperationsWatchdogService {
                     }
                     return caps.supportedEvents.some(e => e.toUpperCase() === step);
                 };
+
+                console.log(
+                  'TRADE DEBUG',
+                  tradeId,
+                  tradeAudits.map(a => a.classification)
+                );
 
                 const hasLifecycle = tradeAudits.some(audit => {
                     const classification = audit.classification.toUpperCase();
