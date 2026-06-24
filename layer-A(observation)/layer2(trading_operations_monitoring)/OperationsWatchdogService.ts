@@ -705,6 +705,21 @@ export class OperationsWatchdogService {
                 }
             });
 
+            console.log('================ PIPELINE DEBUG ================');
+            console.log('windowMs:', windowMs);
+            console.log('windowHours:', windowMs / (1000 * 60 * 60));
+            console.log('cutoff:', cutoff.toISOString());
+            console.log('now:', new Date().toISOString());
+            console.log('audits.length:', audits.length);
+
+            const classifications = audits.reduce((acc: Record<string, number>, audit) => {
+                acc[audit.classification] = (acc[audit.classification] || 0) + 1;
+                return acc;
+            }, {});
+
+            console.log('classifications:', classifications);
+            console.log('================================================');
+
             let signals = 0;
             let created = 0;
             let submitted = 0;
