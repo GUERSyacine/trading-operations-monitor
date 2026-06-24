@@ -848,6 +848,11 @@ export class OperationsWatchdogService {
                 tradeToOrdersMap.get(tradeId)!.add(orderId);
             }
 
+            console.log('CORRELATION DEBUG');
+            console.log('uniqueTradeIds=', uniqueTradeIds.size);
+            console.log('orderToTradeMap=', orderToTradeMap.size);
+            console.log('tradeToOrdersMap=', tradeToOrdersMap.size);
+
             let tradesWithLifecycleTelemetry = 0;
             const totalTradesAnalyzed = uniqueTradeIds.size;
 
