@@ -708,6 +708,42 @@ async function runTests() {
         assert(checkI5.metadata?.observability?.lifecycle?.invalidTrades === 1, 'Scenario I5: invalidTrades should be 1.');
         assert(checkI5.metadata?.observability?.lifecycle?.validTrades === 0, 'Scenario I5: validTrades should be 0.');
 
+        // Test I6 (Multiple Orders - Entry/Exit): ORDER_FILLED (entry) followed by ORDER_CREATED -> ORDER_FILLED (exit)
+        mockFindMany = async () => [
+            { classification: 'SIGNAL', createdAt: new Date(Date.now() - 60 * 1000), metadata: { tradeId: 't100', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_CREATED', createdAt: new Date(Date.now() - 50 * 1000), metadata: { tradeId: 't100', orderId: 'entry_buy', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_FILLED', createdAt: new Date(Date.now() - 40 * 1000), metadata: { tradeId: 't100', orderId: 'entry_buy', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_CREATED', createdAt: new Date(Date.now() - 30 * 1000), metadata: { tradeId: 't100', orderId: 'exit_sell', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_FILLED', createdAt: new Date(Date.now() - 20 * 1000), metadata: { tradeId: 't100', orderId: 'exit_sell', symbol: 'BTCUSDT' } }
+        ];
+        const checkI6 = await watchdog.checkOrderPipeline(5 * 60 * 1000);
+        assert(checkI6.metadata?.observability?.lifecycle?.validTrades === 1, 'Scenario I6: validTrades should be 1.');
+        assert(checkI6.metadata?.observability?.lifecycle?.invalidTrades === 0, 'Scenario I6: invalidTrades should be 0.');
+        assert(checkI6.metadata?.observability?.lifecycle?.incompleteTrades === 0, 'Scenario I6: incompleteTrades should be 0.');
+        assert(checkI6.metadata?.observability?.lifecycle?.terminalTrades === 1, 'Scenario I6: terminalTrades should be 1.');
+        assert(checkI6.metadata?.observability?.lifecycle?.lifecycleConfidenceScore === 1.0, 'Scenario I6: confidence score should be 1.0.');
+
+        // Test I7 (Multiple Orders - DCA): Order A (Buy 1), Order B (Buy 2), Order C (Exit)
+        mockFindMany = async () => [
+            { classification: 'SIGNAL', createdAt: new Date(Date.now() - 80 * 1000), metadata: { tradeId: 't100', symbol: 'BTCUSDT' } },
+            // Order A (Entry buy)
+            { classification: 'ORDER_CREATED', createdAt: new Date(Date.now() - 70 * 1000), metadata: { tradeId: 't100', orderId: 'order_a', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_FILLED', createdAt: new Date(Date.now() - 65 * 1000), metadata: { tradeId: 't100', orderId: 'order_a', symbol: 'BTCUSDT' } },
+            // Order B (DCA buy)
+            { classification: 'ORDER_CREATED', createdAt: new Date(Date.now() - 60 * 1000), metadata: { tradeId: 't100', orderId: 'order_b', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_OPEN', createdAt: new Date(Date.now() - 55 * 1000), metadata: { tradeId: 't100', orderId: 'order_b', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_FILLED', createdAt: new Date(Date.now() - 50 * 1000), metadata: { tradeId: 't100', orderId: 'order_b', symbol: 'BTCUSDT' } },
+            // Order C (Exit sell)
+            { classification: 'ORDER_CREATED', createdAt: new Date(Date.now() - 40 * 1000), metadata: { tradeId: 't100', orderId: 'order_c', symbol: 'BTCUSDT' } },
+            { classification: 'ORDER_FILLED', createdAt: new Date(Date.now() - 30 * 1000), metadata: { tradeId: 't100', orderId: 'order_c', symbol: 'BTCUSDT' } }
+        ];
+        const checkI7 = await watchdog.checkOrderPipeline(5 * 60 * 1000);
+        assert(checkI7.metadata?.observability?.lifecycle?.validTrades === 1, 'Scenario I7: validTrades should be 1.');
+        assert(checkI7.metadata?.observability?.lifecycle?.invalidTrades === 0, 'Scenario I7: invalidTrades should be 0.');
+        assert(checkI7.metadata?.observability?.lifecycle?.incompleteTrades === 0, 'Scenario I7: incompleteTrades should be 0.');
+        assert(checkI7.metadata?.observability?.lifecycle?.terminalTrades === 1, 'Scenario I7: terminalTrades should be 1.');
+        assert(checkI7.metadata?.observability?.lifecycle?.lifecycleConfidenceScore === 1.0, 'Scenario I7: confidence score should be 1.0.');
+
         // Scenario J: Execution Risk Protection (Phase 3C)
         console.log('   > Running Scenario J: Execution Risk Protection...');
 

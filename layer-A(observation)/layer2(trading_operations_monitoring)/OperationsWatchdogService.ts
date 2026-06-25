@@ -5,6 +5,22 @@ import { MVP_CONFIG } from '../../mvpConfig';
 import { IncidentManager } from '../../layer-B(Assessement)/IncidentManager';
 import { TradingAdapter } from '../../adapters/base/TradingAdapter';
 import { VisibilityEvaluator } from '../VisibilityEvaluator';
+import { DecisionAudit } from '@prisma/client';
+
+export interface OrderTimeline {
+    orderId: string;
+    tradeId: string;
+    source: LifecycleSource;
+    events: DecisionAudit[];
+}
+
+export interface ValidationResult {
+    valid: boolean;
+    skippedStages: boolean;
+    violation?: RiskViolationType;
+    terminalState: boolean;
+    duplicates: number;
+}
 
 export interface TradeMetrics {
     pnl: number;
@@ -92,6 +108,116 @@ export class OperationsWatchdogService {
     protected consecutiveStructuralViolations = 0;
     protected lastActiveViolationType?: RiskViolationType;
     protected lastPipelineMetadata: any = null;
+
+    private getEventStateValue(classification: string): number {
+        const upper = classification.toUpperCase();
+        if (upper === 'SIGNAL') return 0;
+        if (upper === 'ORDER_CREATED') return 1;
+        if (upper === 'ORDER_SUBMITTED' || upper === 'ORDER_SENT') return 2;
+        if (upper === 'ORDER_ACKNOWLEDGED' || upper === 'ORDER_ACK') return 3;
+        if (upper === 'ORDER_OPEN') return 4;
+        if (upper === 'ORDER_PARTIALLY_FILLED') return 5;
+        if (['ORDER_FILLED', 'ORDER_CANCELLED', 'EXCHANGE_REJECTED', 'ORDER_FAILED', 'ORDER'].includes(upper)) return 6;
+        return -1;
+    }
+
+    private readonly canonicalOrder: string[] = [
+        'SIGNAL',
+        'ORDER_CREATED',
+        'ORDER_SUBMITTED',
+        'ORDER_ACKNOWLEDGED',
+        'ORDER_OPEN',
+        'ORDER_PARTIALLY_FILLED',
+        'ORDER_FILLED'
+    ];
+
+    private validateOrderTimeline(
+        timeline: OrderTimeline,
+        isStepSupportedBySource: (step: string) => boolean
+    ): ValidationResult {
+        const events = timeline.events;
+        let isInvalid = false;
+        let hasSkipped = false;
+        let reachedTerminal = false;
+        let duplicatesCount = 0;
+        let lastStateValue = -1;
+        let lastClassification: string | undefined = undefined;
+        let violationType: RiskViolationType | undefined = undefined;
+        const terminalStatesSeen = new Set<string>();
+
+        for (let i = 0; i < events.length; i++) {
+            const audit = events[i];
+            const classification = audit.classification.toUpperCase();
+            const stateVal = this.getEventStateValue(classification);
+
+            if (stateVal === -1) {
+                continue;
+            }
+
+            // Duplicate event detection
+            if (lastClassification && classification === lastClassification) {
+                duplicatesCount++;
+                continue;
+            }
+
+            if (lastStateValue !== -1) {
+                // 1. Invalid Transition: terminal (6) -> active (< 6)
+                if (lastStateValue === 6 && stateVal < 6) {
+                    isInvalid = true;
+                    violationType = RiskViolationType.INVALID_TRANSITION;
+                }
+
+                // 2. Backward Transition
+                if (stateVal < lastStateValue) {
+                    isInvalid = true;
+                    violationType = RiskViolationType.BACKWARD_TRANSITION;
+                }
+
+                // 3. Skipped Stage
+                if (stateVal > lastStateValue + 1) {
+                    for (let stepIdx = lastStateValue + 1; stepIdx < stateVal; stepIdx++) {
+                        const stepName = this.canonicalOrder[stepIdx];
+                        if (isStepSupportedBySource(stepName)) {
+                            hasSkipped = true;
+                            break;
+                        }
+                    }
+                }
+            } else {
+                // First event in order timeline: check for skipped initial stages from ORDER_CREATED (1) onwards
+                if (stateVal > 1) {
+                    for (let stepIdx = 1; stepIdx < stateVal; stepIdx++) {
+                        const stepName = this.canonicalOrder[stepIdx];
+                        if (isStepSupportedBySource(stepName)) {
+                            hasSkipped = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 4. Terminal Mutation Guard
+            if (stateVal === 6) {
+                reachedTerminal = true;
+                terminalStatesSeen.add(classification);
+                if (terminalStatesSeen.size > 1) {
+                    isInvalid = true;
+                    violationType = RiskViolationType.TERMINAL_MUTATION;
+                }
+            }
+
+            lastStateValue = stateVal;
+            lastClassification = classification;
+        }
+
+        return {
+            valid: !isInvalid,
+            skippedStages: hasSkipped,
+            violation: violationType,
+            terminalState: reachedTerminal,
+            duplicates: duplicatesCount
+        };
+    }
 
     protected enrichMetadata(source: string, customMeta: Record<string, any> = {}): Record<string, any> {
         return {
@@ -878,32 +1004,12 @@ export class OperationsWatchdogService {
             let duplicateEventsObserved = 0;
 
             // Map event classifications to state values for chronological sequence validation
-            const getEventStateValue = (classification: string): number => {
-                const upper = classification.toUpperCase();
-                if (upper === 'SIGNAL') return 0;
-                if (upper === 'ORDER_CREATED') return 1;
-                if (upper === 'ORDER_SUBMITTED' || upper === 'ORDER_SENT') return 2;
-                if (upper === 'ORDER_ACKNOWLEDGED' || upper === 'ORDER_ACK') return 3;
-                if (upper === 'ORDER_OPEN') return 4;
-                if (upper === 'ORDER_PARTIALLY_FILLED') return 5;
-                if (['ORDER_FILLED', 'ORDER_CANCELLED', 'EXCHANGE_REJECTED', 'ORDER_FAILED', 'ORDER'].includes(upper)) return 6;
-                return -1;
-            };
-
-            const canonicalOrder: string[] = [
-                'SIGNAL',
-                'ORDER_CREATED',
-                'ORDER_SUBMITTED',
-                'ORDER_ACKNOWLEDGED',
-                'ORDER_OPEN',
-                'ORDER_PARTIALLY_FILLED',
-                'ORDER_FILLED'
-            ];
+            // (Note: getEventStateValue and canonicalOrder have been moved to class methods)
 
             for (const tradeId of uniqueTradeIds) {
                 const associatedOrders = tradeToOrdersMap.get(tradeId) || new Set<string>();
                 
-                const tradeAudits = audits.filter(audit => {
+                const tradeTimeline = audits.filter(audit => {
                     const meta = audit.metadata as Record<string, any> || {};
                     const lifecycle = meta.lifecycleEvent || {};
                     const rawTradeId = meta.tradeId ?? lifecycle.tradeId;
@@ -914,11 +1020,33 @@ export class OperationsWatchdogService {
                     return tId === tradeId || (oId !== undefined && associatedOrders.has(oId));
                 });
 
-                tradeAudits.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+                tradeTimeline.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
-                // Determine source for this trade from audit metadata, defaulting to FREQTRADE
+                // Group events by orderId. Trade-level events (e.g. SIGNAL) have no orderId.
+                const auditsWithOrderId: Map<string, typeof audits> = new Map();
+                for (const audit of tradeTimeline) {
+                    const classification = audit.classification.toUpperCase();
+                    const stateVal = this.getEventStateValue(classification);
+                    if (stateVal <= 0) {
+                        continue; // Keep SIGNAL and other trade-level events out of order timelines
+                    }
+
+                    const meta = audit.metadata as Record<string, any> || {};
+                    const lifecycle = meta.lifecycleEvent || {};
+                    const rawOrderId = meta.orderId ?? lifecycle.orderId;
+                    const oId = rawOrderId !== undefined && rawOrderId !== null ? String(rawOrderId) : 'default_order';
+
+                    let list = auditsWithOrderId.get(oId);
+                    if (!list) {
+                        list = [];
+                        auditsWithOrderId.set(oId, list);
+                    }
+                    list.push(audit);
+                }
+
+                // Determine tradeSource from audits to resolve capabilities
                 let tradeSource: LifecycleSource = 'FREQTRADE';
-                for (const audit of tradeAudits) {
+                for (const audit of tradeTimeline) {
                     const meta = audit.metadata as Record<string, any> || {};
                     const s = meta.lifecycleEvent?.source || meta.source;
                     if (s) {
@@ -928,7 +1056,6 @@ export class OperationsWatchdogService {
                 }
 
                 const caps = SOURCE_CAPABILITIES[tradeSource] || SOURCE_CAPABILITIES.FREQTRADE;
-
                 const allSupportedEvents = [...caps.requiredEvents, ...caps.optionalEvents];
                 const isStepSupportedBySource = (step: string): boolean => {
                     if (step === 'ORDER_FILLED') {
@@ -939,13 +1066,32 @@ export class OperationsWatchdogService {
                     return allSupportedEvents.some(e => e.toUpperCase() === step);
                 };
 
+                // Create OrderTimeline structures
+                const orderTimelines: OrderTimeline[] = [];
+                for (const [oId, list] of auditsWithOrderId.entries()) {
+                    list.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+                    orderTimelines.push({
+                        orderId: oId,
+                        tradeId: tradeId,
+                        source: tradeSource,
+                        events: list
+                    });
+                }
+
+                // Sort order timelines chronologically
+                orderTimelines.sort((a, b) => {
+                    const timeA = a.events[0]?.createdAt.getTime() || 0;
+                    const timeB = b.events[0]?.createdAt.getTime() || 0;
+                    return timeA - timeB;
+                });
+
                 console.log(
                   'TRADE DEBUG',
                   tradeId,
-                  tradeAudits.map(a => a.classification)
+                  tradeTimeline.map(a => a.classification)
                 );
 
-                const hasLifecycle = tradeAudits.some(audit => {
+                const hasLifecycle = tradeTimeline.some(audit => {
                     const classification = audit.classification.toUpperCase();
                     return [
                         'ORDER_CREATED',
@@ -965,95 +1111,53 @@ export class OperationsWatchdogService {
                     tradesWithLifecycleTelemetry++;
                 }
 
-                // Run state machine transition validator on trade timeline
-                let isInvalid = false;
-                let hasSkipped = false;
-                let lastStateValue = -1;
-                let lastClassification: string | undefined = undefined;
-                let violationType: RiskViolationType | undefined = undefined;
-                const terminalStatesSeen = new Set<string>();
+                // Run state machine transition validator on each order timeline and aggregate results
+                let tradeIsInvalid = false;
+                let tradeHasSkipped = false;
+                let tradeViolationType: RiskViolationType | undefined = undefined;
+                let hasIncompleteOrder = false;
+                let hasTerminalOrder = false;
+                let hasValidatedOrder = false;
 
-                for (let i = 0; i < tradeAudits.length; i++) {
-                    const audit = tradeAudits[i];
-                    const classification = audit.classification.toUpperCase();
-                    const stateVal = getEventStateValue(classification);
+                for (const timeline of orderTimelines) {
+                    const result = this.validateOrderTimeline(timeline, isStepSupportedBySource);
 
-                    if (stateVal === -1) {
-                        continue; // Skip unrecognized classifications
-                    }
-
-                    // Duplicate event detection (includes sequential PARTIALLY_FILLED events)
-                    if (lastClassification && classification === lastClassification) {
-                        duplicateEventsObserved++;
-                        continue;
-                    }
-
-                    if (lastStateValue !== -1) {
-                        // 1. Invalid Transition: from terminal (6) back to active (< 6)
-                        if (lastStateValue === 6 && stateVal < 6) {
-                            isInvalid = true;
-                            violationType = RiskViolationType.INVALID_TRANSITION;
-                        }
-
-                        // 2. Backward Transition: from later state to earlier state
-                        if (stateVal < lastStateValue) {
-                            isInvalid = true;
-                            violationType = RiskViolationType.BACKWARD_TRANSITION;
-                        }
-
-                        // 3. Skipped Stage: jump in progression steps
-                        if (stateVal > lastStateValue + 1) {
-                            for (let stepIdx = lastStateValue + 1; stepIdx < stateVal; stepIdx++) {
-                                const stepName = canonicalOrder[stepIdx];
-                                if (isStepSupportedBySource(stepName)) {
-                                    hasSkipped = true;
-                                    break;
-                                }
-                            }
-                        }
-                    } else {
-                        // First event in timeline: if it starts after SIGNAL (0), check if it skipped any supported initial stages
-                        if (stateVal > 0) {
-                            for (let stepIdx = 0; stepIdx < stateVal; stepIdx++) {
-                                const stepName = canonicalOrder[stepIdx];
-                                if (isStepSupportedBySource(stepName)) {
-                                    hasSkipped = true;
-                                    break;
-                                }
-                            }
+                    hasValidatedOrder = true;
+                    if (!result.valid) {
+                        tradeIsInvalid = true;
+                        if (result.violation) {
+                            tradeViolationType = result.violation;
                         }
                     }
-
-                    // 4. Terminal Mutation Guard
-                    if (stateVal === 6) {
-                        terminalStatesSeen.add(classification);
-                        if (terminalStatesSeen.size > 1) {
-                            isInvalid = true;
-                            violationType = RiskViolationType.TERMINAL_MUTATION;
-                        }
+                    if (!result.terminalState) {
+                        hasIncompleteOrder = true;
                     }
-
-                    lastStateValue = stateVal;
-                    lastClassification = classification;
+                    if (result.terminalState) {
+                        hasTerminalOrder = true;
+                    }
+                    if (result.skippedStages) {
+                        tradeHasSkipped = true;
+                    }
+                    duplicateEventsObserved += result.duplicates;
                 }
 
-                if (lastStateValue !== -1) {
-                    if (isInvalid) {
+                if (hasValidatedOrder) {
+                    if (tradeIsInvalid) {
                         invalidTrades++;
-                        if (violationType) {
-                            this.lastActiveViolationType = violationType;
+                        if (tradeViolationType) {
+                            this.lastActiveViolationType = tradeViolationType;
                         }
-                    } else if (lastStateValue < 6) {
+                    } else if (hasIncompleteOrder) {
                         incompleteTrades++;
                     } else {
                         validTrades++;
                     }
 
-                    if (lastStateValue === 6) {
+                    if (hasTerminalOrder) {
                         terminalTrades++;
                     }
 
-                    if (hasSkipped) {
+                    if (tradeHasSkipped) {
                         tradesWithSkippedStages++;
                     }
                 }
