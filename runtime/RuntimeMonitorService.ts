@@ -21,13 +21,22 @@ export class RuntimeMonitorService {
             const cutoff = new Date(Date.now() - windowMs);
             const audits = await prisma.decisionAudit.findMany({
                 where: {
-                    classification: 'ORDER',
+                    classification: {
+                        in: ['ORDER', 'ORDER_FILLED']
+                    },
                     createdAt: { gte: cutoff }
                 },
                 orderBy: { createdAt: 'desc' }
             });
 
-            return audits.map(a => {
+            // Filter audits in memory to support both legacy strategyId filtering and new WebSocket/polled telemetry
+            const filteredAudits = audits.filter(a => {
+                const meta = a.metadata as any;
+                const stratId = meta?.strategyId || meta?.lifecycleEvent?.strategyId;
+                return stratId === undefined || stratId === null || stratId === strategyId;
+            });
+
+            return filteredAudits.map(a => {
                 const meta = a.metadata as any;
                 return {
                     pnl: meta?.outcome?.pnl ?? 0.0,

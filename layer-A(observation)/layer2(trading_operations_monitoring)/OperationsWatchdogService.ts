@@ -225,17 +225,23 @@ export class OperationsWatchdogService {
             const cutoff = new Date(Date.now() - maxSilenceMs);
             const trades = await prisma.decisionAudit.findMany({
                 where: {
-                    classification: 'ORDER',
-                    createdAt: { gte: cutoff },
-                    metadata: {
-                        path: ['strategyId'],
-                        equals: strategyId
-                    }
+                    classification: {
+                        in: ['ORDER', 'ORDER_FILLED']
+                    },
+                    createdAt: { gte: cutoff }
                 },
                 orderBy: { createdAt: 'desc' }
             });
-            recentTradeCount = trades.length;
-            isSuccess = trades.length > 0;
+
+            // Filter trades in memory to support both legacy strategyId filtering and new WebSocket/polled telemetry
+            const filteredTrades = trades.filter(t => {
+                const meta = t.metadata as any;
+                const stratId = meta?.strategyId || meta?.lifecycleEvent?.strategyId;
+                return stratId === undefined || stratId === null || stratId === strategyId;
+            });
+
+            recentTradeCount = filteredTrades.length;
+            isSuccess = filteredTrades.length > 0;
             if (!isSuccess) {
                 const hours = (maxSilenceMs / (60 * 60 * 1000)).toFixed(0);
                 errorMsg = `Strategy ${strategyId} has 0 trades in the last ${hours} hours.`;
@@ -1591,26 +1597,30 @@ export class OperationsWatchdogService {
         try {
             const audits = await prisma.decisionAudit.findMany({
                 where: {
-                    classification: 'ORDER',
-                    createdAt: { gte: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) }, // 3 days lookback
-                    metadata: {
-                        path: ['strategyId'],
-                        equals: strategyId
-                    }
+                    classification: {
+                        in: ['ORDER', 'ORDER_FILLED']
+                    },
+                    createdAt: { gte: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) } // 3 days lookback
                 },
-                orderBy: { createdAt: 'desc' },
-                take: rollingCount
+                orderBy: { createdAt: 'desc' }
             });
+
+            // Filter audits in memory to support both legacy strategyId filtering and new WebSocket/polled telemetry
+            const filteredAudits = audits.filter(a => {
+                const meta = a.metadata as any;
+                const stratId = meta?.strategyId || meta?.lifecycleEvent?.strategyId;
+                return stratId === undefined || stratId === null || stratId === strategyId;
+            }).slice(0, rollingCount);
 
             const metadata = {
                 strategyId,
                 maxLatencyMs,
                 rollingCount,
-                auditsFound: audits.length,
+                auditsFound: filteredAudits.length,
                 averageLatencyMs: 0
             };
 
-            if (audits.length < rollingCount) {
+            if (filteredAudits.length < rollingCount) {
                 // Not enough trades to compute representative latency average
                 return {
                     source: 'LATENCY',
@@ -1623,7 +1633,7 @@ export class OperationsWatchdogService {
 
             let totalLatency = 0;
             let validCount = 0;
-            for (const audit of audits) {
+            for (const audit of filteredAudits) {
                 const meta = audit.metadata as any;
                 const latency = meta?.outcome?.latencyMs ?? meta?.latencyMs;
                 if (typeof latency === 'number') {
