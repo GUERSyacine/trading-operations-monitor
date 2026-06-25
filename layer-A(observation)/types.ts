@@ -82,29 +82,45 @@ export interface LifecycleEvent {
 }
 
 
+export type LifecycleEventPhase = 'SIGNAL' | 'INTERMEDIATE' | 'COMPLETION';
+
+export const LIFECYCLE_EVENT_PHASES: Record<string, LifecycleEventPhase> = {
+    SIGNAL: 'SIGNAL',
+    ORDER_CREATED: 'INTERMEDIATE',
+    ORDER_SUBMITTED: 'INTERMEDIATE',
+    ORDER_SENT: 'INTERMEDIATE',
+    ORDER_ACKNOWLEDGED: 'INTERMEDIATE',
+    ORDER_ACK: 'INTERMEDIATE',
+    ORDER_OPEN: 'INTERMEDIATE',
+    ORDER_PARTIALLY_FILLED: 'INTERMEDIATE',
+    ORDER_FILLED: 'COMPLETION',
+    ORDER_CANCELLED: 'COMPLETION',
+    EXCHANGE_REJECTED: 'COMPLETION',
+    ORDER_FAILED: 'COMPLETION',
+    // Fallback for legacy audits
+    ORDER: 'COMPLETION'
+};
+
 export interface SourceCapabilities {
     source: LifecycleSource;
-    supportedEvents: LifecycleEventType[];
-    visibility: PipelineVisibilityLevel;
+    requiredEvents: LifecycleEventType[];
+    optionalEvents: LifecycleEventType[];
 }
 
 export const SOURCE_CAPABILITIES: Record<LifecycleSource, SourceCapabilities> = {
     FREQTRADE: {
         source: 'FREQTRADE',
-        visibility: 'PARTIAL',
-        supportedEvents: ['SIGNAL', 'ORDER_CREATED', 'ORDER_OPEN', 'ORDER_FILLED', 'ORDER_CANCELLED']
+        requiredEvents: ['ORDER_CREATED', 'ORDER_OPEN', 'ORDER_FILLED'],
+        optionalEvents: ['SIGNAL', 'ORDER_CANCELLED']
     },
     SIMULATOR: {
         source: 'SIMULATOR',
-        visibility: 'FULL',
-        supportedEvents: [
+        requiredEvents: ['ORDER_CREATED', 'ORDER_OPEN', 'ORDER_FILLED'],
+        optionalEvents: [
             'SIGNAL',
-            'ORDER_CREATED',
             'ORDER_SUBMITTED',
             'ORDER_ACKNOWLEDGED',
-            'ORDER_OPEN',
             'ORDER_PARTIALLY_FILLED',
-            'ORDER_FILLED',
             'ORDER_CANCELLED',
             'EXCHANGE_REJECTED',
             'ORDER_FAILED'
@@ -112,15 +128,12 @@ export const SOURCE_CAPABILITIES: Record<LifecycleSource, SourceCapabilities> = 
     },
     BINANCE: {
         source: 'BINANCE',
-        visibility: 'FULL',
-        supportedEvents: [
+        requiredEvents: ['ORDER_CREATED', 'ORDER_OPEN', 'ORDER_FILLED'],
+        optionalEvents: [
             'SIGNAL',
-            'ORDER_CREATED',
             'ORDER_SUBMITTED',
             'ORDER_ACKNOWLEDGED',
-            'ORDER_OPEN',
             'ORDER_PARTIALLY_FILLED',
-            'ORDER_FILLED',
             'ORDER_CANCELLED',
             'EXCHANGE_REJECTED',
             'ORDER_FAILED'
@@ -128,15 +141,12 @@ export const SOURCE_CAPABILITIES: Record<LifecycleSource, SourceCapabilities> = 
     },
     BYBIT: {
         source: 'BYBIT',
-        visibility: 'FULL',
-        supportedEvents: [
+        requiredEvents: ['ORDER_CREATED', 'ORDER_OPEN', 'ORDER_FILLED'],
+        optionalEvents: [
             'SIGNAL',
-            'ORDER_CREATED',
             'ORDER_SUBMITTED',
             'ORDER_ACKNOWLEDGED',
-            'ORDER_OPEN',
             'ORDER_PARTIALLY_FILLED',
-            'ORDER_FILLED',
             'ORDER_CANCELLED',
             'EXCHANGE_REJECTED',
             'ORDER_FAILED'

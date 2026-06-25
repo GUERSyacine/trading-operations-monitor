@@ -3,7 +3,8 @@ import { AlertingService } from '../../layer-D(notification)/alerting/AlertingSe
 import { HealthCheckResult, HealthNode, HealthStatus, SOURCE_CAPABILITIES, LifecycleSource, LifecycleEventType } from '../types';
 import { MVP_CONFIG } from '../../mvpConfig';
 import { IncidentManager } from '../../layer-B(Assessement)/IncidentManager';
-import { FreqtradeAdapter } from '../../adapters/freqtrade/FreqtradeAdapter';
+import { TradingAdapter } from '../../adapters/base/TradingAdapter';
+import { VisibilityEvaluator } from '../VisibilityEvaluator';
 
 export interface TradeMetrics {
     pnl: number;
@@ -44,7 +45,7 @@ export class StopBuyAction extends AlertOnlyAction {
         incidentManager: IncidentManager,
         reason: string,
         violationType: RiskViolationType,
-        private adapter?: FreqtradeAdapter
+        private adapter?: TradingAdapter
     ) {
         super(incidentManager, reason, violationType);
     }
@@ -62,7 +63,7 @@ export class StopAction extends AlertOnlyAction {
         incidentManager: IncidentManager,
         reason: string,
         violationType: RiskViolationType,
-        private adapter?: FreqtradeAdapter
+        private adapter?: TradingAdapter
     ) {
         super(incidentManager, reason, violationType);
     }
@@ -79,7 +80,7 @@ export class OperationsWatchdogService {
     constructor(
         protected alertingService: AlertingService,
         protected incidentManager: IncidentManager,
-        protected freqtradeAdapter?: FreqtradeAdapter,
+        protected tradingAdapter?: TradingAdapter,
         protected allowedInactivityMs: number = MVP_CONFIG.OPERATIONS.HEARTBEAT_TIMEOUT_MS
     ) {}
 
@@ -802,22 +803,20 @@ export class OperationsWatchdogService {
                 }
             }
 
-            let pipelineVisibility: 'LIMITED' | 'PARTIAL' | 'FULL' = 'LIMITED';
-            let visibilityReason = 'Adapter only emits ORDER completion telemetry.';
-
-            if (audits.length === 0) {
-                pipelineVisibility = 'LIMITED';
-                visibilityReason = 'No telemetry events observed in the lookback window.';
-            } else if (signals > 0 && hasCorrelatableIntermediate) {
-                pipelineVisibility = 'FULL';
-                visibilityReason = 'Ingesting SIGNAL and correlatable intermediate order lifecycle events.';
-            } else if (signals === 0 && hasCorrelatableIntermediate && (filled > 0 || cancelled > 0 || failed > 0)) {
-                pipelineVisibility = 'FULL';
-                visibilityReason = 'Ingesting correlatable intermediate and completion order lifecycle events.';
-            } else if (signals > 0 || filled > 0 || created > 0 || failed > 0) {
-                pipelineVisibility = 'PARTIAL';
-                visibilityReason = 'Ingesting SIGNAL and ORDER_FILLED events via Freqtrade WebSocket and Polling reconciliation.';
+            const observedClassifications = new Set<string>();
+            for (const audit of audits) {
+                observedClassifications.add(audit.classification.toUpperCase());
             }
+
+            const caps = this.tradingAdapter?.capabilities || SOURCE_CAPABILITIES.FREQTRADE;
+            const evalResult = VisibilityEvaluator.evaluate({
+                capabilities: caps,
+                observedClassifications
+            });
+
+            const pipelineVisibility = evalResult.pipelineVisibility;
+            const visibilityReason = evalResult.visibilityReason;
+            const telemetryCoverage = evalResult.telemetryCoverage;
 
             // Two-Stage Correlation Model & Reconstruction Engine
             const uniqueTradeIds = new Set<string>();
@@ -930,13 +929,14 @@ export class OperationsWatchdogService {
 
                 const caps = SOURCE_CAPABILITIES[tradeSource] || SOURCE_CAPABILITIES.FREQTRADE;
 
+                const allSupportedEvents = [...caps.requiredEvents, ...caps.optionalEvents];
                 const isStepSupportedBySource = (step: string): boolean => {
                     if (step === 'ORDER_FILLED') {
-                        return caps.supportedEvents.some(e =>
+                        return allSupportedEvents.some(e =>
                             ['ORDER_FILLED', 'ORDER_CANCELLED', 'EXCHANGE_REJECTED', 'ORDER_FAILED'].includes(e.toUpperCase())
                         );
                     }
-                    return caps.supportedEvents.some(e => e.toUpperCase() === step);
+                    return allSupportedEvents.some(e => e.toUpperCase() === step);
                 };
 
                 console.log(
@@ -1362,6 +1362,7 @@ export class OperationsWatchdogService {
                 observability: {
                     pipelineVisibility,
                     visibilityReason,
+                    telemetryCoverage,
                     coverage: {
                         signalsObserved: signals,
                         eligibleSignals: eligibleSignalsCount,
@@ -1478,14 +1479,12 @@ export class OperationsWatchdogService {
             if (riskLevel === 'CRITICAL' && activeViolation) {
                 console.error(`🚨 [OperationsWatchdog] CRITICAL RISK BREACH: ${activeReason} (${activeViolation})`);
                 
-                // Resolve ProtectionAction
                 let action: ProtectionAction;
                 const protectionMode = MVP_CONFIG.RISK_PROTECTION.PROTECTION_MODE;
-
                 if (protectionMode === 'STOP_BUY') {
-                    action = new StopBuyAction(this.incidentManager, activeReason, activeViolation, this.freqtradeAdapter);
+                    action = new StopBuyAction(this.incidentManager, activeReason, activeViolation, this.tradingAdapter);
                 } else if (protectionMode === 'STOP') {
-                    action = new StopAction(this.incidentManager, activeReason, activeViolation, this.freqtradeAdapter);
+                    action = new StopAction(this.incidentManager, activeReason, activeViolation, this.tradingAdapter);
                 } else {
                     action = new AlertOnlyAction(this.incidentManager, activeReason, activeViolation);
                 }

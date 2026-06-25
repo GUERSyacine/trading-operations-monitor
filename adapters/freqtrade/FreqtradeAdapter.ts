@@ -1,9 +1,12 @@
 import { TradingAdapter, AdapterConfig } from '../base/TradingAdapter';
 import { EventPersistenceService } from '../base/EventPersistenceService';
 import { TelemetryMapper } from '../../layer-A(observation)/TelemetryMapper';
-import { LifecycleEventType } from '../../layer-A(observation)/types';
+import { LifecycleEventType, SourceCapabilities, LifecycleSource, SOURCE_CAPABILITIES } from '../../layer-A(observation)/types';
 
 export class FreqtradeAdapter extends TradingAdapter {
+    readonly capabilities: SourceCapabilities = SOURCE_CAPABILITIES.FREQTRADE;
+    override readonly sourceSystem: LifecycleSource = 'FREQTRADE';
+
     private activeExchange = 'binance';
     private hasFetchedConfig = false;
     private lastKnownOrderStatus = new Map<string, string>();
@@ -12,7 +15,7 @@ export class FreqtradeAdapter extends TradingAdapter {
         config: AdapterConfig,
         private persistence: EventPersistenceService
     ) {
-        super(config, 'freqtrade');
+        super(config);
     }
 
 

@@ -1,3 +1,5 @@
+import { SourceCapabilities, LifecycleSource } from '../../layer-A(observation)/types';
+
 export interface AdapterConfig {
     baseUrl: string;
     username?: string;
@@ -9,9 +11,13 @@ export abstract class TradingAdapter {
     protected intervalId?: NodeJS.Timeout;
     protected isPolling = false;
 
+    abstract readonly capabilities: SourceCapabilities;
+    abstract readonly sourceSystem: LifecycleSource;
+
+    abstract executeActiveHalt(type: 'STOP_BUY' | 'STOP'): Promise<void>;
+
     constructor(
-        protected config: AdapterConfig,
-        protected sourceSystem: string
+        protected config: AdapterConfig
     ) {}
 
     /**

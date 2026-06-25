@@ -50,18 +50,19 @@ function runValidationSuite() {
     for (const source of expectedSources) {
         const caps = SOURCE_CAPABILITIES[source];
 
-        // A2: Check existence and visibility presence
+        // A2: Check existence and events lists presence
         if (!caps) {
             throw new Error(`Assertion Failed: Source '${source}' is missing from SOURCE_CAPABILITIES.`);
         }
-        if (!caps.visibility || !validVisibilityLevels.includes(caps.visibility)) {
-            throw new Error(`Assertion Failed: Source '${source}' has invalid visibility level '${caps.visibility}'.`);
+        if (!caps.requiredEvents || !caps.optionalEvents) {
+            throw new Error(`Assertion Failed: Source '${source}' is missing required/optional events list.`);
         }
-        console.log(`✅ A2: Source '${source}' exists with valid visibility '${caps.visibility}'.`);
+        console.log(`✅ A2: Source '${source}' exists with valid capabilities structure.`);
 
         // A3: Check for duplicate event types
         const seenEvents = new Set<LifecycleEventType>();
-        for (const evt of caps.supportedEvents) {
+        const allEvts = [...caps.requiredEvents, ...caps.optionalEvents];
+        for (const evt of allEvts) {
             if (seenEvents.has(evt)) {
                 throw new Error(`Assertion Failed: Source '${source}' has duplicate supportedEvent '${evt}'.`);
             }
