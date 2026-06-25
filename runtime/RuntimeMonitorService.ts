@@ -29,7 +29,10 @@ export class RuntimeMonitorService {
                 orderBy: { createdAt: 'desc' }
             });
 
-            // Filter audits in memory to support both legacy strategyId filtering and new WebSocket/polled telemetry
+            // MVP assumption:
+            // Freqtrade websocket/polling does not expose strategyId.
+            // Since MVP supports only ONE running strategy, events without strategyId belong to this strategy.
+            // Remove this fallback when multi-strategy support is introduced.
             const filteredAudits = audits.filter(a => {
                 const meta = a.metadata as any;
                 const stratId = meta?.strategyId || meta?.lifecycleEvent?.strategyId;
