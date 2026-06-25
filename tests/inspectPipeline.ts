@@ -18,7 +18,7 @@ async function main() {
     };
 
     const service = new OperationsWatchdogService(mockAlerting as any, mockIncidentManager as any);
-    const result = await service.checkOrderPipeline(4 * 60 * 60 * 1000);
+    const result = await service.checkOrderPipeline(5 * 24 * 60 * 60 * 1000);
 
     console.log('\n====================================================');
     console.log('📊 LIVE ORDER PIPELINE HEALTH CHECK RESULTS');

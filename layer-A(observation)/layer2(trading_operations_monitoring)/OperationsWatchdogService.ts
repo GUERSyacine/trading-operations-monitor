@@ -805,9 +805,15 @@ export class OperationsWatchdogService {
             let pipelineVisibility: 'LIMITED' | 'PARTIAL' | 'FULL' = 'LIMITED';
             let visibilityReason = 'Adapter only emits ORDER completion telemetry.';
 
-            if (signals > 0 && hasCorrelatableIntermediate) {
+            if (audits.length === 0) {
+                pipelineVisibility = 'LIMITED';
+                visibilityReason = 'No telemetry events observed in the lookback window.';
+            } else if (signals > 0 && hasCorrelatableIntermediate) {
                 pipelineVisibility = 'FULL';
                 visibilityReason = 'Ingesting SIGNAL and correlatable intermediate order lifecycle events.';
+            } else if (signals === 0 && hasCorrelatableIntermediate && (filled > 0 || cancelled > 0 || failed > 0)) {
+                pipelineVisibility = 'FULL';
+                visibilityReason = 'Ingesting correlatable intermediate and completion order lifecycle events.';
             } else if (signals > 0 || filled > 0 || created > 0 || failed > 0) {
                 pipelineVisibility = 'PARTIAL';
                 visibilityReason = 'Ingesting SIGNAL and ORDER_FILLED events via Freqtrade WebSocket and Polling reconciliation.';
