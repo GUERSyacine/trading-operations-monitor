@@ -133,7 +133,7 @@ export class OperationsWatchdogService {
 
     private validateOrderTimeline(
         timeline: OrderTimeline,
-        isStepSupportedBySource: (step: string) => boolean
+        isGuaranteedStep: (step: string) => boolean
     ): ValidationResult {
         const events = timeline.events;
         let isInvalid = false;
@@ -177,7 +177,7 @@ export class OperationsWatchdogService {
                 if (stateVal > lastStateValue + 1) {
                     for (let stepIdx = lastStateValue + 1; stepIdx < stateVal; stepIdx++) {
                         const stepName = this.canonicalOrder[stepIdx];
-                        if (isStepSupportedBySource(stepName)) {
+                        if (isGuaranteedStep(stepName)) {
                             hasSkipped = true;
                             break;
                         }
@@ -188,7 +188,7 @@ export class OperationsWatchdogService {
                 if (stateVal > 1) {
                     for (let stepIdx = 1; stepIdx < stateVal; stepIdx++) {
                         const stepName = this.canonicalOrder[stepIdx];
-                        if (isStepSupportedBySource(stepName)) {
+                        if (isGuaranteedStep(stepName)) {
                             hasSkipped = true;
                             break;
                         }
@@ -1023,23 +1023,102 @@ export class OperationsWatchdogService {
                 tradeTimeline.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
                 // Group events by orderId. Trade-level events (e.g. SIGNAL) have no orderId.
-                const auditsWithOrderId: Map<string, typeof audits> = new Map();
-                for (const audit of tradeTimeline) {
+                // We perform a two-stage association to map events without an orderId
+                // to their most likely orderId based on chronological proximity.
+                const resolvedOrderIds = new Map<string, string>(); // event key -> resolved orderId
+                
+                const getAuditKey = (audit: typeof tradeTimeline[0], idx: number) => {
+                    return audit.id || `idx_${idx}`;
+                };
+
+                // First, collect all events that have an explicit orderId
+                const explicitOrderIds: { id: string; orderId: string; time: number; side?: string }[] = [];
+                for (let i = 0; i < tradeTimeline.length; i++) {
+                    const audit = tradeTimeline[i];
                     const classification = audit.classification.toUpperCase();
                     const stateVal = this.getEventStateValue(classification);
-                    if (stateVal <= 0) {
-                        continue; // Keep SIGNAL and other trade-level events out of order timelines
-                    }
+                    if (stateVal <= 0) continue;
 
                     const meta = audit.metadata as Record<string, any> || {};
                     const lifecycle = meta.lifecycleEvent || {};
                     const rawOrderId = meta.orderId ?? lifecycle.orderId;
-                    const oId = rawOrderId !== undefined && rawOrderId !== null ? String(rawOrderId) : 'default_order';
+                    if (rawOrderId !== undefined && rawOrderId !== null) {
+                        const oId = String(rawOrderId);
+                        const auditKey = getAuditKey(audit, i);
+                        explicitOrderIds.push({
+                            id: auditKey,
+                            orderId: oId,
+                            time: audit.createdAt.getTime(),
+                            side: meta.side ?? lifecycle.side
+                        });
+                        resolvedOrderIds.set(auditKey, oId);
+                    }
+                }
 
-                    let list = auditsWithOrderId.get(oId);
+                // Now, resolve orderId for events that don't have one
+                for (let i = 0; i < tradeTimeline.length; i++) {
+                    const audit = tradeTimeline[i];
+                    const classification = audit.classification.toUpperCase();
+                    const stateVal = this.getEventStateValue(classification);
+                    if (stateVal <= 0) continue;
+                    const auditKey = getAuditKey(audit, i);
+                    if (resolvedOrderIds.has(auditKey)) continue;
+
+                    const meta = audit.metadata as Record<string, any> || {};
+                    const lifecycle = meta.lifecycleEvent || {};
+                    const auditTime = audit.createdAt.getTime();
+                    const auditSide = meta.side ?? lifecycle.side;
+
+                    // Look forward in time for the closest event with an explicit orderId
+                    let bestOrderId: string | undefined = undefined;
+                    let bestDiff = Infinity;
+
+                    for (const exp of explicitOrderIds) {
+                        if (exp.time >= auditTime) {
+                            const diff = exp.time - auditTime;
+                            if (diff < bestDiff) {
+                                // Match side if both are specified, or fall back to any closest event
+                                if (!auditSide || !exp.side || auditSide === exp.side) {
+                                    bestDiff = diff;
+                                    bestOrderId = exp.orderId;
+                                }
+                            }
+                        }
+                    }
+
+                    // If not found forward, look backward
+                    if (!bestOrderId) {
+                        bestDiff = Infinity;
+                        for (const exp of explicitOrderIds) {
+                            if (exp.time < auditTime) {
+                                const diff = auditTime - exp.time;
+                                if (diff < bestDiff) {
+                                    if (!auditSide || !exp.side || auditSide === exp.side) {
+                                        bestDiff = diff;
+                                        bestOrderId = exp.orderId;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    const resolvedId = bestOrderId || 'default_order';
+                    resolvedOrderIds.set(auditKey, resolvedId);
+                }
+
+                const auditsWithOrderId: Map<string, typeof audits> = new Map();
+                for (let i = 0; i < tradeTimeline.length; i++) {
+                    const audit = tradeTimeline[i];
+                    const classification = audit.classification.toUpperCase();
+                    const stateVal = this.getEventStateValue(classification);
+                    if (stateVal <= 0) continue;
+
+                    const auditKey = getAuditKey(audit, i);
+                    const resolvedId = resolvedOrderIds.get(auditKey) || 'default_order';
+                    let list = auditsWithOrderId.get(resolvedId);
                     if (!list) {
                         list = [];
-                        auditsWithOrderId.set(oId, list);
+                        auditsWithOrderId.set(resolvedId, list);
                     }
                     list.push(audit);
                 }
@@ -1056,14 +1135,13 @@ export class OperationsWatchdogService {
                 }
 
                 const caps = SOURCE_CAPABILITIES[tradeSource] || SOURCE_CAPABILITIES.FREQTRADE;
-                const allSupportedEvents = [...caps.requiredEvents, ...caps.optionalEvents];
-                const isStepSupportedBySource = (step: string): boolean => {
+                const isGuaranteedStep = (step: string): boolean => {
                     if (step === 'ORDER_FILLED') {
-                        return allSupportedEvents.some(e =>
+                        return caps.requiredEvents.some(e =>
                             ['ORDER_FILLED', 'ORDER_CANCELLED', 'EXCHANGE_REJECTED', 'ORDER_FAILED'].includes(e.toUpperCase())
                         );
                     }
-                    return allSupportedEvents.some(e => e.toUpperCase() === step);
+                    return caps.requiredEvents.some(e => e.toUpperCase() === step);
                 };
 
                 // Create OrderTimeline structures
@@ -1120,7 +1198,7 @@ export class OperationsWatchdogService {
                 let hasValidatedOrder = false;
 
                 for (const timeline of orderTimelines) {
-                    const result = this.validateOrderTimeline(timeline, isStepSupportedBySource);
+                    const result = this.validateOrderTimeline(timeline, isGuaranteedStep);
 
                     hasValidatedOrder = true;
                     if (!result.valid) {
@@ -1153,7 +1231,8 @@ export class OperationsWatchdogService {
                         validTrades++;
                     }
 
-                    if (hasTerminalOrder) {
+                    const tradeIsTerminal = !hasIncompleteOrder && hasTerminalOrder;
+                    if (tradeIsTerminal) {
                         terminalTrades++;
                     }
 

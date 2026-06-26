@@ -110,8 +110,8 @@ export interface SourceCapabilities {
 export const SOURCE_CAPABILITIES: Record<LifecycleSource, SourceCapabilities> = {
     FREQTRADE: {
         source: 'FREQTRADE',
-        requiredEvents: ['ORDER_CREATED', 'ORDER_OPEN', 'ORDER_FILLED'],
-        optionalEvents: ['SIGNAL', 'ORDER_CANCELLED']
+        requiredEvents: ['ORDER_CREATED', 'ORDER_FILLED'],
+        optionalEvents: ['SIGNAL', 'ORDER_OPEN', 'ORDER_CANCELLED']
     },
     SIMULATOR: {
         source: 'SIMULATOR',
