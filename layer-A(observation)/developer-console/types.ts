@@ -1,0 +1,64 @@
+export enum EventCategory {
+    SYSTEM = 'SYSTEM',
+    ALERT = 'ALERT',
+    TELEMETRY = 'TELEMETRY',
+    FAILURE = 'FAILURE',
+    COMMAND = 'COMMAND',
+    UI = 'UI'
+}
+
+export enum WatchdogEventType {
+    ALERT_RAISED = 'ALERT_RAISED',
+    ALERT_RESOLVED = 'ALERT_RESOLVED',
+    INCIDENT_CREATED = 'INCIDENT_CREATED',
+    INCIDENT_RESOLVED = 'INCIDENT_RESOLVED',
+    TELEMETRY_RECEIVED = 'TELEMETRY_RECEIVED',
+    FAILURE_INJECTED = 'FAILURE_INJECTED',
+    FAILURE_CLEARED = 'FAILURE_CLEARED',
+    FEATURE_FLAG_CHANGED = 'FEATURE_FLAG_CHANGED',
+    COMMAND_EXECUTED = 'COMMAND_EXECUTED',
+    SYSTEM_STATUS_CHANGED = 'SYSTEM_STATUS_CHANGED'
+}
+
+export enum SystemCommand {
+    START_FREQTRADE = 'START_FREQTRADE',
+    STOP_FREQTRADE = 'STOP_FREQTRADE',
+    RESTART_FREQTRADE = 'RESTART_FREQTRADE',
+    RESTART_DOCKER = 'RESTART_DOCKER',
+    GET_FREQTRADE_STATUS = 'GET_FREQTRADE_STATUS'
+}
+
+export enum FailureType {
+    DNS_FAILURE = 'DNS_FAILURE',
+    NETWORK_TIMEOUT = 'NETWORK_TIMEOUT',
+    WS_DISCONNECTED = 'WS_DISCONNECTED',
+    HEARTBEAT_LOSS = 'HEARTBEAT_LOSS',
+    BROKER_DOWN = 'BROKER_DOWN',
+    DATABASE_DOWN = 'DATABASE_DOWN'
+}
+
+export enum FailureScope {
+    INFRASTRUCTURE = 'INFRASTRUCTURE',
+    OPERATIONS = 'OPERATIONS',
+    LIFECYCLE = 'LIFECYCLE',
+    REPORTING = 'REPORTING',
+    ALERTING = 'ALERTING'
+}
+
+export enum FeatureFlag {
+    POLLING = 'POLLING',
+    WEBSOCKET = 'WEBSOCKET',
+    ALERTING = 'ALERTING',
+    REPORTING = 'REPORTING',
+    REPLAY = 'REPLAY'
+}
+
+export interface WatchdogEvent {
+    id: string;
+    timestamp: number;
+    category: EventCategory;
+    type: WatchdogEventType;
+    source: string;
+    payload: unknown;
+    correlationId?: string;
+}
