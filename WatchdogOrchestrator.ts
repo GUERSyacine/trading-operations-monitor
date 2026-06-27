@@ -11,6 +11,16 @@ import { FreqtradeWebSocketAdapter } from './layer-A(observation)/layer1(infrast
 import { LifecycleAnomalyDetector } from './layer-B(Assessement)/LifecycleAnomalyDetector';
 import { MVP_CONFIG } from './mvpConfig';
 
+// Developer Console Core Imports
+import { EventBus } from './layer-A(observation)/developer-console/EventBus';
+import { CommandRunner } from './layer-A(observation)/developer-console/CommandRunner';
+import { InfrastructureController } from './layer-A(observation)/developer-console/InfrastructureController';
+import { FailureInjectionService } from './layer-A(observation)/developer-console/FailureInjectionService';
+import { FeatureFlagService } from './layer-A(observation)/developer-console/FeatureFlagService';
+import { DeveloperConsoleGateway } from './layer-A(observation)/developer-console/DeveloperConsoleGateway';
+import { DeveloperConsoleController } from './layer-A(observation)/developer-console/DeveloperConsoleController';
+import { DeveloperConsoleServer } from './layer-A(observation)/developer-console/DeveloperConsoleServer';
+
 export class WatchdogOrchestrator {
     private alertingService: AlertingService;
     private incidentManager: IncidentManager;
@@ -21,6 +31,9 @@ export class WatchdogOrchestrator {
     private webhookReceiver: FreqtradeWebhookReceiver;
     private freqtradeWsAdapter: FreqtradeWebSocketAdapter;
     private anomalyDetector: LifecycleAnomalyDetector;
+
+    // Developer Console Server
+    private devConsoleServer: DeveloperConsoleServer;
 
     // Concurrency flags
     private infraRunning = false;
@@ -76,7 +89,25 @@ export class WatchdogOrchestrator {
         );
 
         this.anomalyDetector = new LifecycleAnomalyDetector(this.incidentManager);
+
+        // Instantiate Developer Console Services
+        const eventBus = EventBus.getInstance();
+        const cmdRunner = new CommandRunner();
+        const infraController = new InfrastructureController(cmdRunner, eventBus);
+        const failureService = new FailureInjectionService(eventBus);
+        const featureFlagService = new FeatureFlagService(eventBus);
+        const devConsoleGateway = new DeveloperConsoleGateway(eventBus);
+        const devConsoleController = new DeveloperConsoleController(
+            failureService,
+            featureFlagService,
+            infraController
+        );
+        this.devConsoleServer = new DeveloperConsoleServer(
+            devConsoleController,
+            devConsoleGateway
+        );
     }
+
 
     /**
      * Startup verification: fail-fast on database configuration or connection failure.
@@ -121,6 +152,9 @@ export class WatchdogOrchestrator {
         console.log('[Orchestrator] Starting Freqtrade WebSocket Ingestion Adapter...');
         this.freqtradeWsAdapter.connect();
 
+        console.log('[Orchestrator] Starting Developer Control Console...');
+        this.devConsoleServer.start();
+
         console.log('[Orchestrator] Launching scheduler intervals...');
 
         // 1. Infrastructure checks (Default: 60s)
@@ -156,6 +190,9 @@ export class WatchdogOrchestrator {
      */
     async stop(): Promise<void> {
         console.log('[Orchestrator] Initiating graceful shutdown...');
+
+        console.log('[Orchestrator] Stopping Developer Control Console...');
+        await this.devConsoleServer.stop();
         
         console.log('[Orchestrator] Stopping Freqtrade Ingestion Adapter...');
         this.freqtradeAdapter.stop();
