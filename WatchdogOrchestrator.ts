@@ -50,47 +50,7 @@ export class WatchdogOrchestrator {
     private anomalyInterval?: NodeJS.Timeout;
 
     constructor() {
-        this.alertingService = new AlertingService();
-        this.incidentManager = new IncidentManager(this.alertingService);
-        this.infraService = new InfrastructureWatchdogService(this.alertingService);
-
-        const ftUrl = process.env.FREQTRADE_API_URL || 'http://localhost:8080/api/v1';
-        const ftUser = process.env.FREQTRADE_API_USERNAME || 'freqtrader';
-        const ftPass = process.env.FREQTRADE_API_PASSWORD || 'password123';
-        const ftIntervalMs = Number(process.env.FREQTRADE_ADAPTER_INTERVAL_MS) || 15000;
-
-        const persistence = new EventPersistenceService();
-        this.freqtradeAdapter = new FreqtradeAdapter(
-            {
-                baseUrl: ftUrl,
-                username: ftUser,
-                password: ftPass,
-                pollIntervalMs: ftIntervalMs
-            },
-            persistence
-        );
-
-        this.opsService = new OperationsWatchdogService(
-            this.alertingService,
-            this.incidentManager,
-            this.freqtradeAdapter,
-            MVP_CONFIG.OPERATIONS.HEARTBEAT_TIMEOUT_MS
-        );
-        this.runtimeService = new RuntimeMonitorService(this.alertingService);
-        this.webhookReceiver = new FreqtradeWebhookReceiver(persistence);
-
-        const ftWsToken = process.env.FREQTRADE_WS_TOKEN || 'bUSvW1ejp16EhdFuhZB_E81ZEcZssGxVSg';
-        this.freqtradeWsAdapter = new FreqtradeWebSocketAdapter(
-            {
-                baseUrl: ftUrl,
-                wsToken: ftWsToken
-            },
-            persistence
-        );
-
-        this.anomalyDetector = new LifecycleAnomalyDetector(this.incidentManager);
-
-        // Instantiate Developer Console Services
+        // Instantiate Developer Console Services first for constructor injection
         const eventBus = EventBus.getInstance();
         const cmdRunner = new CommandRunner();
         const infraController = new InfrastructureController(cmdRunner, eventBus);
@@ -106,6 +66,51 @@ export class WatchdogOrchestrator {
             devConsoleController,
             devConsoleGateway
         );
+
+        this.alertingService = new AlertingService(featureFlagService);
+        this.incidentManager = new IncidentManager(this.alertingService);
+        this.infraService = new InfrastructureWatchdogService(this.alertingService, failureService, featureFlagService);
+
+        const ftUrl = process.env.FREQTRADE_API_URL || 'http://localhost:8080/api/v1';
+        const ftUser = process.env.FREQTRADE_API_USERNAME || 'freqtrader';
+        const ftPass = process.env.FREQTRADE_API_PASSWORD || 'password123';
+        const ftIntervalMs = Number(process.env.FREQTRADE_ADAPTER_INTERVAL_MS) || 15000;
+
+        const persistence = new EventPersistenceService();
+        this.freqtradeAdapter = new FreqtradeAdapter(
+            {
+                baseUrl: ftUrl,
+                username: ftUser,
+                password: ftPass,
+                pollIntervalMs: ftIntervalMs
+            },
+            persistence,
+            featureFlagService
+        );
+
+        this.opsService = new OperationsWatchdogService(
+            this.alertingService,
+            this.incidentManager,
+            this.freqtradeAdapter,
+            MVP_CONFIG.OPERATIONS.HEARTBEAT_TIMEOUT_MS,
+            failureService,
+            featureFlagService
+        );
+        this.runtimeService = new RuntimeMonitorService(this.alertingService);
+        this.webhookReceiver = new FreqtradeWebhookReceiver(persistence);
+
+        const ftWsToken = process.env.FREQTRADE_WS_TOKEN || 'bUSvW1ejp16EhdFuhZB_E81ZEcZssGxVSg';
+        this.freqtradeWsAdapter = new FreqtradeWebSocketAdapter(
+            {
+                baseUrl: ftUrl,
+                wsToken: ftWsToken
+            },
+            persistence,
+            featureFlagService,
+            eventBus
+        );
+
+        this.anomalyDetector = new LifecycleAnomalyDetector(this.incidentManager);
     }
 
 

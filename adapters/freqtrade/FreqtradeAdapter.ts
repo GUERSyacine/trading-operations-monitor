@@ -3,6 +3,8 @@ import { EventPersistenceService } from '../base/EventPersistenceService';
 import { TelemetryMapper } from '../../layer-A(observation)/TelemetryMapper';
 import { LifecycleEventType, SourceCapabilities, LifecycleSource, SOURCE_CAPABILITIES } from '../../layer-A(observation)/types';
 
+import { FeatureFlagService } from '../../layer-A(observation)/developer-console/FeatureFlagService';
+
 export class FreqtradeAdapter extends TradingAdapter {
     readonly capabilities: SourceCapabilities = SOURCE_CAPABILITIES.FREQTRADE;
     override readonly sourceSystem: LifecycleSource = 'FREQTRADE';
@@ -13,9 +15,10 @@ export class FreqtradeAdapter extends TradingAdapter {
 
     constructor(
         config: AdapterConfig,
-        private persistence: EventPersistenceService
+        private persistence: EventPersistenceService,
+        flags?: FeatureFlagService
     ) {
-        super(config);
+        super(config, flags);
     }
 
 

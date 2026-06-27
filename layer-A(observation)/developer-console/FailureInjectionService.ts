@@ -4,7 +4,11 @@ import { EventBus } from './EventBus';
 export interface InjectedFailure {
     type: FailureType;
     scope: FailureScope;
+    injectedAt: number;
+    ttlSeconds?: number;
     expiresAt?: number;
+    source: string;
+    reason?: string;
 }
 
 export class FailureInjectionService {
@@ -12,11 +16,25 @@ export class FailureInjectionService {
 
     constructor(private eventBus: EventBus = EventBus.getInstance()) {}
 
-    public injectFailure(type: FailureType, scope: FailureScope, ttlSeconds?: number, correlationId?: string): void {
-        const expiresAt = ttlSeconds ? Date.now() + (ttlSeconds * 1000) : undefined;
-        this.failures.set(type, { type, scope, expiresAt });
+    public injectFailure(
+        type: FailureType,
+        scope: FailureScope,
+        ttlSeconds?: number,
+        correlationId?: string,
+        source: string = 'developer_console',
+        reason?: string
+    ): void {
+        const injectedAt = Date.now();
+        const expiresAt = ttlSeconds ? injectedAt + (ttlSeconds * 1000) : undefined;
+        this.failures.set(type, { type, scope, injectedAt, ttlSeconds, expiresAt, source, reason });
         
-        this.eventBus.emit(EventCategory.FAILURE, WatchdogEventType.FAILURE_INJECTED, 'FailureInjectionService', { type, scope, ttlSeconds }, correlationId);
+        this.eventBus.emit(
+            EventCategory.FAILURE,
+            WatchdogEventType.FAILURE_INJECTED,
+            'FailureInjectionService',
+            { type, scope, ttlSeconds, source, reason, expiresAt },
+            correlationId
+        );
     }
 
     public clearFailure(type: FailureType, correlationId?: string): void {
@@ -51,5 +69,18 @@ export class FailureInjectionService {
                 this.eventBus.emit(EventCategory.FAILURE, WatchdogEventType.FAILURE_CLEARED, 'FailureInjectionService', { type, reason: 'TTL_EXPIRED' });
             }
         }
+    }
+
+    public async intercept<T>(opts: {
+        type: FailureType;
+        component: string;
+        operation: string;
+        real: () => Promise<T> | T;
+        simulate: () => Promise<T> | T;
+    }): Promise<T> {
+        if (this.isFailureActive(opts.type)) {
+            return Promise.resolve(opts.simulate());
+        }
+        return Promise.resolve(opts.real());
     }
 }

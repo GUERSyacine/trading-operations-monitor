@@ -6,6 +6,9 @@ import { IncidentManager } from '../../layer-B(Assessement)/IncidentManager';
 import { TradingAdapter } from '../../adapters/base/TradingAdapter';
 import { VisibilityEvaluator } from '../VisibilityEvaluator';
 import { DecisionAudit } from '@prisma/client';
+import { FailureInjectionService } from '../developer-console/FailureInjectionService';
+import { FeatureFlagService } from '../developer-console/FeatureFlagService';
+import { FailureType, FeatureFlag } from '../developer-console/types';
 
 export interface OrderTimeline {
     orderId: string;
@@ -97,7 +100,9 @@ export class OperationsWatchdogService {
         protected alertingService: AlertingService,
         protected incidentManager: IncidentManager,
         protected tradingAdapter?: TradingAdapter,
-        protected allowedInactivityMs: number = MVP_CONFIG.OPERATIONS.HEARTBEAT_TIMEOUT_MS
+        protected allowedInactivityMs: number = MVP_CONFIG.OPERATIONS.HEARTBEAT_TIMEOUT_MS,
+        protected failures?: FailureInjectionService,
+        protected flags?: FeatureFlagService
     ) {}
 
     protected heartbeatFailures = 0;
@@ -230,112 +235,145 @@ export class OperationsWatchdogService {
     }
 
     async checkHeartbeat(maxSilenceMs: number = this.allowedInactivityMs): Promise<HealthCheckResult> {
-        const checkStart = Date.now();
-        let isSuccess = false;
-        let latestAudit: any = null;
-        let elapsedMs = 0;
-        let errorMsg: string | null = null;
+        const runCheck = async (): Promise<HealthCheckResult> => {
+            const checkStart = Date.now();
+            let isSuccess = false;
+            let latestAudit: any = null;
+            let elapsedMs = 0;
+            let errorMsg: string | null = null;
 
-        try {
-            latestAudit = await prisma.decisionAudit.findFirst({
-                where: {
-                    classification: {
-                        in: ['HEARTBEAT', 'ORDER', 'SIGNAL', 'MARKET_DATA']
-                    }
-                },
-                orderBy: { createdAt: 'desc' }
-            });
+            try {
+                latestAudit = await prisma.decisionAudit.findFirst({
+                    where: {
+                        classification: {
+                            in: ['HEARTBEAT', 'ORDER', 'SIGNAL', 'MARKET_DATA']
+                        }
+                    },
+                    orderBy: { createdAt: 'desc' }
+                });
 
-            if (!latestAudit) {
-                isSuccess = false;
-                errorMsg = 'No decision audit entries found in database yet.';
-            } else {
-                const now = Date.now();
-                elapsedMs = now - latestAudit.createdAt.getTime();
-                if (elapsedMs > maxSilenceMs) {
+                if (!latestAudit) {
                     isSuccess = false;
-                    const elapsedMin = (elapsedMs / 60000).toFixed(1);
-                    errorMsg = `No decision audits logged for ${elapsedMin} minutes.`;
+                    errorMsg = 'No decision audit entries found in database yet.';
                 } else {
-                    isSuccess = true;
+                    const now = Date.now();
+                    elapsedMs = now - latestAudit.createdAt.getTime();
+                    if (elapsedMs > maxSilenceMs) {
+                        isSuccess = false;
+                        const elapsedMin = (elapsedMs / 60000).toFixed(1);
+                        errorMsg = `No decision audits logged for ${elapsedMin} minutes.`;
+                    } else {
+                        isSuccess = true;
+                    }
                 }
-            }
-        } catch (error: any) {
-            isSuccess = false;
-            errorMsg = error?.message || String(error);
-        }
-
-        try {
-            if (!isSuccess) {
-                this.heartbeatFailures++;
-            } else {
-                this.heartbeatFailures = 0;
+            } catch (error: any) {
+                isSuccess = false;
+                errorMsg = error?.message || String(error);
             }
 
-            const maxFailures = 3;
-            const isAlarm = this.heartbeatFailures >= maxFailures;
-            const severity = isAlarm ? 'CRITICAL' : (this.heartbeatFailures > 0 ? 'WARNING' : undefined);
+            try {
+                if (!isSuccess) {
+                    this.heartbeatFailures++;
+                } else {
+                    this.heartbeatFailures = 0;
+                }
 
-            const baseMetadata = {
-                latestAuditId: latestAudit?.id,
-                latestAuditClass: latestAudit?.classification,
-                latestAuditCreatedAt: latestAudit?.createdAt,
-                elapsedMs,
-                consecutiveFailures: this.heartbeatFailures,
-                maxFailures
-            };
-            const metadata = this.enrichMetadata('HEARTBEAT', baseMetadata);
+                const maxFailures = 3;
+                const isAlarm = this.heartbeatFailures >= maxFailures;
+                const severity = isAlarm ? 'CRITICAL' : (this.heartbeatFailures > 0 ? 'WARNING' : undefined);
 
-            if (!isSuccess) {
-                if (isAlarm) {
-                    console.error(`🚨 [OperationsWatchdog] HEARTBEAT LOST CRITICAL: ${errorMsg}`);
-                    await this.incidentManager.reportIncident({
-                        level: 'CRITICAL',
+                const baseMetadata = {
+                    latestAuditId: latestAudit?.id,
+                    latestAuditClass: latestAudit?.classification,
+                    latestAuditCreatedAt: latestAudit?.createdAt,
+                    elapsedMs,
+                    consecutiveFailures: this.heartbeatFailures,
+                    maxFailures
+                };
+                const metadata = this.enrichMetadata('HEARTBEAT', baseMetadata);
+
+                if (!isSuccess) {
+                    if (isAlarm) {
+                        console.error(`🚨 [OperationsWatchdog] HEARTBEAT LOST CRITICAL: ${errorMsg}`);
+                        await this.incidentManager.reportIncident({
+                            level: 'CRITICAL',
+                            source: 'HEARTBEAT',
+                            reason: `No decisions or updates logged by the trading engine in the last ${(elapsedMs / 60000).toFixed(1)} minutes`
+                        });
+                    } else {
+                        console.warn(`⚠️ [OperationsWatchdog] HEARTBEAT SILENCE WARNING: ${errorMsg}`);
+                        await this.alertingService.sendAlert({
+                            level: 'WARNING',
+                            title: 'Trading Bot Heartbeat Silence Warning',
+                            message: `WARNING: No decisions or updates logged by the trading engine in the last ${(elapsedMs / 60000).toFixed(1)} minutes (consecutive checks failed: ${this.heartbeatFailures}).`,
+                            dedupKey: 'heartbeat_lost_warning'
+                        });
+                    }
+                    return {
                         source: 'HEARTBEAT',
-                        reason: `No decisions or updates logged by the trading engine in the last ${(elapsedMs / 60000).toFixed(1)} minutes`
-                    });
-                } else {
-                    console.warn(`⚠️ [OperationsWatchdog] HEARTBEAT SILENCE WARNING: ${errorMsg}`);
-                    await this.alertingService.sendAlert({
-                        level: 'WARNING',
-                        title: 'Trading Bot Heartbeat Silence Warning',
-                        message: `WARNING: No decisions or updates logged by the trading engine in the last ${(elapsedMs / 60000).toFixed(1)} minutes (consecutive checks failed: ${this.heartbeatFailures}).`,
-                        dedupKey: 'heartbeat_lost_warning'
-                    });
+                        healthy: false,
+                        checkedAt: new Date(),
+                        checkDurationMs: Date.now() - checkStart,
+                        severity,
+                        message: isAlarm ? (errorMsg || 'Heartbeat lost') : 'Heartbeat warning',
+                        metadata
+                    };
                 }
+
+                // Stateful recovery: resolve the incident if it was active
+                await this.incidentManager.resolveIncidentBySource('HEARTBEAT');
+
+                console.log(`[OperationsWatchdog] Bot is ALIVE. Last update was ${(elapsedMs / 1000).toFixed(0)}s ago.`);
+                return {
+                    source: 'HEARTBEAT',
+                    healthy: true,
+                    checkedAt: new Date(),
+                    checkDurationMs: Date.now() - checkStart,
+                    metadata
+                };
+            } catch (innerError: any) {
+                console.error('[OperationsWatchdog] Failed checkHeartbeat audit logging:', innerError?.message || innerError);
                 return {
                     source: 'HEARTBEAT',
                     healthy: false,
                     checkedAt: new Date(),
                     checkDurationMs: Date.now() - checkStart,
-                    severity,
-                    message: isAlarm ? (errorMsg || 'Heartbeat lost') : 'Heartbeat warning',
-                    metadata
+                    severity: 'CRITICAL',
+                    message: innerError?.message || String(innerError)
                 };
             }
+        };
 
-            // Stateful recovery: resolve the incident if it was active
-            await this.incidentManager.resolveIncidentBySource('HEARTBEAT');
+        if (this.failures) {
+            return this.failures.intercept<HealthCheckResult>({
+                type: FailureType.HEARTBEAT_LOSS,
+                component: 'OperationsWatchdogService',
+                operation: 'checkHeartbeat',
+                real: () => runCheck(),
+                simulate: async () => {
+                    const checkStart = Date.now();
+                    const errorMsg = 'Simulated heartbeat loss failure';
+                    
+                    // Trigger simulation alerts/incidents
+                    await this.incidentManager.reportIncident({
+                        level: 'CRITICAL',
+                        source: 'HEARTBEAT',
+                        reason: `No decisions or updates logged by the trading engine (SIMULATED): ${errorMsg}`
+                    });
 
-            console.log(`[OperationsWatchdog] Bot is ALIVE. Last update was ${(elapsedMs / 1000).toFixed(0)}s ago.`);
-            return {
-                source: 'HEARTBEAT',
-                healthy: true,
-                checkedAt: new Date(),
-                checkDurationMs: Date.now() - checkStart,
-                metadata
-            };
-        } catch (innerError: any) {
-            console.error('[OperationsWatchdog] Failed checkHeartbeat audit logging:', innerError?.message || innerError);
-            return {
-                source: 'HEARTBEAT',
-                healthy: false,
-                checkedAt: new Date(),
-                checkDurationMs: Date.now() - checkStart,
-                severity: 'CRITICAL',
-                message: innerError?.message || String(innerError)
-            };
+                    return {
+                        source: 'HEARTBEAT',
+                        healthy: false,
+                        checkedAt: new Date(),
+                        checkDurationMs: Date.now() - checkStart,
+                        severity: 'CRITICAL',
+                        message: errorMsg,
+                        metadata: this.enrichMetadata('HEARTBEAT', { simulated: true })
+                    };
+                }
+            });
         }
+        return runCheck();
     }
 
     /**
@@ -448,115 +486,147 @@ export class OperationsWatchdogService {
     }
 
     async checkBrokerConnection(maxSilenceMs: number = MVP_CONFIG.OPERATIONS.BROKER_TIMEOUT_MS): Promise<HealthCheckResult> {
-        const checkStart = Date.now();
-        let isSuccess = false;
-        let latestPing: any = null;
-        let errorMsg: string | null = null;
-        let customMeta: Record<string, any> = {};
+        const runCheck = async (): Promise<HealthCheckResult> => {
+            const checkStart = Date.now();
+            let isSuccess = false;
+            let latestPing: any = null;
+            let errorMsg: string | null = null;
+            let customMeta: Record<string, any> = {};
 
-        try {
-            const cutoff = new Date(Date.now() - maxSilenceMs);
-            latestPing = await prisma.decisionAudit.findFirst({
-                where: {
-                    classification: { in: ['BROKER_PING', 'BROKER_CONNECTION', 'HEARTBEAT'] },
-                    createdAt: { gte: cutoff }
-                },
-                orderBy: { createdAt: 'desc' }
-            });
+            try {
+                const cutoff = new Date(Date.now() - maxSilenceMs);
+                latestPing = await prisma.decisionAudit.findFirst({
+                    where: {
+                        classification: { in: ['BROKER_PING', 'BROKER_CONNECTION', 'HEARTBEAT'] },
+                        createdAt: { gte: cutoff }
+                    },
+                    orderBy: { createdAt: 'desc' }
+                });
 
-            if (!latestPing) {
-                isSuccess = false;
-                errorMsg = `No broker ping or connection heartbeat in the last ${(maxSilenceMs / 60000).toFixed(1)} minutes.`;
-            } else {
-                const metadata = latestPing.metadata as any;
-                if (metadata) {
-                    customMeta = metadata;
-                    if (metadata.connected === false || metadata.status === 'disconnected' || metadata.error) {
-                        isSuccess = false;
-                        errorMsg = metadata.error || 'Connection offline';
+                if (!latestPing) {
+                    isSuccess = false;
+                    errorMsg = `No broker ping or connection heartbeat in the last ${(maxSilenceMs / 60000).toFixed(1)} minutes.`;
+                } else {
+                    const metadata = latestPing.metadata as any;
+                    if (metadata) {
+                        customMeta = metadata;
+                        if (metadata.connected === false || metadata.status === 'disconnected' || metadata.error) {
+                            isSuccess = false;
+                            errorMsg = metadata.error || 'Connection offline';
+                        } else {
+                            isSuccess = true;
+                        }
                     } else {
                         isSuccess = true;
                     }
-                } else {
-                    isSuccess = true;
                 }
-            }
-        } catch (error: any) {
-            isSuccess = false;
-            errorMsg = error?.message || String(error);
-        }
-
-        try {
-            if (!isSuccess) {
-                this.brokerFailures++;
-            } else {
-                this.brokerFailures = 0;
+            } catch (error: any) {
+                isSuccess = false;
+                errorMsg = error?.message || String(error);
             }
 
-            const maxFailures = 3;
-            const isAlarm = this.brokerFailures >= maxFailures;
-            const severity = isAlarm ? 'CRITICAL' : (this.brokerFailures > 0 ? 'WARNING' : undefined);
+            try {
+                if (!isSuccess) {
+                    this.brokerFailures++;
+                } else {
+                    this.brokerFailures = 0;
+                }
 
-            const baseMetadata = {
-                latestPingId: latestPing?.id,
-                latestPingClass: latestPing?.classification,
-                latestPingCreatedAt: latestPing?.createdAt,
-                consecutiveFailures: this.brokerFailures,
-                maxFailures,
-                ...customMeta
-            };
-            const metadata = this.enrichMetadata('BROKER_CONNECTION', baseMetadata);
+                const maxFailures = 3;
+                const isAlarm = this.brokerFailures >= maxFailures;
+                const severity = isAlarm ? 'CRITICAL' : (this.brokerFailures > 0 ? 'WARNING' : undefined);
 
-            if (!isSuccess) {
-                if (isAlarm) {
-                    console.error(`🚨 [OperationsWatchdog] BROKER CONNECTION STALE/DOWN CRITICAL: ${errorMsg}`);
-                    await this.incidentManager.reportIncident({
-                        level: 'CRITICAL',
+                const baseMetadata = {
+                    latestPingId: latestPing?.id,
+                    latestPingClass: latestPing?.classification,
+                    latestPingCreatedAt: latestPing?.createdAt,
+                    consecutiveFailures: this.brokerFailures,
+                    maxFailures,
+                    ...customMeta
+                };
+                const metadata = this.enrichMetadata('BROKER_CONNECTION', baseMetadata);
+
+                if (!isSuccess) {
+                    if (isAlarm) {
+                        console.error(`🚨 [OperationsWatchdog] BROKER CONNECTION STALE/DOWN CRITICAL: ${errorMsg}`);
+                        await this.incidentManager.reportIncident({
+                            level: 'CRITICAL',
+                            source: 'BROKER_CONNECTION',
+                            reason: `Broker connection is reported down or stale. Detail: ${errorMsg || 'Connection offline'}`
+                        });
+                    } else {
+                        console.warn(`⚠️ [OperationsWatchdog] BROKER CONNECTION WARNING: ${errorMsg}`);
+                        await this.alertingService.sendAlert({
+                            level: 'WARNING',
+                            title: 'Broker Connection Warning',
+                            message: `WARNING: Broker connection is degraded or silent (consecutive checks failed: ${this.brokerFailures}). Detail: ${errorMsg || 'Connection offline'}`,
+                            dedupKey: 'broker_connection_stale_warning'
+                        });
+                    }
+                    return {
                         source: 'BROKER_CONNECTION',
-                        reason: `Broker connection is reported down or stale. Detail: ${errorMsg || 'Connection offline'}`
-                    });
-                } else {
-                    console.warn(`⚠️ [OperationsWatchdog] BROKER CONNECTION WARNING: ${errorMsg}`);
-                    await this.alertingService.sendAlert({
-                        level: 'WARNING',
-                        title: 'Broker Connection Warning',
-                        message: `WARNING: Broker connection is degraded or silent (consecutive checks failed: ${this.brokerFailures}). Detail: ${errorMsg || 'Connection offline'}`,
-                        dedupKey: 'broker_connection_stale_warning'
-                    });
+                        healthy: false,
+                        checkedAt: new Date(),
+                        checkDurationMs: Date.now() - checkStart,
+                        severity,
+                        message: errorMsg || 'Connection issue',
+                        metadata
+                    };
                 }
+
+                // Stateful recovery: resolve the incident if it was active
+                await this.incidentManager.resolveIncidentBySource('BROKER_CONNECTION');
+
+                console.log('[OperationsWatchdog] Broker connection is healthy.');
+                return {
+                    source: 'BROKER_CONNECTION',
+                    healthy: true,
+                    checkedAt: new Date(),
+                    checkDurationMs: Date.now() - checkStart,
+                    metadata
+                };
+            } catch (innerError: any) {
+                console.error('[OperationsWatchdog] Failed checkBrokerConnection audit logging:', innerError?.message || innerError);
                 return {
                     source: 'BROKER_CONNECTION',
                     healthy: false,
                     checkedAt: new Date(),
                     checkDurationMs: Date.now() - checkStart,
-                    severity,
-                    message: errorMsg || 'Connection issue',
-                    metadata
+                    severity: 'CRITICAL',
+                    message: innerError?.message || String(innerError)
                 };
             }
+        };
 
-            // Stateful recovery: resolve the incident if it was active
-            await this.incidentManager.resolveIncidentBySource('BROKER_CONNECTION');
+        if (this.failures) {
+            return this.failures.intercept<HealthCheckResult>({
+                type: FailureType.BROKER_DOWN,
+                component: 'OperationsWatchdogService',
+                operation: 'checkBrokerConnection',
+                real: () => runCheck(),
+                simulate: async () => {
+                    const checkStart = Date.now();
+                    const errorMsg = 'Simulated broker connection failure';
+                    
+                    await this.incidentManager.reportIncident({
+                        level: 'CRITICAL',
+                        source: 'BROKER_CONNECTION',
+                        reason: `Broker connection is reported down or stale (SIMULATED): ${errorMsg}`
+                    });
 
-            console.log('[OperationsWatchdog] Broker connection is healthy.');
-            return {
-                source: 'BROKER_CONNECTION',
-                healthy: true,
-                checkedAt: new Date(),
-                checkDurationMs: Date.now() - checkStart,
-                metadata
-            };
-        } catch (innerError: any) {
-            console.error('[OperationsWatchdog] Failed checkBrokerConnection audit logging:', innerError?.message || innerError);
-            return {
-                source: 'BROKER_CONNECTION',
-                healthy: false,
-                checkedAt: new Date(),
-                checkDurationMs: Date.now() - checkStart,
-                severity: 'CRITICAL',
-                message: innerError?.message || String(innerError)
-            };
+                    return {
+                        source: 'BROKER_CONNECTION',
+                        healthy: false,
+                        checkedAt: new Date(),
+                        checkDurationMs: Date.now() - checkStart,
+                        severity: 'CRITICAL',
+                        message: errorMsg,
+                        metadata: this.enrichMetadata('BROKER_CONNECTION', { simulated: true })
+                    };
+                }
+            });
         }
+        return runCheck();
     }
 
     /**

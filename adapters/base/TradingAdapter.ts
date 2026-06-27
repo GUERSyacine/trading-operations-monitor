@@ -1,4 +1,7 @@
 import { SourceCapabilities, LifecycleSource } from '../../layer-A(observation)/types';
+import { FeatureFlagService } from '../../layer-A(observation)/developer-console/FeatureFlagService';
+import { FeatureFlag, EventCategory, WatchdogEventType } from '../../layer-A(observation)/developer-console/types';
+import { EventBus } from '../../layer-A(observation)/developer-console/EventBus';
 
 export interface AdapterConfig {
     baseUrl: string;
@@ -17,7 +20,8 @@ export abstract class TradingAdapter {
     abstract executeActiveHalt(type: 'STOP_BUY' | 'STOP'): Promise<void>;
 
     constructor(
-        protected config: AdapterConfig
+        protected config: AdapterConfig,
+        protected flags?: FeatureFlagService
     ) {}
 
     /**
@@ -47,6 +51,17 @@ export abstract class TradingAdapter {
     }
 
     private async runPoll(): Promise<void> {
+        if (this.flags && !this.flags.isFeatureEnabled(FeatureFlag.POLLING)) {
+            console.warn(`[Adapter:${this.sourceSystem}] Polling skipped: FeatureFlag.POLLING disabled.`);
+            EventBus.getInstance().emit(
+                EventCategory.SYSTEM,
+                WatchdogEventType.SYSTEM_STATUS_CHANGED,
+                `Adapter:${this.sourceSystem}`,
+                { message: 'Polling skipped: FeatureFlag.POLLING disabled' }
+            );
+            return;
+        }
+
         if (this.isPolling) {
             console.warn(`[Adapter:${this.sourceSystem}] Warning: previous poll loop is still running. Skipping current cycle.`);
             return;

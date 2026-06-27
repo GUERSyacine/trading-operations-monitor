@@ -1,6 +1,9 @@
 import WebSocket from 'ws';
 import { EventPersistenceService } from '../../adapters/base/EventPersistenceService';
 import { TelemetryMapper } from '../TelemetryMapper';
+import { FeatureFlagService } from '../developer-console/FeatureFlagService';
+import { EventBus } from '../developer-console/EventBus';
+import { FeatureFlag, WatchdogEventType, EventCategory } from '../developer-console/types';
 
 export interface FreqtradeWebSocketAdapterConfig {
     baseUrl: string; // e.g. http://localhost:8080/api/v1
@@ -15,8 +18,27 @@ export class FreqtradeWebSocketAdapter {
 
     constructor(
         private config: FreqtradeWebSocketAdapterConfig,
-        private persistence: EventPersistenceService
-    ) {}
+        private persistence: EventPersistenceService,
+        private flags?: FeatureFlagService,
+        private eventBus?: EventBus
+    ) {
+        if (this.eventBus) {
+            this.eventBus.subscribe((event) => {
+                if (event.type === WatchdogEventType.FEATURE_FLAG_CHANGED) {
+                    const payload = event.payload as { flag: FeatureFlag; enabled: boolean };
+                    if (payload && payload.flag === FeatureFlag.WEBSOCKET) {
+                        if (payload.enabled) {
+                            console.log('[WS] Enabling WebSocket via feature flag trigger...');
+                            this.connect();
+                        } else {
+                            console.log('[WS] Disabling WebSocket via feature flag trigger...');
+                            this.disconnect();
+                        }
+                    }
+                }
+            });
+        }
+    }
 
     /**
      * Establish connection to Freqtrade WebSocket server.
@@ -44,6 +66,11 @@ export class FreqtradeWebSocketAdapter {
     }
 
     private establishConnection(): void {
+        if (this.flags && !this.flags.isFeatureEnabled(FeatureFlag.WEBSOCKET)) {
+            console.log('[WS] Connection attempt cancelled: FeatureFlag.WEBSOCKET disabled.');
+            return;
+        }
+
         if (this.ws) {
             try {
                 this.ws.close();
@@ -132,6 +159,10 @@ export class FreqtradeWebSocketAdapter {
 
     private handleReconnect(): void {
         if (!this.shouldReconnect) return;
+        if (this.flags && !this.flags.isFeatureEnabled(FeatureFlag.WEBSOCKET)) {
+            console.log('[WS] Reconnect attempt bypassed: FeatureFlag.WEBSOCKET disabled.');
+            return;
+        }
         if (this.reconnectTimeout) return;
 
         console.log('[WS] Attempting reconnection in 5 seconds...');

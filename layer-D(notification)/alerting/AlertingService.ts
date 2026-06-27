@@ -1,4 +1,6 @@
 import { prisma } from '../../prisma';
+import { FeatureFlagService } from '../../layer-A(observation)/developer-console/FeatureFlagService';
+import { FeatureFlag } from '../../layer-A(observation)/developer-console/types';
 
 export type AlertLevel = 'INFO' | 'WARNING' | 'CRITICAL';
 
@@ -11,6 +13,7 @@ interface AlertPayload {
 }
 
 export class AlertingService {
+    constructor(private flags?: FeatureFlagService) {}
 
     // De-duplication Cache (In-Memory for now, or could use DB)
     private recentAlerts: Map<string, number> = new Map();
@@ -75,6 +78,11 @@ export class AlertingService {
     }
 
     private async dispatchTelegram(alert: AlertPayload): Promise<void> {
+        if (this.flags && !this.flags.isFeatureEnabled(FeatureFlag.ALERTING)) {
+            console.log(`[Alerting] Telegram notification suppressed by ALERTING feature flag: ${alert.title}`);
+            return;
+        }
+
         const token = process.env.TELEGRAM_BOT_TOKEN;
         const chatId = process.env.TELEGRAM_CHAT_ID;
 
