@@ -1,5 +1,5 @@
 import { FailureInjectionService } from './FailureInjectionService';
-import { FeatureFlagService } from './FeatureFlagService';
+import { FeatureFlagService, FEATURE_FLAG_METADATA } from './FeatureFlagService';
 import { InfrastructureController } from './InfrastructureController';
 import { FailureType, FailureScope, FeatureFlag, SystemCommand } from './types';
 
@@ -25,9 +25,22 @@ export class DeveloperConsoleController {
         this.failures.clearAll(correlationId);
     }
 
-    public setFeatureFlag(flag: FeatureFlag, enabled: boolean, correlationId?: string): void {
+    public setFeatureFlag(flag: FeatureFlag, enabled: boolean, reason?: string, correlationId?: string): void {
         this.assertWriteAllowed();
-        this.flags.setFeatureFlag(flag, enabled, correlationId);
+        this.flags.setFeatureFlag(flag, enabled, reason, correlationId);
+    }
+
+    public getAllFeatureFlags(): Record<FeatureFlag, { enabled: boolean; name: string; description: string }> {
+        const result = {} as Record<FeatureFlag, { enabled: boolean; name: string; description: string }>;
+        for (const flag of Object.values(FeatureFlag)) {
+            const meta = FEATURE_FLAG_METADATA[flag];
+            result[flag] = {
+                enabled: this.flags.isFeatureEnabled(flag),
+                name: meta.name,
+                description: meta.description
+            };
+        }
+        return result;
     }
 
     public async executeInfraCommand(command: SystemCommand, correlationId?: string): Promise<void> {

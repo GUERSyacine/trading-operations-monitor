@@ -194,6 +194,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
         }
 
         .btn-red { background: var(--color-red); }
+        .btn-green { background: var(--color-green); }
         .btn-orange { background: var(--color-orange); }
         .btn-purple { background: var(--color-purple); }
         .btn-secondary { background: rgba(255, 255, 255, 0.08); color: var(--text-primary); }
@@ -316,6 +317,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             <button class="tab-btn active" onclick="switchTab('dashboard')">📊 Dashboard</button>
             <button class="tab-btn" onclick="switchTab('health')">❤️ Health Status</button>
             <button class="tab-btn" onclick="switchTab('failures')">⚠️ Failure Injection</button>
+            <button class="tab-btn" onclick="switchTab('runtime')">🎛️ Runtime Controls</button>
             <button class="tab-btn" onclick="switchTab('infra')">⚙️ Infrastructure</button>
             <button class="tab-btn" onclick="switchTab('timeline')">📜 Event Timeline</button>
         </aside>
@@ -412,21 +414,6 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                         </div>
                     </div>
 
-                    <!-- Failure Card: WS DISCONNECTED -->
-                    <div class="failure-card">
-                        <div>
-                            <div class="flex-between" style="margin-bottom:0.5rem;">
-                                <strong style="font-size:0.95rem;">Websocket Offline</strong>
-                                <span class="sys-badge">OPERATIONS</span>
-                            </div>
-                            <p style="font-size:0.8rem; color:var(--text-secondary)">Disconnects WebSocket telemetry feed.</p>
-                        </div>
-                        <div class="flex-between">
-                            <input type="number" id="ws-ttl" placeholder="TTL (sec)" class="form-control" style="width:100px; padding:0.3rem;" value="30">
-                            <button class="btn btn-orange" onclick="injectFailure('WS_DISCONNECTED', 'OPERATIONS', 'ws-ttl')">Inject</button>
-                        </div>
-                    </div>
-
                     <!-- Failure Card: HEARTBEAT LOSS -->
                     <div class="failure-card">
                         <div>
@@ -441,6 +428,16 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                             <button class="btn btn-orange" onclick="injectFailure('HEARTBEAT_LOSS', 'OPERATIONS', 'heart-ttl')">Inject</button>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- Panel: Runtime Controls -->
+            <div id="panel-runtime" class="tab-panel">
+                <h2>Subsystem Runtime Controls</h2>
+                <p style="color:var(--text-secondary); margin-bottom:1.5rem;">Enable or disable internal monitoring adapters and capabilities at runtime.</p>
+                
+                <div class="grid" id="runtime-controls-container">
+                    <!-- Loaded dynamically -->
                 </div>
             </div>
 
@@ -596,6 +593,73 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             dashTimeline.scrollTop = dashTimeline.scrollHeight;
         }
 
+        async function fetchRuntimeFlags() {
+            try {
+                const res = await fetch('/api/v1/flags');
+                const json = await res.json();
+                if (json.success) {
+                    renderRuntimeFlags(json.data);
+                }
+            } catch (err) {
+                console.error('Failed to fetch runtime flags:', err);
+            }
+        }
+
+        function renderRuntimeFlags(flags) {
+            const container = document.getElementById('runtime-controls-container');
+            container.innerHTML = '';
+            
+            for (const [key, meta] of Object.entries(flags)) {
+                const statusHtml = meta.enabled 
+                    ? \`\<span id="badge-flag-\${key}" style="font-weight:600; color:var(--color-green); display:inline-flex; align-items:center;"><span class="indicator ind-green"></span>ENABLED</span>\`
+                    : \`\<span id="badge-flag-\${key}" style="font-weight:600; color:var(--color-red); display:inline-flex; align-items:center;"><span class="indicator ind-red"></span>DISABLED</span>\`;
+                    
+                const buttonHtml = meta.enabled
+                    ? \`\<button id="btn-flag-\${key}" class="btn btn-red" style="padding:0.4rem 0.8rem; font-size:0.85rem;" onclick="setFeatureFlag('\${key}', false)">Disable</button>\`
+                    : \`\<button id="btn-flag-\${key}" class="btn btn-green" style="padding:0.4rem 0.8rem; font-size:0.85rem;" onclick="setFeatureFlag('\${key}', true)">Enable</button>\`;
+                    
+                const cardHtml = \`
+                    <div class="card" style="padding:1.5rem; display:flex; flex-direction:column; justify-content:space-between; gap:1rem;">
+                        <div>
+                            <h3 style="font-size:1.1rem; margin-bottom:0.3rem;">\${meta.name}</h3>
+                            <p style="font-size:0.85rem; color:var(--text-secondary); line-height:1.4;">\${meta.description}</p>
+                        </div>
+                        <div class="flex-between">
+                            <div style="font-size:0.9rem;">
+                                <span style="color:var(--text-secondary);">Status:</span>
+                                \${statusHtml}
+                            </div>
+                            \${buttonHtml}
+                        </div>
+                    </div>
+                \`;
+                container.insertAdjacentHTML('beforeend', cardHtml);
+            }
+        }
+
+        async function setFeatureFlag(flag, enabled) {
+            const promptRes = prompt(\`Enter reason for updating feature flag \${flag}:\`, 'Developer Console');
+            if (promptRes === null) return;
+            const reason = promptRes || 'Developer Console';
+            const payload = {
+                enabled,
+                reason,
+                correlationId: 'req_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5)
+            };
+
+            try {
+                const res = await fetch(\`/api/v1/flags/\${flag}\`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const json = await res.json();
+                if (!json.success) alert(json.message);
+            } catch (err) {
+                alert('Request failed: ' + err.message);
+            }
+        }
+
         function setupSseStream() {
             if (sseSource) sseSource.close();
             
@@ -619,6 +683,8 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                     } else if (msg.type === 'FAILURE_CLEARED') {
                         let activeCount = parseInt(document.getElementById('active-failures-count').textContent) || 0;
                         if (activeCount > 0) document.getElementById('active-failures-count').textContent = activeCount - 1;
+                    } else if (msg.type === 'FEATURE_FLAG_CHANGED') {
+                        fetchRuntimeFlags();
                     }
                 } catch (e) {
                     console.error('Error parsing SSE event data:', e);
@@ -633,6 +699,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
         // Initial setup
         fetchHealth();
         fetchFreqtradeStatus();
+        fetchRuntimeFlags();
         setupSseStream();
 
         // Intervals

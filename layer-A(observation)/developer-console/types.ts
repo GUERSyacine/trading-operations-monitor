@@ -31,6 +31,7 @@ export enum SystemCommand {
 export enum FailureType {
     DNS_FAILURE = 'DNS_FAILURE',
     NETWORK_TIMEOUT = 'NETWORK_TIMEOUT',
+    /** @deprecated Use FeatureFlag.WEBSOCKET runtime control instead */
     WS_DISCONNECTED = 'WS_DISCONNECTED',
     HEARTBEAT_LOSS = 'HEARTBEAT_LOSS',
     BROKER_DOWN = 'BROKER_DOWN',

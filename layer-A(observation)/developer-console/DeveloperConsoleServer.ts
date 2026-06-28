@@ -24,7 +24,7 @@ export class DeveloperConsoleServer {
 
             // CORS headers for local execution
             res.setHeader('Access-Control-Allow-Origin', '*');
-            res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+            res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
             res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
             if (method === 'OPTIONS') {
@@ -103,6 +103,53 @@ export class DeveloperConsoleServer {
     }
 
     private async handleRestRoute(req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string): Promise<void> {
+        if (method === 'GET') {
+            // Route 4.4a: Get Feature Flags
+            if (url === '/api/v1/flags') {
+                try {
+                    const flags = this.controller.getAllFeatureFlags();
+                    this.sendJson(res, 200, { success: true, data: flags });
+                } catch (err: any) {
+                    this.sendJson(res, 500, { success: false, message: err.message });
+                }
+                return;
+            }
+        }
+
+        if (method === 'PUT') {
+            // Route 4.4b: Update Feature Flag
+            if (url.startsWith('/api/v1/flags/')) {
+                const flagStr = url.substring('/api/v1/flags/'.length).toUpperCase();
+                if (!Object.values(FeatureFlag).includes(flagStr as FeatureFlag)) {
+                    this.sendJson(res, 400, { success: false, message: `Invalid flag: ${flagStr}` });
+                    return;
+                }
+
+                const body = await this.readRequestBody(req);
+                let payload: any;
+                try {
+                    payload = JSON.parse(body || '{}');
+                } catch (e) {
+                    this.sendJson(res, 400, { success: false, message: 'Invalid JSON payload' });
+                    return;
+                }
+
+                const { enabled, reason, correlationId } = payload;
+                if (enabled === undefined) {
+                    this.sendJson(res, 422, { success: false, message: 'Field "enabled" is required.' });
+                    return;
+                }
+
+                try {
+                    this.controller.setFeatureFlag(flagStr as FeatureFlag, enabled, reason, correlationId);
+                    this.sendJson(res, 200, { success: true, message: `Updated feature flag ${flagStr} to ${enabled}` });
+                } catch (err: any) {
+                    this.sendJson(res, 403, { success: false, message: err.message });
+                }
+                return;
+            }
+        }
+
         if (method === 'POST') {
             const body = await this.readRequestBody(req);
             let payload: any;
@@ -151,22 +198,6 @@ export class DeveloperConsoleServer {
                 try {
                     this.controller.clearAllFailures(correlationId);
                     this.sendJson(res, 200, { success: true, message: 'Cleared all injected failures' });
-                } catch (err: any) {
-                    this.sendJson(res, 403, { success: false, message: err.message });
-                }
-                return;
-            }
-
-            // Route 4.4: Set Feature Flag
-            if (url === '/api/v1/flags/set') {
-                const { flag, enabled, correlationId } = payload;
-                if (!flag || enabled === undefined) {
-                    this.sendJson(res, 400, { success: false, message: 'Fields flag and enabled are required.' });
-                    return;
-                }
-                try {
-                    this.controller.setFeatureFlag(flag as FeatureFlag, enabled, correlationId);
-                    this.sendJson(res, 200, { success: true, message: `Updated feature flag ${flag} to ${enabled}` });
                 } catch (err: any) {
                     this.sendJson(res, 403, { success: false, message: err.message });
                 }

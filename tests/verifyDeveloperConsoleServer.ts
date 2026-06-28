@@ -8,7 +8,7 @@ import { FeatureFlagService } from '../layer-A(observation)/developer-console/Fe
 import { DeveloperConsoleGateway } from '../layer-A(observation)/developer-console/DeveloperConsoleGateway';
 import { DeveloperConsoleController } from '../layer-A(observation)/developer-console/DeveloperConsoleController';
 import { DeveloperConsoleServer } from '../layer-A(observation)/developer-console/DeveloperConsoleServer';
-import { FailureType, FailureScope, SystemCommand } from '../layer-A(observation)/developer-console/types';
+import { FailureType, FailureScope, FeatureFlag, SystemCommand } from '../layer-A(observation)/developer-console/types';
 
 // Helper to make local HTTP requests
 function httpRequest(options: http.RequestOptions, body?: any): Promise<{ statusCode: number; data: string }> {
@@ -150,6 +150,38 @@ async function runTests() {
         // Assert correlation ID propagation
         const clearEvent = JSON.parse(sseEvents[sseEvents.length - 1]);
         assert.strictEqual(clearEvent.correlationId, 'test_corr_456');
+
+        // 4.5. Verify GET /api/v1/flags and PUT /api/v1/flags/:flag
+        console.log('   - Testing GET /api/v1/flags...');
+        const getFlagsRes = await httpRequest({
+            host: '127.0.0.1',
+            port: testPort,
+            path: '/api/v1/flags',
+            method: 'GET'
+        });
+        assert.strictEqual(getFlagsRes.statusCode, 200);
+        const getFlagsData = JSON.parse(getFlagsRes.data);
+        assert.strictEqual(getFlagsData.success, true);
+        assert.ok(getFlagsData.data.WEBSOCKET);
+        assert.strictEqual(getFlagsData.data.WEBSOCKET.enabled, true); // default true
+        assert.strictEqual(getFlagsData.data.WEBSOCKET.name, 'WebSocket Ingestion');
+
+        console.log('   - Testing PUT /api/v1/flags/WEBSOCKET...');
+        const putFlagRes = await httpRequest({
+            host: '127.0.0.1',
+            port: testPort,
+            path: '/api/v1/flags/WEBSOCKET',
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' }
+        }, {
+            enabled: false,
+            reason: 'Test Suite Update',
+            correlationId: 'test_flag_corr'
+        });
+        assert.strictEqual(putFlagRes.statusCode, 200);
+        const putFlagData = JSON.parse(putFlagRes.data);
+        assert.strictEqual(putFlagData.success, true);
+        assert.strictEqual(flags.isFeatureEnabled(FeatureFlag.WEBSOCKET), false);
 
         // 5. Verify Read-Only Mode enforcement
         console.log('   - Testing Read-Only Mode access restriction...');

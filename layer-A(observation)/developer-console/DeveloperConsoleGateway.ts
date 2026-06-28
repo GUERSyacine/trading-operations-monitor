@@ -38,6 +38,8 @@ export class DeveloperConsoleGateway {
         let severity: 'info' | 'warning' | 'critical' | 'success' = 'info';
         let color = '#3b82f6'; // default blue
         let icon = 'ℹ️';
+        let title = `${event.source} - ${event.type.replace(/_/g, ' ')}`;
+        let description = JSON.stringify(event.payload);
 
         switch (event.type) {
             case WatchdogEventType.ALERT_RAISED:
@@ -67,6 +69,14 @@ export class DeveloperConsoleGateway {
                 color = '#8b5cf6'; // purple
                 icon = '⚙️';
                 break;
+            case WatchdogEventType.FEATURE_FLAG_CHANGED:
+                severity = 'info';
+                color = '#8b5cf6'; // purple
+                icon = '⚙️';
+                const payload = event.payload as any;
+                title = 'Runtime Control Updated';
+                description = `Flag: ${payload.flag}\nTransition: ${payload.oldValue ? 'ENABLED' : 'DISABLED'} ↓ ${payload.newValue ? 'ENABLED' : 'DISABLED'}\nReason: ${payload.reason || 'Developer Console'}`;
+                break;
         }
 
         return {
@@ -76,8 +86,8 @@ export class DeveloperConsoleGateway {
             type: event.type,
             source: event.source,
             correlationId: event.correlationId,
-            title: `${event.source} - ${event.type.replace(/_/g, ' ')}`,
-            description: JSON.stringify(event.payload),
+            title,
+            description,
             severity,
             color,
             icon,
