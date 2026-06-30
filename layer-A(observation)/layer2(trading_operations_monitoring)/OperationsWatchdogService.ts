@@ -37,7 +37,8 @@ export enum RiskViolationType {
     BACKWARD_TRANSITION = 'BACKWARD_TRANSITION',
     TERMINAL_MUTATION = 'TERMINAL_MUTATION',
     INVALID_TRANSITION = 'INVALID_TRANSITION',
-    DUPLICATE_FILL = 'DUPLICATE_FILL'
+    DUPLICATE_FILL = 'DUPLICATE_FILL',
+    UNEXPECTED_FILL = 'UNEXPECTED_FILL'
 }
 
 export interface ProtectionAction {
@@ -216,6 +217,10 @@ export class OperationsWatchdogService {
                         const stepName = this.canonicalOrder[stepIdx];
                         if (isGuaranteedStep(stepName)) {
                             hasSkipped = true;
+                            if (classification === 'ORDER_FILLED') {
+                                isInvalid = true;
+                                violationType = RiskViolationType.UNEXPECTED_FILL;
+                            }
                             break;
                         }
                     }
