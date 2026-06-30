@@ -217,7 +217,7 @@ async function runTests() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         }, {
-            scenario: OperationScenario.HAPPY_PATH,
+            scenario: OperationScenario.ENTRY_EXECUTION,
             symbol: 'BTCUSDT'
         });
         assert.strictEqual(runHappyRes.statusCode, 200);
@@ -245,7 +245,7 @@ async function runTests() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         }, {
-            scenario: OperationScenario.NORMAL_EXIT,
+            scenario: OperationScenario.POSITION_EXIT,
             tradeId: 'test_sim_exit_01'
         });
         assert.strictEqual(runExitRes.statusCode, 200);

@@ -479,10 +479,10 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                         <div class="failure-card">
                             <div>
                                 <div class="flex-between" style="margin-bottom:0.5rem;">
-                                    <strong style="font-size:0.95rem;">Happy Entry & Exit <span style="font-size:0.8rem; font-weight:normal; opacity:0.6;">(C1)</span></strong>
+                                    <strong style="font-size:0.95rem;">Happy Path (Entry) <span style="font-size:0.8rem; font-weight:normal; opacity:0.6;">(C1)</span></strong>
                                     <span class="sys-badge" style="color:var(--color-green); background:rgba(16,185,129,0.15); border-color:rgba(16,185,129,0.3)">HEALTHY</span>
                                 </div>
-                                <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:0.75rem;">Simulates a standard, successful lifecycle flow: ORDER_CREATED &rarr; ORDER_OPEN &rarr; ORDER_FILLED.</p>
+                                <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:0.75rem;">Simulates a standard, successful entry lifecycle flow: ORDER_CREATED &rarr; ORDER_OPEN &rarr; ORDER_FILLED.</p>
                                 <div style="font-size:0.75rem; background:rgba(0,0,0,0.2); border-radius:4px; padding:0.5rem; color:var(--text-secondary); font-family:monospace; line-height:1.4;">
                                     <strong style="color:var(--color-green);">Expected Result:</strong><br>
                                     ✓ System remains healthy<br>
@@ -490,7 +490,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                                     ✓ No incidents triggered
                                 </div>
                             </div>
-                            <button class="btn btn-green" onclick="runOperationsScenario('HAPPY_PATH')">Run Scenario</button>
+                            <button class="btn btn-green" onclick="runOperationsScenario('ENTRY_EXECUTION')">Run Scenario</button>
                         </div>
 
                         <!-- Cancelled Entry -->
@@ -515,7 +515,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                         <div class="failure-card">
                             <div>
                                 <div class="flex-between" style="margin-bottom:0.5rem;">
-                                    <strong style="font-size:0.95rem;">Normal Exit <span style="font-size:0.8rem; font-weight:normal; opacity:0.6;">(C3)</span></strong>
+                                    <strong style="font-size:0.95rem;">Position Exit <span style="font-size:0.8rem; font-weight:normal; opacity:0.6;">(C3)</span></strong>
                                     <span class="sys-badge" style="color:var(--color-green); background:rgba(16,185,129,0.15); border-color:rgba(16,185,129,0.3)">HEALTHY</span>
                                 </div>
                                 <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:0.75rem;">Simulates standard exit position closure flow: ORDER_CREATED &rarr; ORDER_OPEN &rarr; ORDER_FILLED.</p>
@@ -526,7 +526,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                                     ✓ No warnings/incidents
                                 </div>
                             </div>
-                            <button class="btn btn-green" onclick="runOperationsScenario('NORMAL_EXIT')">Run Scenario</button>
+                            <button class="btn btn-green" onclick="runOperationsScenario('POSITION_EXIT')">Run Scenario</button>
                         </div>
                     </div>
                 </div>

@@ -32,6 +32,7 @@ export class WatchdogOrchestrator {
     private webhookReceiver: FreqtradeWebhookReceiver;
     private freqtradeWsAdapter: FreqtradeWebSocketAdapter;
     private anomalyDetector: LifecycleAnomalyDetector;
+    private startedAt = Date.now();
 
     // Developer Console Server
     private devConsoleServer: DeveloperConsoleServer;
@@ -148,6 +149,7 @@ export class WatchdogOrchestrator {
      */
     async start(): Promise<void> {
         await this.validateStartup();
+        this.startedAt = Date.now();
 
         console.log('[Orchestrator] Hydrating active incident engine state...');
         await this.incidentManager.init();
@@ -273,6 +275,10 @@ export class WatchdogOrchestrator {
         }
         this.opsRunning = true;
         try {
+            const gracePeriod = Number(process.env.WATCHDOG_STARTUP_GRACE_PERIOD_MS) || 60_000;
+            const isGraceActive = (Date.now() - this.startedAt) < gracePeriod;
+            this.opsService.setStartupGraceActive(isGraceActive);
+
             console.log('[Orchestrator] Running Operations Watchdog Checks...');
 
             const coreChecks = [

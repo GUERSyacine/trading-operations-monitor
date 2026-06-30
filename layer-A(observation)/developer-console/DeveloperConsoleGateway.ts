@@ -77,6 +77,14 @@ export class DeveloperConsoleGateway {
                 title = 'Simulation Started';
                 description = `Scenario: ${simPayload.scenario}\nTrade ID: ${simPayload.tradeId}\nSymbol: ${simPayload.symbol}`;
                 break;
+            case WatchdogEventType.SIMULATION_COMPLETED:
+                severity = 'success';
+                color = '#10b981'; // green
+                icon = '🏁';
+                const compPayload = event.payload as any;
+                title = 'Simulation Completed';
+                description = `Scenario: ${compPayload.scenario}\nTrade ID: ${compPayload.tradeId}\nSymbol: ${compPayload.symbol}`;
+                break;
             case WatchdogEventType.FEATURE_FLAG_CHANGED:
                 severity = 'info';
                 color = '#8b5cf6'; // purple

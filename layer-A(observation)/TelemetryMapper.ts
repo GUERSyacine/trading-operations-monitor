@@ -1,4 +1,4 @@
-import { LifecycleEvent, LifecycleEventType } from './types';
+import { LifecycleEvent, LifecycleEventType, TradeDirection } from './types';
 
 export class TelemetryMapper {
     /**
@@ -79,6 +79,17 @@ export class TelemetryMapper {
         const identifier = orderId || tradeId;
         const eventId = `FREQTRADE:${identifier}:${eventType}:${eventTimestamp}`;
 
+        let direction = TradeDirection.UNKNOWN;
+        if (normalizedType.startsWith('entry')) {
+            direction = TradeDirection.ENTRY;
+        } else if (normalizedType.startsWith('exit')) {
+            direction = TradeDirection.EXIT;
+        } else if (side === 'BUY') {
+            direction = TradeDirection.ENTRY;
+        } else if (side === 'SELL') {
+            direction = TradeDirection.EXIT;
+        }
+
         return {
             schemaVersion: 1,
             eventId,
@@ -92,7 +103,8 @@ export class TelemetryMapper {
             symbol,
             side,
             price,
-            amount
+            amount,
+            direction
         };
     }
 
@@ -127,6 +139,13 @@ export class TelemetryMapper {
         // Deterministic eventId: `${source}:${orderId || tradeId}:${eventType}:${timestamp}`
         const eventId = `FREQTRADE:${orderId}:${eventType}:${eventTimestamp}`;
 
+        let direction = TradeDirection.UNKNOWN;
+        if (side === 'BUY') {
+            direction = TradeDirection.ENTRY;
+        } else if (side === 'SELL') {
+            direction = TradeDirection.EXIT;
+        }
+
         return {
             schemaVersion: 1,
             eventId,
@@ -140,7 +159,8 @@ export class TelemetryMapper {
             symbol,
             side,
             price,
-            amount
+            amount,
+            direction
         };
     }
 
@@ -201,6 +221,17 @@ export class TelemetryMapper {
         // Deterministic eventId: `FREQTRADE:${tradeId}:${payload.type}:${eventTimestamp}`
         const eventId = `FREQTRADE:${tradeId}:${payload.type}:${eventTimestamp}`;
 
+        let direction = TradeDirection.UNKNOWN;
+        if (normalizedType.startsWith('entry')) {
+            direction = TradeDirection.ENTRY;
+        } else if (normalizedType.startsWith('exit')) {
+            direction = TradeDirection.EXIT;
+        } else if (side === 'BUY') {
+            direction = TradeDirection.ENTRY;
+        } else if (side === 'SELL') {
+            direction = TradeDirection.EXIT;
+        }
+
         return {
             schemaVersion: 1,
             eventId,
@@ -215,7 +246,8 @@ export class TelemetryMapper {
             symbol,
             side,
             price: price !== undefined && price !== null ? Number(price) : undefined,
-            amount: amount !== undefined && amount !== null ? Number(amount) : undefined
+            amount: amount !== undefined && amount !== null ? Number(amount) : undefined,
+            direction
         };
     }
 }

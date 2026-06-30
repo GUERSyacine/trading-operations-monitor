@@ -63,6 +63,12 @@ export type PipelineVisibilityLevel =
     | 'PARTIAL'
     | 'FULL';
 
+export enum TradeDirection {
+    ENTRY = 'ENTRY',
+    EXIT = 'EXIT',
+    UNKNOWN = 'UNKNOWN'
+}
+
 export interface LifecycleEvent {
     schemaVersion: 1;
     eventId: string;
@@ -79,6 +85,7 @@ export interface LifecycleEvent {
     side?: 'BUY' | 'SELL';
     price?: number;
     amount?: number;
+    direction?: TradeDirection;
 }
 
 

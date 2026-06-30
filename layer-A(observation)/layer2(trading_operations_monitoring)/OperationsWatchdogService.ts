@@ -107,6 +107,12 @@ export class OperationsWatchdogService {
 
     protected heartbeatFailures = 0;
     protected brokerFailures = 0;
+    protected startupGraceActive = false;
+
+    public setStartupGraceActive(active: boolean): void {
+        this.startupGraceActive = active;
+    }
+
     protected tradeFrequencyFailures = new Map<string, number>();
 
     protected consecutiveConfidenceBreaches = 0;
@@ -269,6 +275,17 @@ export class OperationsWatchdogService {
             } catch (error: any) {
                 isSuccess = false;
                 errorMsg = error?.message || String(error);
+            }
+
+            if (this.startupGraceActive && !isSuccess) {
+                console.log(`[OperationsWatchdog] Heartbeat stale during startup grace period. Bypassing failure reporting.`);
+                return {
+                    source: 'HEARTBEAT',
+                    healthy: true,
+                    checkedAt: new Date(),
+                    checkDurationMs: Date.now() - checkStart,
+                    message: `Heartbeat check bypassed during startup grace period. Original issue: ${errorMsg}`
+                };
             }
 
             try {
@@ -525,6 +542,17 @@ export class OperationsWatchdogService {
                 errorMsg = error?.message || String(error);
             }
 
+            if (this.startupGraceActive && !isSuccess) {
+                console.log(`[OperationsWatchdog] Broker connection stale during startup grace period. Bypassing failure reporting.`);
+                return {
+                    source: 'BROKER_CONNECTION',
+                    healthy: true,
+                    checkedAt: new Date(),
+                    checkDurationMs: Date.now() - checkStart,
+                    message: `Broker connection check bypassed during startup grace period. Original issue: ${errorMsg}`
+                };
+            }
+
             try {
                 if (!isSuccess) {
                     this.brokerFailures++;
@@ -690,6 +718,16 @@ export class OperationsWatchdogService {
 
             if (newestTicks.length === 0) {
                 const msg = 'No market data updates globally.';
+                if (this.startupGraceActive) {
+                    console.log(`[OperationsWatchdog] Market data telemetry stale (no ticks) during startup grace period. Bypassing failure reporting.`);
+                    return {
+                        source: 'MARKET_DATA',
+                        healthy: true,
+                        checkedAt: new Date(),
+                        checkDurationMs: Date.now() - checkStart,
+                        message: `Market data check bypassed during startup grace period. Original issue: ${msg}`
+                    };
+                }
                 console.warn(`⚠️ [OperationsWatchdog] MARKET DATA TELEMETRY STALE: ${msg}`);
                 
                 await this.alertingService.sendAlert({
@@ -780,6 +818,16 @@ export class OperationsWatchdogService {
             // 2. Telemetry Freshness check
             if (telemetryAgeMs > resolvedStalenessThresholdMs) {
                 const msg = `Market data telemetry is stale. Age: ${(telemetryAgeMs / 1000).toFixed(0)} seconds (threshold: ${(resolvedStalenessThresholdMs / 1000).toFixed(0)}s).`;
+                if (this.startupGraceActive) {
+                    console.log(`[OperationsWatchdog] Market data telemetry stale during startup grace period. Bypassing failure reporting.`);
+                    return {
+                        source: 'MARKET_DATA',
+                        healthy: true,
+                        checkedAt: new Date(),
+                        checkDurationMs: Date.now() - checkStart,
+                        message: `Market data check bypassed during startup grace period. Original issue: ${msg}`
+                    };
+                }
                 console.warn(`⚠️ [OperationsWatchdog] MARKET DATA TELEMETRY STALE: ${msg}`);
 
                 await this.alertingService.sendAlert({
@@ -1233,11 +1281,55 @@ export class OperationsWatchdogService {
                     return timeA - timeB;
                 });
 
-                console.log(
-                  'TRADE DEBUG',
-                  tradeId,
-                  tradeTimeline.map(a => a.classification)
-                );
+                const getEventDirection = (audit: any): string => {
+                    const meta = audit.metadata as any;
+                    if (meta && meta.lifecycleEvent && meta.lifecycleEvent.direction) {
+                        return meta.lifecycleEvent.direction;
+                    }
+                    const raw = meta?.rawPayload;
+                    if (raw) {
+                        const type = String(raw.type || raw.event || '').toLowerCase();
+                        if (type.includes('entry') || type.includes('enter')) return 'ENTRY';
+                        if (type.includes('exit')) return 'EXIT';
+                        const side = String(raw.ft_order_side || '').toLowerCase();
+                        if (side === 'buy') return 'ENTRY';
+                        if (side === 'sell') return 'EXIT';
+                    }
+                    const side = String(meta?.side || meta?.lifecycleEvent?.side || '').toUpperCase();
+                    if (side === 'BUY') return 'ENTRY';
+                    if (side === 'SELL') return 'EXIT';
+
+                    return 'UNKNOWN';
+                };
+
+                const entryEvents = tradeTimeline.filter(a => getEventDirection(a) === 'ENTRY');
+                const exitEvents = tradeTimeline.filter(a => getEventDirection(a) === 'EXIT');
+                const unknownEvents = tradeTimeline.filter(a => {
+                    const dir = getEventDirection(a);
+                    return dir !== 'ENTRY' && dir !== 'EXIT';
+                });
+
+                if (entryEvents.length > 0) {
+                    console.log(
+                        'TRADE DEBUG',
+                        `${tradeId} (entry)`,
+                        entryEvents.map(a => a.classification)
+                    );
+                }
+                if (exitEvents.length > 0) {
+                    console.log(
+                        'TRADE DEBUG',
+                        `${tradeId} (exit)`,
+                        exitEvents.map(a => a.classification)
+                    );
+                }
+                if (unknownEvents.length > 0) {
+                    console.log(
+                        'TRADE DEBUG',
+                        `${tradeId} (unknown)`,
+                        unknownEvents.map(a => a.classification)
+                    );
+                }
 
                 const hasLifecycle = tradeTimeline.some(audit => {
                     const classification = audit.classification.toUpperCase();
