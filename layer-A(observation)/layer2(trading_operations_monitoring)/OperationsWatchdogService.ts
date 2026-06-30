@@ -36,7 +36,8 @@ export enum RiskViolationType {
     LOW_CONFIDENCE = 'LOW_CONFIDENCE',
     BACKWARD_TRANSITION = 'BACKWARD_TRANSITION',
     TERMINAL_MUTATION = 'TERMINAL_MUTATION',
-    INVALID_TRANSITION = 'INVALID_TRANSITION'
+    INVALID_TRANSITION = 'INVALID_TRANSITION',
+    DUPLICATE_FILL = 'DUPLICATE_FILL'
 }
 
 export interface ProtectionAction {
@@ -113,6 +114,16 @@ export class OperationsWatchdogService {
         this.startupGraceActive = active;
     }
 
+    public clearDetectorState(): void {
+        this.heartbeatFailures = 0;
+        this.brokerFailures = 0;
+        this.consecutiveConfidenceBreaches = 0;
+        this.consecutiveStructuralViolations = 0;
+        this.lastActiveViolationType = undefined;
+        this.lastPipelineMetadata = null;
+        this.tradeFrequencyFailures.clear();
+    }
+
     protected tradeFrequencyFailures = new Map<string, number>();
 
     protected consecutiveConfidenceBreaches = 0;
@@ -168,6 +179,10 @@ export class OperationsWatchdogService {
             // Duplicate event detection
             if (lastClassification && classification === lastClassification) {
                 duplicatesCount++;
+                if (classification === 'ORDER_FILLED') {
+                    isInvalid = true;
+                    violationType = RiskViolationType.DUPLICATE_FILL;
+                }
                 continue;
             }
 

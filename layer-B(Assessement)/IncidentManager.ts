@@ -307,4 +307,45 @@ export class IncidentManager {
         const lifecycleInc = this.globalIncidents.get('LIFECYCLE_INTEGRITY');
         return !!(lifecycleInc && lifecycleInc.level === 'CRITICAL');
     }
+
+    /**
+     * Clear all simulation incidents from both the database and the in-memory state.
+     */
+    async clearSimulationIncidents(): Promise<void> {
+        // 1. Clear in-memory symbol incidents starting with 'sim_' or source involving 'SIM'
+        for (const key of Object.keys(this.state.symbols)) {
+            const inc = this.state.symbols[key];
+            if (
+                (inc.symbol && inc.symbol.startsWith('sim_')) ||
+                inc.source.startsWith('ORDER_PIPELINE:sim_') ||
+                inc.source.includes('SIMULATOR') ||
+                inc.reason.includes('sim_')
+            ) {
+                delete this.state.symbols[key];
+            }
+        }
+        // 2. Clear in-memory global incidents starting with or involving simulation
+        for (const [source, inc] of this.globalIncidents.entries()) {
+            if (source.includes('SIMULATOR') || source.startsWith('ORDER_PIPELINE:sim_') || inc.reason.includes('sim_')) {
+                this.globalIncidents.delete(source);
+            }
+        }
+        // 3. Delete from DB where source/symbol matches simulation markers
+        try {
+            await prisma.incident.deleteMany({
+                where: {
+                    OR: [
+                        { source: { startsWith: 'ORDER_PIPELINE:sim_' } },
+                        { source: { contains: 'SIMULATOR' } },
+                        { symbol: { startsWith: 'sim_' } },
+                        { reason: { contains: 'sim_' } }
+                    ]
+                }
+            });
+            console.log('[IncidentManager] Cleared all simulation incidents from database and memory.');
+        } catch (error: any) {
+            console.error('[IncidentManager] Failed to delete simulation incidents from Prisma:', error?.message || error);
+        }
+    }
 }
+

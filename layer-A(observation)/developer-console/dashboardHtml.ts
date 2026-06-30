@@ -450,6 +450,15 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                     Validate order lifecycle sequences, timeout monitors, and FSM transition rules by injecting canonical simulation events.
                 </p>
 
+                <div style="margin-bottom: 2rem; display: flex; gap: 1rem; align-items: center; background: rgba(239,68,68,0.05); border: 1px dashed rgba(239,68,68,0.2); border-radius: 8px; padding: 1rem; max-width: 800px;">
+                    <button class="btn btn-red" onclick="resetSimulationLab()" style="background: rgba(239,68,68,0.2); border-color: rgba(239, 68, 68, 0.4); color: var(--color-red); font-weight: 600; padding: 0.6rem 1.2rem;">
+                        🧹 Reset Simulation Lab
+                    </button>
+                    <span style="font-size:0.85rem; color:var(--text-secondary); line-height: 1.4;">
+                        Clears all simulated telemetry audits, alerts, and incidents from the database and memory. Resets consecutive violation counters.
+                    </span>
+                </div>
+
                 <!-- Collapsible Advanced Options -->
                 <details style="margin-bottom: 2rem; max-width: 800px; background: rgba(30, 41, 59, 0.4); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem;">
                     <summary style="font-size: 0.95rem; font-weight: 600; color: var(--text-secondary); cursor: pointer; outline: none; user-select: none;">
@@ -909,6 +918,28 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                     alert('Simulation failed: ' + json.message);
                 } else {
                     alert('Scenario initiated! ' + scenario + ' events are now executing in the pipeline.');
+                }
+            } catch (err) {
+                alert('Request failed: ' + err.message);
+            }
+        }
+
+        async function resetSimulationLab() {
+            if (!confirm('Are you sure you want to delete all simulated telemetry, clear detector state counters, and reset the Incident Manager?')) {
+                return;
+            }
+            try {
+                const res = await fetch('/api/v1/operations/reset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ correlationId: 'reset_' + Date.now() })
+                });
+                const json = await res.json();
+                if (json.success) {
+                    alert('Simulation Lab reset successfully!');
+                    window.location.reload();
+                } else {
+                    alert('Failed to reset Simulation Lab: ' + json.message);
                 }
             } catch (err) {
                 alert('Request failed: ' + err.message);

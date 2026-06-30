@@ -62,16 +62,6 @@ export class WatchdogOrchestrator {
         const failureService = new FailureInjectionService(eventBus);
         const featureFlagService = new FeatureFlagService(eventBus);
         const devConsoleGateway = new DeveloperConsoleGateway(eventBus);
-        const devConsoleController = new DeveloperConsoleController(
-            failureService,
-            featureFlagService,
-            infraController,
-            operationsSimulationService
-        );
-        this.devConsoleServer = new DeveloperConsoleServer(
-            devConsoleController,
-            devConsoleGateway
-        );
 
         this.alertingService = new AlertingService(featureFlagService);
         this.incidentManager = new IncidentManager(this.alertingService);
@@ -101,6 +91,20 @@ export class WatchdogOrchestrator {
             failureService,
             featureFlagService
         );
+
+        const devConsoleController = new DeveloperConsoleController(
+            failureService,
+            featureFlagService,
+            infraController,
+            operationsSimulationService,
+            this.incidentManager,
+            this.opsService
+        );
+        this.devConsoleServer = new DeveloperConsoleServer(
+            devConsoleController,
+            devConsoleGateway
+        );
+
         this.runtimeService = new RuntimeMonitorService(this.alertingService);
         this.webhookReceiver = new FreqtradeWebhookReceiver(persistence);
 

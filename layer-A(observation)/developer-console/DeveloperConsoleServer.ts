@@ -239,6 +239,18 @@ export class DeveloperConsoleServer {
                 }
                 return;
             }
+
+            // Route 4.7: Reset Operations Simulation Lab
+            if (url === '/api/v1/operations/reset') {
+                const { correlationId } = payload;
+                try {
+                    await this.controller.resetSimulationLab(correlationId);
+                    this.sendJson(res, 200, { success: true, message: 'Successfully reset operations simulation lab' });
+                } catch (err: any) {
+                    this.sendJson(res, 403, { success: false, message: err.message });
+                }
+                return;
+            }
         }
 
         if (method === 'GET') {

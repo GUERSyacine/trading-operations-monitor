@@ -28,6 +28,8 @@ function httpRequest(options: http.RequestOptions, body?: any): Promise<{ status
     });
 }
 
+import { prisma } from '../prisma';
+
 async function runTests() {
     console.log('🧪 Starting DeveloperConsoleServer Integration Tests...');
 
@@ -54,7 +56,25 @@ async function runTests() {
     const persistence = new EventPersistenceService();
     persistence.persistLifecycleEvent = async () => { return {} as any; };
     const operationsSim = new OperationsSimulationService(persistence);
-    const controller = new DeveloperConsoleController(failures, flags, infra, operationsSim);
+
+    // Stub prisma to avoid actual DB connection in test
+    (prisma.decisionAudit as any).deleteMany = async () => ({ count: 0 });
+    (prisma.alertLog as any).deleteMany = async () => ({ count: 0 });
+
+    const mockIncidentManager = {
+        clearSimulationIncidents: async () => {}
+    } as any;
+    const mockOpsService = {
+        clearDetectorState: () => {}
+    } as any;
+    const controller = new DeveloperConsoleController(
+        failures,
+        flags,
+        infra,
+        operationsSim,
+        mockIncidentManager,
+        mockOpsService
+    );
 
     const testPort = 3999;
     const server = new DeveloperConsoleServer(controller, gateway, testPort, '127.0.0.1');
@@ -250,6 +270,21 @@ async function runTests() {
         });
         assert.strictEqual(runExitRes.statusCode, 200);
         assert.strictEqual(JSON.parse(runExitRes.data).success, true);
+
+        // 4.8. Verify POST /api/v1/operations/reset
+        console.log('   - Testing POST /api/v1/operations/reset...');
+        const resetRes = await httpRequest({
+            host: '127.0.0.1',
+            port: testPort,
+            path: '/api/v1/operations/reset',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        }, {
+            correlationId: 'test_reset_corr'
+        });
+        assert.strictEqual(resetRes.statusCode, 200);
+        const resetData = JSON.parse(resetRes.data);
+        assert.strictEqual(resetData.success, true);
 
         // 5. Verify Read-Only Mode enforcement
         console.log('   - Testing Read-Only Mode access restriction...');

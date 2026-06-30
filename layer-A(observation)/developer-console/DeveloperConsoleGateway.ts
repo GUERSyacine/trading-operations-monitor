@@ -85,6 +85,13 @@ export class DeveloperConsoleGateway {
                 title = 'Simulation Completed';
                 description = `Scenario: ${compPayload.scenario}\nTrade ID: ${compPayload.tradeId}\nSymbol: ${compPayload.symbol}`;
                 break;
+            case WatchdogEventType.LAB_RESET:
+                severity = 'success';
+                color = '#10b981'; // green
+                icon = '🧹';
+                title = 'Simulation Lab Reset';
+                description = 'Developer wiped all simulation logs and memory state.';
+                break;
             case WatchdogEventType.FEATURE_FLAG_CHANGED:
                 severity = 'info';
                 color = '#8b5cf6'; // purple
