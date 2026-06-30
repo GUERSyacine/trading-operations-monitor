@@ -440,7 +440,10 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 
                 <div class="grid" id="runtime-controls-container">
                     <!-- Loaded dynamically -->
-                <!-- Panel: Operations Lab -->
+                </div>
+            </div>
+
+            <!-- Panel: Operations Lab -->
             <div id="panel-operations" class="tab-panel">
                 <h2>🔌 Operations Simulation Lab</h2>
                 <p style="color:var(--text-secondary); margin-bottom:1.5rem;">
