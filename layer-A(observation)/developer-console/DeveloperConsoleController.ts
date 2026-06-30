@@ -68,7 +68,7 @@ export class DeveloperConsoleController {
 
     public async runOperationsScenario(
         scenario: OperationScenario,
-        meta: { tradeId: string; symbol: string; timestampOffset?: number },
+        meta: { tradeId?: string; symbol?: string; timestampOffset?: number },
         correlationId?: string
     ): Promise<void> {
         this.assertWriteAllowed();

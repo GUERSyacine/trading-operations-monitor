@@ -440,23 +440,22 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 
                 <div class="grid" id="runtime-controls-container">
                     <!-- Loaded dynamically -->
-                </div>
-            </div>
-
-            <!-- Panel: Operations Lab -->
+                <!-- Panel: Operations Lab -->
             <div id="panel-operations" class="tab-panel">
                 <h2>🔌 Operations Simulation Lab</h2>
                 <p style="color:var(--text-secondary); margin-bottom:1.5rem;">
-                    Inject and validate operational trading lifecycle anomalies by pushing events through the production persistence pipeline.
+                    Validate order lifecycle sequences, timeout monitors, and FSM transition rules by injecting canonical simulation events.
                 </p>
 
-                <!-- Metadata Cockpit Card -->
-                <div class="card" style="margin-bottom: 2rem; max-width: 800px;">
-                    <h3 style="font-size: 1.1rem; margin-bottom: 1rem;">Simulation Metadata Override</h3>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                <!-- Collapsible Advanced Options -->
+                <details style="margin-bottom: 2rem; max-width: 800px; background: rgba(30, 41, 59, 0.4); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem;">
+                    <summary style="font-size: 0.95rem; font-weight: 600; color: var(--text-secondary); cursor: pointer; outline: none; user-select: none;">
+                        Advanced Simulation Options
+                    </summary>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem;">
                         <div>
-                            <label style="font-size:0.8rem; color:var(--text-secondary); display:block; margin-bottom:0.3rem;">Trade ID Override</label>
-                            <input type="text" id="sim-trade-id" class="form-control" style="width: 100%; padding: 0.5rem; background: var(--bg-card); border: 1px solid var(--border-color); color: white; border-radius: 4px;" placeholder="e.g. sim_9982">
+                            <label style="font-size:0.8rem; color:var(--text-secondary); display:block; margin-bottom:0.3rem;">Trade ID Override (Optional)</label>
+                            <input type="text" id="sim-trade-id" class="form-control" style="width: 100%; padding: 0.5rem; background: var(--bg-card); border: 1px solid var(--border-color); color: white; border-radius: 4px;" placeholder="Auto-generated if left blank">
                         </div>
                         <div>
                             <label style="font-size:0.8rem; color:var(--text-secondary); display:block; margin-bottom:0.3rem;">Symbol Override</label>
@@ -467,76 +466,164 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                             <input type="number" id="sim-offset-sec" class="form-control" style="width: 100%; padding: 0.5rem; background: var(--bg-card); border: 1px solid var(--border-color); color: white; border-radius: 4px;" placeholder="e.g. 0" value="0">
                         </div>
                     </div>
+                </details>
+
+                <!-- Section: Expected Healthy Flows -->
+                <div style="margin-bottom: 2.5rem;">
+                    <h3 style="font-size: 1.25rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; margin-bottom: 1.2rem; color: var(--color-green);">Expected Healthy Flows</h3>
+                    <div class="failures-grid">
+                        <!-- Happy Entry & Exit -->
+                        <div class="failure-card">
+                            <div>
+                                <div class="flex-between" style="margin-bottom:0.5rem;">
+                                    <strong style="font-size:0.95rem;">Happy Entry & Exit <span style="font-size:0.8rem; font-weight:normal; opacity:0.6;">(C1)</span></strong>
+                                    <span class="sys-badge" style="color:var(--color-green); background:rgba(16,185,129,0.15); border-color:rgba(16,185,129,0.3)">HEALTHY</span>
+                                </div>
+                                <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:0.75rem;">Simulates a standard, successful lifecycle flow: ORDER_CREATED &rarr; ORDER_OPEN &rarr; ORDER_FILLED.</p>
+                                <div style="font-size:0.75rem; background:rgba(0,0,0,0.2); border-radius:4px; padding:0.5rem; color:var(--text-secondary); font-family:monospace; line-height:1.4;">
+                                    <strong style="color:var(--color-green);">Expected Result:</strong><br>
+                                    ✓ System remains healthy<br>
+                                    ✓ Timeline logs C1 flow<br>
+                                    ✓ No incidents triggered
+                                </div>
+                            </div>
+                            <button class="btn btn-green" onclick="runOperationsScenario('HAPPY_PATH')">Run Scenario</button>
+                        </div>
+
+                        <!-- Cancelled Entry -->
+                        <div class="failure-card">
+                            <div>
+                                <div class="flex-between" style="margin-bottom:0.5rem;">
+                                    <strong style="font-size:0.95rem;">Cancelled Entry <span style="font-size:0.8rem; font-weight:normal; opacity:0.6;">(C2)</span></strong>
+                                    <span class="sys-badge" style="color:var(--color-green); background:rgba(16,185,129,0.15); border-color:rgba(16,185,129,0.3)">HEALTHY</span>
+                                </div>
+                                <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:0.75rem;">Simulates an entry order cancellation before fill execution: ORDER_CREATED &rarr; ORDER_CANCELLED.</p>
+                                <div style="font-size:0.75rem; background:rgba(0,0,0,0.2); border-radius:4px; padding:0.5rem; color:var(--text-secondary); font-family:monospace; line-height:1.4;">
+                                    <strong style="color:var(--color-green);">Expected Result:</strong><br>
+                                    ✓ System remains healthy<br>
+                                    ✓ Order state cancelled<br>
+                                    ✓ No warning/incident
+                                </div>
+                            </div>
+                            <button class="btn btn-green" onclick="runOperationsScenario('ORDER_CANCEL')">Run Scenario</button>
+                        </div>
+
+                        <!-- Normal Exit -->
+                        <div class="failure-card">
+                            <div>
+                                <div class="flex-between" style="margin-bottom:0.5rem;">
+                                    <strong style="font-size:0.95rem;">Normal Exit <span style="font-size:0.8rem; font-weight:normal; opacity:0.6;">(C3)</span></strong>
+                                    <span class="sys-badge" style="color:var(--color-green); background:rgba(16,185,129,0.15); border-color:rgba(16,185,129,0.3)">HEALTHY</span>
+                                </div>
+                                <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:0.75rem;">Simulates standard exit position closure flow: ORDER_CREATED &rarr; ORDER_OPEN &rarr; ORDER_FILLED.</p>
+                                <div style="font-size:0.75rem; background:rgba(0,0,0,0.2); border-radius:4px; padding:0.5rem; color:var(--text-secondary); font-family:monospace; line-height:1.4;">
+                                    <strong style="color:var(--color-green);">Expected Result:</strong><br>
+                                    ✓ System remains healthy<br>
+                                    ✓ Timeline logs C3 flow<br>
+                                    ✓ No warnings/incidents
+                                </div>
+                            </div>
+                            <button class="btn btn-green" onclick="runOperationsScenario('NORMAL_EXIT')">Run Scenario</button>
+                        </div>
+                    </div>
                 </div>
 
-                <div style="margin-bottom: 2rem;">
-                    <h3 style="font-size: 1.25rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; margin-bottom: 1rem; color: var(--color-blue);">Integrity Scenarios</h3>
+                <!-- Section: Anomaly / Failure Scenarios -->
+                <div>
+                    <h3 style="font-size: 1.25rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; margin-bottom: 1.2rem; color: var(--color-red);">Anomaly / Failure Scenarios</h3>
                     <div class="failures-grid">
+                        <!-- Open Order Timeout -->
+                        <div class="failure-card">
+                            <div>
+                                <div class="flex-between" style="margin-bottom:0.5rem;">
+                                    <strong style="font-size:0.95rem;">Open Order Timeout <span style="font-size:0.8rem; font-weight:normal; opacity:0.6;">(C4)</span></strong>
+                                    <span class="sys-badge" style="color:var(--color-orange); background:rgba(245,158,11,0.15); border-color:rgba(245,158,11,0.3)">WARNING</span>
+                                </div>
+                                <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:0.75rem;">Injects an ORDER_CREATED event 70 seconds in the past with no resolution, triggering stuck order alerts in the next sweep.</p>
+                                <div style="font-size:0.75rem; background:rgba(0,0,0,0.2); border-radius:4px; padding:0.5rem; color:var(--text-secondary); font-family:monospace; line-height:1.4;">
+                                    <strong style="color:var(--color-orange);">Expected Result:</strong><br>
+                                    ✓ Timeout Warning triggered<br>
+                                    ✓ Stuck order incident raised<br>
+                                    ✓ Timeline logs warning
+                                </div>
+                            </div>
+                            <button class="btn btn-orange" onclick="runOperationsScenario('OPEN_ORDER_TIMEOUT')">Run Scenario</button>
+                        </div>
+
                         <!-- Backward Transition -->
                         <div class="failure-card">
                             <div>
                                 <div class="flex-between" style="margin-bottom:0.5rem;">
-                                    <strong style="font-size:0.95rem;">Backward Transition (C5)</strong>
+                                    <strong style="font-size:0.95rem;">Backward Transition <span style="font-size:0.8rem; font-weight:normal; opacity:0.6;">(C5)</span></strong>
                                     <span class="sys-badge" style="color:var(--color-orange); background:rgba(245,158,11,0.15); border-color:rgba(245,158,11,0.3)">WARNING</span>
                                 </div>
-                                <p style="font-size:0.8rem; color:var(--text-secondary)">Simulates state-machine regression (ORDER_CREATED &rarr; ORDER_CANCELLED &rarr; ORDER_OPEN) to assert that state sequence integrity violations are reported.</p>
+                                <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:0.75rem;">Simulates regression (CREATED &rarr; CANCELLED &rarr; OPEN) to verify state transition checks capture invalid sequencing.</p>
+                                <div style="font-size:0.75rem; background:rgba(0,0,0,0.2); border-radius:4px; padding:0.5rem; color:var(--text-secondary); font-family:monospace; line-height:1.4;">
+                                    <strong style="color:var(--color-orange);">Expected Result:</strong><br>
+                                    ✓ Transition warning triggered<br>
+                                    ✓ Incident raised for FSM anomaly<br>
+                                    ✓ Timeline logs violation
+                                </div>
                             </div>
                             <button class="btn btn-orange" onclick="runOperationsScenario('BACKWARD_TRANSITION')">Run Scenario</button>
-                        </div>
-
-                        <!-- Unexpected Fill -->
-                        <div class="failure-card">
-                            <div>
-                                <div class="flex-between" style="margin-bottom:0.5rem;">
-                                    <strong style="font-size:0.95rem;">Unexpected Fill (C8)</strong>
-                                    <span class="sys-badge" style="color:var(--color-red); background:rgba(239,68,68,0.15); border-color:rgba(239,68,68,0.3)">HIGH</span>
-                                </div>
-                                <p style="font-size:0.8rem; color:var(--text-secondary)">Simulates an ORDER_FILLED event arriving directly without any preceding created or open event, triggering skipped-stage checks.</p>
-                            </div>
-                            <button class="btn btn-red" onclick="runOperationsScenario('UNEXPECTED_FILL')">Run Scenario</button>
                         </div>
 
                         <!-- Duplicate Fill -->
                         <div class="failure-card">
                             <div>
                                 <div class="flex-between" style="margin-bottom:0.5rem;">
-                                    <strong style="font-size:0.95rem;">Duplicate Fill (C6)</strong>
+                                    <strong style="font-size:0.95rem;">Duplicate Fill <span style="font-size:0.8rem; font-weight:normal; opacity:0.6;">(C6)</span></strong>
                                     <span class="sys-badge" style="color:var(--color-blue); background:rgba(59,130,246,0.15); border-color:rgba(59,130,246,0.3)">INFO</span>
                                 </div>
-                                <p style="font-size:0.8rem; color:var(--text-secondary)">Injects two identical ORDER_FILLED events back-to-back to verify timeline and warning deduplication filters.</p>
+                                <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:0.75rem;">Injects duplicate ORDER_FILLED events back-to-back to verify warning deduplication filters and log suppression.</p>
+                                <div style="font-size:0.75rem; background:rgba(0,0,0,0.2); border-radius:4px; padding:0.5rem; color:var(--text-secondary); font-family:monospace; line-height:1.4;">
+                                    <strong style="color:var(--color-blue);">Expected Result:</strong><br>
+                                    ✓ Timeline logs duplicate warn<br>
+                                    ✓ Deduplication logs normal<br>
+                                    ✓ No duplicate alerts raised
+                                </div>
                             </div>
                             <button class="btn btn-blue" onclick="runOperationsScenario('DUPLICATE_FILL')">Run Scenario</button>
+                        </div>
+
+                        <!-- Unexpected Fill -->
+                        <div class="failure-card">
+                            <div>
+                                <div class="flex-between" style="margin-bottom:0.5rem;">
+                                    <strong style="font-size:0.95rem;">Unexpected Fill <span style="font-size:0.8rem; font-weight:normal; opacity:0.6;">(C8)</span></strong>
+                                    <span class="sys-badge" style="color:var(--color-red); background:rgba(239,68,68,0.15); border-color:rgba(239,68,68,0.3)">HIGH</span>
+                                </div>
+                                <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:0.75rem;">Simulates an ORDER_FILLED arriving directly without preceding events, validating stage skipping alarms.</p>
+                                <div style="font-size:0.75rem; background:rgba(0,0,0,0.2); border-radius:4px; padding:0.5rem; color:var(--text-secondary); font-family:monospace; line-height:1.4;">
+                                    <strong style="color:var(--color-red);">Expected Result:</strong><br>
+                                    ✓ Critical incident raised<br>
+                                    ✓ Degraded health status<br>
+                                    ✓ Timeline alerts sent
+                                </div>
+                            </div>
+                            <button class="btn btn-red" onclick="runOperationsScenario('UNEXPECTED_FILL')">Run Scenario</button>
                         </div>
 
                         <!-- Cancel After Fill -->
                         <div class="failure-card">
                             <div>
                                 <div class="flex-between" style="margin-bottom:0.5rem;">
-                                    <strong style="font-size:0.95rem;">Cancel after Fill (C9)</strong>
+                                    <strong style="font-size:0.95rem;">Cancel after Fill <span style="font-size:0.8rem; font-weight:normal; opacity:0.6;">(C9)</span></strong>
                                     <span class="sys-badge" style="color:var(--color-red); background:rgba(239,68,68,0.15); border-color:rgba(239,68,68,0.3)">HIGH</span>
                                 </div>
-                                <p style="font-size:0.8rem; color:var(--text-secondary)">Simulates ORDER_FILLED followed by ORDER_CANCELLED to verify the Terminal Mutation Guard violation detector.</p>
+                                <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:0.75rem;">Simulates ORDER_FILLED followed by ORDER_CANCELLED to verify Terminal Mutation Guard violation alerts.</p>
+                                <div style="font-size:0.75rem; background:rgba(0,0,0,0.2); border-radius:4px; padding:0.5rem; color:var(--text-secondary); font-family:monospace; line-height:1.4;">
+                                    <strong style="color:var(--color-red);">Expected Result:</strong><br>
+                                    ✓ Critical mutation incident<br>
+                                    ✓ Degraded health status<br>
+                                    ✓ Timeline alerts sent
+                                </div>
                             </div>
                             <button class="btn btn-red" onclick="runOperationsScenario('CANCEL_AFTER_FILL')">Run Scenario</button>
                         </div>
                     </div>
                 </div>
-
-                <div>
-                    <h3 style="font-size: 1.25rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; margin-bottom: 1rem; color: var(--color-orange);">Timing Scenarios</h3>
-                    <div class="failures-grid">
-                        <!-- Open Order Timeout -->
-                        <div class="failure-card">
-                            <div>
-                                <div class="flex-between" style="margin-bottom:0.5rem;">
-                                    <strong style="font-size:0.95rem;">Open Order Timeout (C4)</strong>
-                                    <span class="sys-badge" style="color:var(--color-orange); background:rgba(245,158,11,0.15); border-color:rgba(245,158,11,0.3)">WARNING</span>
-                                </div>
-                                <p style="font-size:0.8rem; color:var(--text-secondary)">Injects an ORDER_CREATED event 70 seconds in the past with no matching resolution, triggering stuck order alerts in the next schedule check.</p>
-                            </div>
-                            <button class="btn btn-orange" onclick="runOperationsScenario('OPEN_ORDER_TIMEOUT')">Run Scenario</button>
-                        </div>
-                    </div>
+            </div>
                 </div>
             </div>
 

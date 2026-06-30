@@ -190,6 +190,8 @@ async function runTests() {
 
         // 4.5 Verify POST /api/v1/operations/run
         console.log('   - Testing POST /api/v1/operations/run...');
+        
+        // Test Backward Transition (Failure Scenario)
         const runSimRes = await httpRequest({
             host: '127.0.0.1',
             port: testPort,
@@ -206,6 +208,48 @@ async function runTests() {
         assert.strictEqual(runSimRes.statusCode, 200);
         const runSimData = JSON.parse(runSimRes.data);
         assert.strictEqual(runSimData.success, true);
+
+        // Test Happy Path (Normal Scenario with auto-generated Trade ID)
+        const runHappyRes = await httpRequest({
+            host: '127.0.0.1',
+            port: testPort,
+            path: '/api/v1/operations/run',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        }, {
+            scenario: OperationScenario.HAPPY_PATH,
+            symbol: 'BTCUSDT'
+        });
+        assert.strictEqual(runHappyRes.statusCode, 200);
+        assert.strictEqual(JSON.parse(runHappyRes.data).success, true);
+
+        // Test Order Cancel (Normal Scenario)
+        const runCancelRes = await httpRequest({
+            host: '127.0.0.1',
+            port: testPort,
+            path: '/api/v1/operations/run',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        }, {
+            scenario: OperationScenario.ORDER_CANCEL,
+            tradeId: 'test_sim_cancel_01'
+        });
+        assert.strictEqual(runCancelRes.statusCode, 200);
+        assert.strictEqual(JSON.parse(runCancelRes.data).success, true);
+
+        // Test Normal Exit (Normal Scenario)
+        const runExitRes = await httpRequest({
+            host: '127.0.0.1',
+            port: testPort,
+            path: '/api/v1/operations/run',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        }, {
+            scenario: OperationScenario.NORMAL_EXIT,
+            tradeId: 'test_sim_exit_01'
+        });
+        assert.strictEqual(runExitRes.statusCode, 200);
+        assert.strictEqual(JSON.parse(runExitRes.data).success, true);
 
         // 5. Verify Read-Only Mode enforcement
         console.log('   - Testing Read-Only Mode access restriction...');

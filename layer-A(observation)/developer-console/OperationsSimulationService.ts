@@ -15,9 +15,9 @@ export class OperationsSimulationService {
 
     public async runScenario(
         scenario: OperationScenario,
-        meta: { tradeId: string; symbol: string; timestampOffset?: number }
+        meta: { tradeId?: string; symbol?: string; timestampOffset?: number }
     ): Promise<void> {
-        const tradeId = meta.tradeId || `sim_${Math.floor(1000 + Math.random() * 9000)}`;
+        const tradeId = meta.tradeId || `sim_trade_${Math.floor(1000000 + Math.random() * 9000000)}`;
         const symbol = meta.symbol || 'BTCUSDT';
         const offset = meta.timestampOffset || 0;
         const now = Date.now() - offset;
@@ -65,6 +65,26 @@ export class OperationsSimulationService {
         };
 
         switch (scenario) {
+            case OperationScenario.HAPPY_PATH:
+                // Expected healthy flow: Created -> Open -> Filled (C1)
+                await persistSimulatedEvent('ORDER_CREATED', 5000);
+                await persistSimulatedEvent('ORDER_OPEN', 3000);
+                await persistSimulatedEvent('ORDER_FILLED', 1000);
+                break;
+
+            case OperationScenario.ORDER_CANCEL:
+                // Expected healthy cancellation flow: Created -> Cancelled (C2)
+                await persistSimulatedEvent('ORDER_CREATED', 5000);
+                await persistSimulatedEvent('ORDER_CANCELLED', 1000);
+                break;
+
+            case OperationScenario.NORMAL_EXIT:
+                // Expected healthy exit flow: Created -> Open -> Filled (C3)
+                await persistSimulatedEvent('ORDER_CREATED', 5000);
+                await persistSimulatedEvent('ORDER_OPEN', 3000);
+                await persistSimulatedEvent('ORDER_FILLED', 1000);
+                break;
+
             case OperationScenario.OPEN_ORDER_TIMEOUT:
                 // Create an order 70 seconds ago that remains unfilled/unresolved
                 await persistSimulatedEvent('ORDER_CREATED', 70000);
