@@ -1,13 +1,15 @@
 import { FailureInjectionService } from './FailureInjectionService';
 import { FeatureFlagService, FEATURE_FLAG_METADATA } from './FeatureFlagService';
 import { InfrastructureController } from './InfrastructureController';
-import { FailureType, FailureScope, FeatureFlag, SystemCommand } from './types';
+import { OperationsSimulationService } from './OperationsSimulationService';
+import { FailureType, FailureScope, FeatureFlag, SystemCommand, OperationScenario } from './types';
 
 export class DeveloperConsoleController {
     constructor(
         private failures: FailureInjectionService,
         private flags: FeatureFlagService,
-        private infra: InfrastructureController
+        private infra: InfrastructureController,
+        private operationsSim: OperationsSimulationService
     ) {}
 
     public injectFailure(type: FailureType, scope: FailureScope, ttlSeconds?: number, correlationId?: string): void {
@@ -62,6 +64,15 @@ export class DeveloperConsoleController {
 
     public async getFreqtradeStatus(): Promise<string> {
         return this.infra.getFreqtradeStatus();
+    }
+
+    public async runOperationsScenario(
+        scenario: OperationScenario,
+        meta: { tradeId: string; symbol: string; timestampOffset?: number },
+        correlationId?: string
+    ): Promise<void> {
+        this.assertWriteAllowed();
+        await this.operationsSim.runScenario(scenario, meta);
     }
 
     public getReadOnlyStatus(): boolean {

@@ -8,7 +8,9 @@ import { FeatureFlagService } from '../layer-A(observation)/developer-console/Fe
 import { DeveloperConsoleGateway } from '../layer-A(observation)/developer-console/DeveloperConsoleGateway';
 import { DeveloperConsoleController } from '../layer-A(observation)/developer-console/DeveloperConsoleController';
 import { DeveloperConsoleServer } from '../layer-A(observation)/developer-console/DeveloperConsoleServer';
-import { FailureType, FailureScope, FeatureFlag, SystemCommand } from '../layer-A(observation)/developer-console/types';
+import { FailureType, FailureScope, FeatureFlag, SystemCommand, OperationScenario } from '../layer-A(observation)/developer-console/types';
+import { EventPersistenceService } from '../adapters/base/EventPersistenceService';
+import { OperationsSimulationService } from '../layer-A(observation)/developer-console/OperationsSimulationService';
 
 // Helper to make local HTTP requests
 function httpRequest(options: http.RequestOptions, body?: any): Promise<{ statusCode: number; data: string }> {
@@ -49,7 +51,10 @@ async function runTests() {
     const failures = new FailureInjectionService(bus);
     const flags = new FeatureFlagService(bus);
     const gateway = new DeveloperConsoleGateway(bus);
-    const controller = new DeveloperConsoleController(failures, flags, infra);
+    const persistence = new EventPersistenceService();
+    persistence.persistLifecycleEvent = async () => { return {} as any; };
+    const operationsSim = new OperationsSimulationService(persistence);
+    const controller = new DeveloperConsoleController(failures, flags, infra, operationsSim);
 
     const testPort = 3999;
     const server = new DeveloperConsoleServer(controller, gateway, testPort, '127.0.0.1');
@@ -182,6 +187,25 @@ async function runTests() {
         const putFlagData = JSON.parse(putFlagRes.data);
         assert.strictEqual(putFlagData.success, true);
         assert.strictEqual(flags.isFeatureEnabled(FeatureFlag.WEBSOCKET), false);
+
+        // 4.5 Verify POST /api/v1/operations/run
+        console.log('   - Testing POST /api/v1/operations/run...');
+        const runSimRes = await httpRequest({
+            host: '127.0.0.1',
+            port: testPort,
+            path: '/api/v1/operations/run',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        }, {
+            scenario: OperationScenario.BACKWARD_TRANSITION,
+            tradeId: 'test_sim_trade_01',
+            symbol: 'BTCUSDT',
+            timestampOffset: 0,
+            correlationId: 'test_sim_corr'
+        });
+        assert.strictEqual(runSimRes.statusCode, 200);
+        const runSimData = JSON.parse(runSimRes.data);
+        assert.strictEqual(runSimData.success, true);
 
         // 5. Verify Read-Only Mode enforcement
         console.log('   - Testing Read-Only Mode access restriction...');

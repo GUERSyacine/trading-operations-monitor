@@ -69,6 +69,14 @@ export class DeveloperConsoleGateway {
                 color = '#8b5cf6'; // purple
                 icon = '⚙️';
                 break;
+            case WatchdogEventType.SIMULATION_STARTED:
+                severity = 'warning';
+                color = '#ec4899'; // pink
+                icon = '🧪';
+                const simPayload = event.payload as any;
+                title = 'Simulation Started';
+                description = `Scenario: ${simPayload.scenario}\nTrade ID: ${simPayload.tradeId}\nSymbol: ${simPayload.symbol}`;
+                break;
             case WatchdogEventType.FEATURE_FLAG_CHANGED:
                 severity = 'info';
                 color = '#8b5cf6'; // purple

@@ -20,6 +20,7 @@ import { FeatureFlagService } from './layer-A(observation)/developer-console/Fea
 import { DeveloperConsoleGateway } from './layer-A(observation)/developer-console/DeveloperConsoleGateway';
 import { DeveloperConsoleController } from './layer-A(observation)/developer-console/DeveloperConsoleController';
 import { DeveloperConsoleServer } from './layer-A(observation)/developer-console/DeveloperConsoleServer';
+import { OperationsSimulationService } from './layer-A(observation)/developer-console/OperationsSimulationService';
 
 export class WatchdogOrchestrator {
     private alertingService: AlertingService;
@@ -50,6 +51,9 @@ export class WatchdogOrchestrator {
     private anomalyInterval?: NodeJS.Timeout;
 
     constructor() {
+        const persistence = new EventPersistenceService();
+        const operationsSimulationService = new OperationsSimulationService(persistence);
+
         // Instantiate Developer Console Services first for constructor injection
         const eventBus = EventBus.getInstance();
         const cmdRunner = new CommandRunner();
@@ -60,7 +64,8 @@ export class WatchdogOrchestrator {
         const devConsoleController = new DeveloperConsoleController(
             failureService,
             featureFlagService,
-            infraController
+            infraController,
+            operationsSimulationService
         );
         this.devConsoleServer = new DeveloperConsoleServer(
             devConsoleController,
@@ -76,7 +81,6 @@ export class WatchdogOrchestrator {
         const ftPass = process.env.FREQTRADE_API_PASSWORD || 'password123';
         const ftIntervalMs = Number(process.env.FREQTRADE_ADAPTER_INTERVAL_MS) || 15000;
 
-        const persistence = new EventPersistenceService();
         this.freqtradeAdapter = new FreqtradeAdapter(
             {
                 baseUrl: ftUrl,

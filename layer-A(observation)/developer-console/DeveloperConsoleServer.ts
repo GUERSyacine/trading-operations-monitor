@@ -2,7 +2,7 @@ import * as http from 'http';
 import { DeveloperConsoleController } from './DeveloperConsoleController';
 import { DeveloperConsoleGateway } from './DeveloperConsoleGateway';
 import { DASHBOARD_HTML } from './dashboardHtml';
-import { FailureType, FailureScope, FeatureFlag, SystemCommand } from './types';
+import { FailureType, FailureScope, FeatureFlag, SystemCommand, OperationScenario } from './types';
 
 export class DeveloperConsoleServer {
     private server?: http.Server;
@@ -214,6 +214,26 @@ export class DeveloperConsoleServer {
                 try {
                     await this.controller.executeInfraCommand(command as SystemCommand, correlationId);
                     this.sendJson(res, 200, { success: true, message: `Command executed: ${command}` });
+                } catch (err: any) {
+                    this.sendJson(res, 403, { success: false, message: err.message });
+                }
+                return;
+            }
+
+            // Route 4.6: Run Operations Scenario
+            if (url === '/api/v1/operations/run') {
+                const { scenario, tradeId, symbol, timestampOffset, correlationId } = payload;
+                if (!scenario) {
+                    this.sendJson(res, 400, { success: false, message: 'Field scenario is required.' });
+                    return;
+                }
+                try {
+                    await this.controller.runOperationsScenario(
+                        scenario as OperationScenario,
+                        { tradeId, symbol, timestampOffset: timestampOffset ? Number(timestampOffset) : undefined },
+                        correlationId
+                    );
+                    this.sendJson(res, 200, { success: true, message: `Successfully executed operations scenario: ${scenario}` });
                 } catch (err: any) {
                     this.sendJson(res, 403, { success: false, message: err.message });
                 }

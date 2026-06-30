@@ -24,6 +24,16 @@ import { prisma } from '../prisma';
 
 async function testInterceptionWraps() {
     console.log(' - Testing Interception Wraps...');
+    
+    // Stub Prisma database operations to prevent requiring a live connection
+    (prisma.decisionAudit as any).create = async () => ({});
+    (prisma.decisionAudit as any).findFirst = async () => null;
+    (prisma.decisionAudit as any).findMany = async () => [];
+    (prisma.incident as any).create = async () => ({});
+    (prisma.incident as any).updateMany = async () => ({});
+    (prisma.incident as any).findMany = async () => [];
+    (prisma.alertLog as any).create = async () => ({});
+
     const bus = EventBus.getInstance();
     const failures = new FailureInjectionService(bus);
     const flags = new FeatureFlagService(bus);

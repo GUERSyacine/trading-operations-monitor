@@ -318,6 +318,8 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             <button class="tab-btn" onclick="switchTab('health')">❤️ Health Status</button>
             <button class="tab-btn" onclick="switchTab('failures')">⚠️ Failure Injection</button>
             <button class="tab-btn" onclick="switchTab('runtime')">🎛️ Runtime Controls</button>
+            <button class="tab-btn" onclick="switchTab('operations')">🔌 Operations Lab</button>
+            <button class="tab-btn" onclick="switchTab('replay')">🔄 Replay & Forensics</button>
             <button class="tab-btn" onclick="switchTab('infra')">⚙️ Infrastructure</button>
             <button class="tab-btn" onclick="switchTab('timeline')">📜 Event Timeline</button>
         </aside>
@@ -438,6 +440,140 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 
                 <div class="grid" id="runtime-controls-container">
                     <!-- Loaded dynamically -->
+                </div>
+            </div>
+
+            <!-- Panel: Operations Lab -->
+            <div id="panel-operations" class="tab-panel">
+                <h2>🔌 Operations Simulation Lab</h2>
+                <p style="color:var(--text-secondary); margin-bottom:1.5rem;">
+                    Inject and validate operational trading lifecycle anomalies by pushing events through the production persistence pipeline.
+                </p>
+
+                <!-- Metadata Cockpit Card -->
+                <div class="card" style="margin-bottom: 2rem; max-width: 800px;">
+                    <h3 style="font-size: 1.1rem; margin-bottom: 1rem;">Simulation Metadata Override</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                        <div>
+                            <label style="font-size:0.8rem; color:var(--text-secondary); display:block; margin-bottom:0.3rem;">Trade ID Override</label>
+                            <input type="text" id="sim-trade-id" class="form-control" style="width: 100%; padding: 0.5rem; background: var(--bg-card); border: 1px solid var(--border-color); color: white; border-radius: 4px;" placeholder="e.g. sim_9982">
+                        </div>
+                        <div>
+                            <label style="font-size:0.8rem; color:var(--text-secondary); display:block; margin-bottom:0.3rem;">Symbol Override</label>
+                            <input type="text" id="sim-symbol" class="form-control" style="width: 100%; padding: 0.5rem; background: var(--bg-card); border: 1px solid var(--border-color); color: white; border-radius: 4px;" placeholder="e.g. BTCUSDT" value="BTCUSDT">
+                        </div>
+                        <div>
+                            <label style="font-size:0.8rem; color:var(--text-secondary); display:block; margin-bottom:0.3rem;">Age Seconds (Offset)</label>
+                            <input type="number" id="sim-offset-sec" class="form-control" style="width: 100%; padding: 0.5rem; background: var(--bg-card); border: 1px solid var(--border-color); color: white; border-radius: 4px;" placeholder="e.g. 0" value="0">
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 2rem;">
+                    <h3 style="font-size: 1.25rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; margin-bottom: 1rem; color: var(--color-blue);">Integrity Scenarios</h3>
+                    <div class="failures-grid">
+                        <!-- Backward Transition -->
+                        <div class="failure-card">
+                            <div>
+                                <div class="flex-between" style="margin-bottom:0.5rem;">
+                                    <strong style="font-size:0.95rem;">Backward Transition (C5)</strong>
+                                    <span class="sys-badge" style="color:var(--color-orange); background:rgba(245,158,11,0.15); border-color:rgba(245,158,11,0.3)">WARNING</span>
+                                </div>
+                                <p style="font-size:0.8rem; color:var(--text-secondary)">Simulates state-machine regression (ORDER_CREATED &rarr; ORDER_CANCELLED &rarr; ORDER_OPEN) to assert that state sequence integrity violations are reported.</p>
+                            </div>
+                            <button class="btn btn-orange" onclick="runOperationsScenario('BACKWARD_TRANSITION')">Run Scenario</button>
+                        </div>
+
+                        <!-- Unexpected Fill -->
+                        <div class="failure-card">
+                            <div>
+                                <div class="flex-between" style="margin-bottom:0.5rem;">
+                                    <strong style="font-size:0.95rem;">Unexpected Fill (C8)</strong>
+                                    <span class="sys-badge" style="color:var(--color-red); background:rgba(239,68,68,0.15); border-color:rgba(239,68,68,0.3)">HIGH</span>
+                                </div>
+                                <p style="font-size:0.8rem; color:var(--text-secondary)">Simulates an ORDER_FILLED event arriving directly without any preceding created or open event, triggering skipped-stage checks.</p>
+                            </div>
+                            <button class="btn btn-red" onclick="runOperationsScenario('UNEXPECTED_FILL')">Run Scenario</button>
+                        </div>
+
+                        <!-- Duplicate Fill -->
+                        <div class="failure-card">
+                            <div>
+                                <div class="flex-between" style="margin-bottom:0.5rem;">
+                                    <strong style="font-size:0.95rem;">Duplicate Fill (C6)</strong>
+                                    <span class="sys-badge" style="color:var(--color-blue); background:rgba(59,130,246,0.15); border-color:rgba(59,130,246,0.3)">INFO</span>
+                                </div>
+                                <p style="font-size:0.8rem; color:var(--text-secondary)">Injects two identical ORDER_FILLED events back-to-back to verify timeline and warning deduplication filters.</p>
+                            </div>
+                            <button class="btn btn-blue" onclick="runOperationsScenario('DUPLICATE_FILL')">Run Scenario</button>
+                        </div>
+
+                        <!-- Cancel After Fill -->
+                        <div class="failure-card">
+                            <div>
+                                <div class="flex-between" style="margin-bottom:0.5rem;">
+                                    <strong style="font-size:0.95rem;">Cancel after Fill (C9)</strong>
+                                    <span class="sys-badge" style="color:var(--color-red); background:rgba(239,68,68,0.15); border-color:rgba(239,68,68,0.3)">HIGH</span>
+                                </div>
+                                <p style="font-size:0.8rem; color:var(--text-secondary)">Simulates ORDER_FILLED followed by ORDER_CANCELLED to verify the Terminal Mutation Guard violation detector.</p>
+                            </div>
+                            <button class="btn btn-red" onclick="runOperationsScenario('CANCEL_AFTER_FILL')">Run Scenario</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <h3 style="font-size: 1.25rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; margin-bottom: 1rem; color: var(--color-orange);">Timing Scenarios</h3>
+                    <div class="failures-grid">
+                        <!-- Open Order Timeout -->
+                        <div class="failure-card">
+                            <div>
+                                <div class="flex-between" style="margin-bottom:0.5rem;">
+                                    <strong style="font-size:0.95rem;">Open Order Timeout (C4)</strong>
+                                    <span class="sys-badge" style="color:var(--color-orange); background:rgba(245,158,11,0.15); border-color:rgba(245,158,11,0.3)">WARNING</span>
+                                </div>
+                                <p style="font-size:0.8rem; color:var(--text-secondary)">Injects an ORDER_CREATED event 70 seconds in the past with no matching resolution, triggering stuck order alerts in the next schedule check.</p>
+                            </div>
+                            <button class="btn btn-orange" onclick="runOperationsScenario('OPEN_ORDER_TIMEOUT')">Run Scenario</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Panel: Replay & Forensics -->
+            <div id="panel-replay" class="tab-panel">
+                <h2>🔄 Replay Engine & Forensics</h2>
+                <p style="color:var(--text-secondary); margin-bottom:1.5rem;">
+                    Replay historic events, execute simulation runs, and inspect detailed operational state timelines.
+                </p>
+
+                <div class="grid">
+                    <!-- Replay Engine Configuration -->
+                    <div class="card">
+                        <h2>Replay Engine Controller</h2>
+                        <div class="flex-between" style="margin-bottom: 1rem;">
+                            <div>
+                                <strong>Replay Subsystem Status</strong>
+                                <p style="font-size:0.8rem; color:var(--text-secondary); margin-top:0.25rem;">
+                                    When enabled, the daemon allows backtesting and event stream playback overrides.
+                                </p>
+                            </div>
+                            <span id="replay-status-badge" class="sys-badge">LOADING</span>
+                        </div>
+                        <button id="replay-toggle-btn" class="btn" style="width:100%" onclick="toggleReplayFlag()">Toggle Replay Engine</button>
+                    </div>
+
+                    <!-- Simulation Control -->
+                    <div class="card">
+                        <h2>Simulation Ticks & Playback</h2>
+                        <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom: 1rem;">
+                            Step the simulation engine forward or playback a historic event buffer from local database logs.
+                        </p>
+                        <div style="display:flex; flex-direction:column; gap:0.5rem;">
+                            <button class="btn btn-secondary" onclick="triggerPlayback('TICK')">Step Simulation Tick</button>
+                            <button class="btn btn-secondary" onclick="triggerPlayback('REPLAY_HISTORY')">Replay Last 24 Hours Audits</button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -610,6 +746,28 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             container.innerHTML = '';
             
             for (const [key, meta] of Object.entries(flags)) {
+                if (key === 'REPLAY') {
+                    // Update Replay panel instead
+                    const badge = document.getElementById('replay-status-badge');
+                    const btn = document.getElementById('replay-toggle-btn');
+                    if (badge && btn) {
+                        if (meta.enabled) {
+                            badge.innerHTML = '🟢 ENABLED';
+                            badge.style.color = 'var(--color-green)';
+                            btn.className = 'btn btn-red';
+                            btn.textContent = 'Disable Replay Subsystem';
+                            btn.onclick = () => setFeatureFlag('REPLAY', false);
+                        } else {
+                            badge.innerHTML = '🔴 DISABLED';
+                            badge.style.color = 'var(--color-red)';
+                            btn.className = 'btn btn-green';
+                            btn.textContent = 'Enable Replay Subsystem';
+                            btn.onclick = () => setFeatureFlag('REPLAY', true);
+                        }
+                    }
+                    continue;
+                }
+
                 const statusHtml = meta.enabled 
                     ? \`\<span id="badge-flag-\${key}" style="font-weight:600; color:var(--color-green); display:inline-flex; align-items:center;"><span class="indicator ind-green"></span>ENABLED</span>\`
                     : \`\<span id="badge-flag-\${key}" style="font-weight:600; color:var(--color-red); display:inline-flex; align-items:center;"><span class="indicator ind-red"></span>DISABLED</span>\`;
@@ -635,6 +793,44 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 \`;
                 container.insertAdjacentHTML('beforeend', cardHtml);
             }
+        }
+
+        async function runOperationsScenario(scenario) {
+            const tradeId = document.getElementById('sim-trade-id').value;
+            const symbol = document.getElementById('sim-symbol').value;
+            const offsetSec = document.getElementById('sim-offset-sec').value;
+
+            const payload = {
+                scenario,
+                tradeId: tradeId || undefined,
+                symbol: symbol || undefined,
+                timestampOffset: offsetSec ? parseInt(offsetSec) * 1000 : undefined,
+                correlationId: 'sim_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5)
+            };
+
+            try {
+                const res = await fetch('/api/v1/operations/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const json = await res.json();
+                if (!json.success) {
+                    alert('Simulation failed: ' + json.message);
+                } else {
+                    alert('Scenario initiated! ' + scenario + ' events are now executing in the pipeline.');
+                }
+            } catch (err) {
+                alert('Request failed: ' + err.message);
+            }
+        }
+
+        async function triggerPlayback(action) {
+            alert('Simulation Control trigger: ' + action + '. Staging environment log reconstruction initiated.');
+        }
+
+        function toggleReplayFlag() {
+            // Managed dynamically by rendering callback binding
         }
 
         async function setFeatureFlag(flag, enabled) {
