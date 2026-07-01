@@ -1316,6 +1316,8 @@ async function runTests() {
             return args.data;
         };
         (prisma.incident as any).create = async (args: any) => mockIncidentCreate(args);
+        (prisma.incident as any).findFirst = async () => null;
+        (prisma.incident as any).update = async (args: any) => mockIncidentCreate(args);
 
         const execIntel = new ExecutionIntelligenceService(incidentManager);
 
@@ -1465,6 +1467,11 @@ async function runTests() {
         const mgr = new IncidentManager(mockAlertingForManager);
         let persisted: any[] = [];
         (prisma.incident as any).create = async (args: any) => {
+            persisted.push(args.data);
+            return args.data;
+        };
+        (prisma.incident as any).findFirst = async () => null;
+        (prisma.incident as any).update = async (args: any) => {
             persisted.push(args.data);
             return args.data;
         };

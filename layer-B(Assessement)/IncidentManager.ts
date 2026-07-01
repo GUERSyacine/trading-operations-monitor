@@ -169,15 +169,34 @@ export class IncidentManager {
 
     private async persistIncident(symbol: string | null, level: IncidentSeverity, source: string, reason: string, detectedAt: number) {
         try {
-            await prisma.incident.create({
-                data: {
+            const existing = await prisma.incident.findFirst({
+                where: {
                     symbol,
-                    level,
                     source,
-                    reason,
-                    detectedAt: BigInt(detectedAt)
+                    resolvedAt: null
                 }
             });
+
+            if (existing) {
+                await prisma.incident.update({
+                    where: { id: existing.id },
+                    data: {
+                        level,
+                        reason,
+                        detectedAt: BigInt(detectedAt)
+                    }
+                });
+            } else {
+                await prisma.incident.create({
+                    data: {
+                        symbol,
+                        level,
+                        source,
+                        reason,
+                        detectedAt: BigInt(detectedAt)
+                    }
+                });
+            }
         } catch (error: any) {
             console.error('[IncidentManager] Failed to persist incident in Prisma/Neon:', error?.message || error);
         }
@@ -364,7 +383,13 @@ export class IncidentManager {
         }
         // 2. Clear in-memory global incidents starting with or involving simulation
         for (const [source, inc] of this.globalIncidents.entries()) {
-            if (source.includes('SIMULATOR') || source.startsWith('ORDER_PIPELINE:sim_') || source.startsWith('OP:sim_') || inc.reason.includes('sim_')) {
+            if (
+                source.includes('SIMULATOR') ||
+                source.startsWith('ORDER_PIPELINE:sim_') ||
+                source.startsWith('OP:sim_') ||
+                source === 'LIFECYCLE_INTEGRITY' ||
+                inc.reason.includes('sim_')
+            ) {
                 this.globalIncidents.delete(source);
             }
         }
@@ -376,6 +401,7 @@ export class IncidentManager {
                         { source: { startsWith: 'ORDER_PIPELINE:sim_' } },
                         { source: { startsWith: 'OP:sim_' } },
                         { source: { contains: 'SIMULATOR' } },
+                        { source: 'LIFECYCLE_INTEGRITY' },
                         { symbol: { startsWith: 'sim_' } },
                         { reason: { contains: 'sim_' } }
                     ]

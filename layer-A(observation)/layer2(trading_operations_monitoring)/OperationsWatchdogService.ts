@@ -1881,11 +1881,21 @@ export class OperationsWatchdogService {
 
             this.consecutiveStructuralViolations = maxStructuralConsecutive;
 
+            // List all concurrent active structural violations
+            const activeViolationsList: string[] = [];
+            for (const vType of allViolationTypes) {
+                const count = this.consecutiveStructuralViolationsMap.get(vType) || 0;
+                if (count > 0) {
+                    activeViolationsList.push(`${vType} (${count} cycles)`);
+                }
+            }
+            const activeViolationsStr = activeViolationsList.join(', ');
+
             // Determine Risk Level & Active Violation details
             if (maxStructuralConsecutive >= MVP_CONFIG.RISK_PROTECTION.CONSECUTIVE_STRUCTURAL_CRITICAL && dominantStructuralViolation) {
                 riskLevel = 'CRITICAL';
                 activeViolation = dominantStructuralViolation;
-                activeReason = `Sustained Structural Integrity Violations: ${dominantStructuralViolation} (${maxStructuralConsecutive} consecutive cycles)`;
+                activeReason = `Sustained Structural Integrity Violations: ${activeViolationsStr}`;
             } else if (this.consecutiveConfidenceBreaches >= MVP_CONFIG.RISK_PROTECTION.CONSECUTIVE_CONFIDENCE_CRITICAL) {
                 riskLevel = 'CRITICAL';
                 activeViolation = RiskViolationType.LOW_CONFIDENCE;
@@ -1893,7 +1903,7 @@ export class OperationsWatchdogService {
             } else if (maxStructuralConsecutive >= MVP_CONFIG.RISK_PROTECTION.CONSECUTIVE_STRUCTURAL_WARNING && dominantStructuralViolation) {
                 riskLevel = 'WARNING';
                 activeViolation = dominantStructuralViolation;
-                activeReason = `Structural Integrity Violation observed: ${dominantStructuralViolation} (${maxStructuralConsecutive} consecutive cycles)`;
+                activeReason = `Structural Integrity Violations observed: ${activeViolationsStr}`;
             } else if (this.consecutiveConfidenceBreaches >= MVP_CONFIG.RISK_PROTECTION.CONSECUTIVE_CONFIDENCE_WARNING) {
                 riskLevel = 'WARNING';
                 activeViolation = RiskViolationType.LOW_CONFIDENCE;
