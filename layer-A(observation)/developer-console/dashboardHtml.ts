@@ -929,7 +929,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 return;
             }
             try {
-                const res = await fetch('/api/v1/operations/reset', {
+                const res = await fetch('/api/v1/dev/lab/reset', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ correlationId: 'reset_' + Date.now() })

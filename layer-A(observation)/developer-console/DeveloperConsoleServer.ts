@@ -241,7 +241,7 @@ export class DeveloperConsoleServer {
             }
 
             // Route 4.7: Reset Operations Simulation Lab
-            if (url === '/api/v1/operations/reset') {
+            if (url === '/api/v1/operations/reset' || url === '/api/v1/dev/lab/reset') {
                 const { correlationId } = payload;
                 try {
                     await this.controller.resetSimulationLab(correlationId);

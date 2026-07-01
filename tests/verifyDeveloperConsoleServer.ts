@@ -271,12 +271,12 @@ async function runTests() {
         assert.strictEqual(runExitRes.statusCode, 200);
         assert.strictEqual(JSON.parse(runExitRes.data).success, true);
 
-        // 4.8. Verify POST /api/v1/operations/reset
-        console.log('   - Testing POST /api/v1/operations/reset...');
+        // 4.8. Verify POST /api/v1/dev/lab/reset
+        console.log('   - Testing POST /api/v1/dev/lab/reset...');
         const resetRes = await httpRequest({
             host: '127.0.0.1',
             port: testPort,
-            path: '/api/v1/operations/reset',
+            path: '/api/v1/dev/lab/reset',
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         }, {

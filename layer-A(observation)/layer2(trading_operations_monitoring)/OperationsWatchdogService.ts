@@ -120,6 +120,7 @@ export class OperationsWatchdogService {
         this.brokerFailures = 0;
         this.consecutiveConfidenceBreaches = 0;
         this.consecutiveStructuralViolations = 0;
+        this.consecutiveStructuralViolationsMap.clear();
         this.lastActiveViolationType = undefined;
         this.lastPipelineMetadata = null;
         this.tradeFrequencyFailures.clear();
@@ -129,6 +130,7 @@ export class OperationsWatchdogService {
 
     protected consecutiveConfidenceBreaches = 0;
     protected consecutiveStructuralViolations = 0;
+    protected consecutiveStructuralViolationsMap = new Map<RiskViolationType, number>();
     protected lastActiveViolationType?: RiskViolationType;
     protected lastPipelineMetadata: any = null;
 
@@ -156,7 +158,8 @@ export class OperationsWatchdogService {
 
     private validateOrderTimeline(
         timeline: OrderTimeline,
-        isGuaranteedStep: (step: string) => boolean
+        isGuaranteedStep: (step: string) => boolean,
+        hasSignalOrCreatedInTrade: boolean = false
     ): ValidationResult {
         const events = timeline.events;
         let isInvalid = false;
@@ -217,7 +220,7 @@ export class OperationsWatchdogService {
                         const stepName = this.canonicalOrder[stepIdx];
                         if (isGuaranteedStep(stepName)) {
                             hasSkipped = true;
-                            if (classification === 'ORDER_FILLED') {
+                            if (classification === 'ORDER_FILLED' && !hasSignalOrCreatedInTrade) {
                                 isInvalid = true;
                                 violationType = RiskViolationType.UNEXPECTED_FILL;
                             }
@@ -1144,6 +1147,8 @@ export class OperationsWatchdogService {
             // Map event classifications to state values for chronological sequence validation
             // (Note: getEventStateValue and canonicalOrder have been moved to class methods)
 
+            const observedViolationsInCycle = new Set<RiskViolationType>();
+
             for (const tradeId of uniqueTradeIds) {
                 const associatedOrders = tradeToOrdersMap.get(tradeId) || new Set<string>();
                 
@@ -1263,12 +1268,16 @@ export class OperationsWatchdogService {
 
                 // Determine tradeSource from audits to resolve capabilities
                 let tradeSource: LifecycleSource = 'FREQTRADE';
+                let hasSignalOrCreatedInTrade = false;
                 for (const audit of tradeTimeline) {
                     const meta = audit.metadata as Record<string, any> || {};
                     const s = meta.lifecycleEvent?.source || meta.source;
                     if (s) {
                         tradeSource = String(s).toUpperCase() as LifecycleSource;
-                        break;
+                    }
+                    const classification = audit.classification.toUpperCase();
+                    if (classification === 'SIGNAL' || classification === 'ORDER_CREATED') {
+                        hasSignalOrCreatedInTrade = true;
                     }
                 }
 
@@ -1380,7 +1389,7 @@ export class OperationsWatchdogService {
                 let hasValidatedOrder = false;
 
                 for (const timeline of orderTimelines) {
-                    const result = this.validateOrderTimeline(timeline, isGuaranteedStep);
+                    const result = this.validateOrderTimeline(timeline, isGuaranteedStep, hasSignalOrCreatedInTrade);
 
                     hasValidatedOrder = true;
                     if (!result.valid) {
@@ -1401,16 +1410,47 @@ export class OperationsWatchdogService {
                     duplicateEventsObserved += result.duplicates;
                 }
 
+                let tradeSymbol = 'unknown';
+                for (const audit of tradeTimeline) {
+                    const meta = audit.metadata as Record<string, any> || {};
+                    const s = meta.lifecycleEvent?.symbol || meta.symbol;
+                    if (s && s !== 'unknown') {
+                        tradeSymbol = String(s);
+                        break;
+                    }
+                }
+
                 if (hasValidatedOrder) {
                     if (tradeIsInvalid) {
                         invalidTrades++;
                         if (tradeViolationType) {
                             this.lastActiveViolationType = tradeViolationType;
+                            observedViolationsInCycle.add(tradeViolationType);
+
+                            // Report symbol-specific / trade-specific incident with source ORDER_PIPELINE:${tradeId}:${violationType}
+                            const sourceKey = `ORDER_PIPELINE:${tradeId}:${tradeViolationType}`;
+                            await this.incidentManager.reportIncident({
+                                symbol: tradeSymbol,
+                                level: 'HIGH',
+                                source: sourceKey,
+                                reason: `Execution Risk Violation (Type: ${tradeViolationType}, Trade ID: ${tradeId})`,
+                                since: Date.now()
+                            });
                         }
                     } else if (hasIncompleteOrder) {
                         incompleteTrades++;
                     } else {
                         validTrades++;
+                    }
+
+                    // If trade is valid (or no longer has anomalies), resolve any active incidents matching the trade ID source prefix
+                    if (!tradeIsInvalid) {
+                        const sourcePrefix = `ORDER_PIPELINE:${tradeId}:`;
+                        if (typeof this.incidentManager.resolveIncidentsBySourcePrefix === 'function') {
+                            await this.incidentManager.resolveIncidentsBySourcePrefix(sourcePrefix, tradeSymbol);
+                        } else {
+                            await this.incidentManager.resolveIncidentBySource(`ORDER_PIPELINE:${tradeId}`, tradeSymbol);
+                        }
                     }
 
                     const tradeIsTerminal = !hasIncompleteOrder && hasTerminalOrder;
@@ -1814,26 +1854,46 @@ export class OperationsWatchdogService {
                 this.consecutiveConfidenceBreaches = 0;
             }
 
-            // 2. Evaluate Structural Violations
-            if (invalidTrades > 0) {
-                this.consecutiveStructuralViolations++;
-            } else {
-                this.consecutiveStructuralViolations = 0;
+            // 2. Evaluate Structural Violations per type
+            const allViolationTypes = Object.values(RiskViolationType);
+            for (const vType of allViolationTypes) {
+                if (observedViolationsInCycle.has(vType)) {
+                    let currentCount = this.consecutiveStructuralViolationsMap.get(vType) || 0;
+                    if (this.consecutiveStructuralViolations !== currentCount) {
+                        currentCount = this.consecutiveStructuralViolations;
+                    }
+                    this.consecutiveStructuralViolationsMap.set(vType, currentCount + 1);
+                } else {
+                    this.consecutiveStructuralViolationsMap.set(vType, 0);
+                }
             }
 
+            let maxStructuralConsecutive = 0;
+            let dominantStructuralViolation: RiskViolationType | undefined = undefined;
+
+            for (const vType of allViolationTypes) {
+                const count = this.consecutiveStructuralViolationsMap.get(vType) || 0;
+                if (count > maxStructuralConsecutive) {
+                    maxStructuralConsecutive = count;
+                    dominantStructuralViolation = vType;
+                }
+            }
+
+            this.consecutiveStructuralViolations = maxStructuralConsecutive;
+
             // Determine Risk Level & Active Violation details
-            if (this.consecutiveStructuralViolations >= MVP_CONFIG.RISK_PROTECTION.CONSECUTIVE_STRUCTURAL_CRITICAL) {
+            if (maxStructuralConsecutive >= MVP_CONFIG.RISK_PROTECTION.CONSECUTIVE_STRUCTURAL_CRITICAL && dominantStructuralViolation) {
                 riskLevel = 'CRITICAL';
-                activeViolation = this.lastActiveViolationType || RiskViolationType.INVALID_TRANSITION;
-                activeReason = `Sustained Structural Integrity Violations (${this.consecutiveStructuralViolations} consecutive cycles)`;
+                activeViolation = dominantStructuralViolation;
+                activeReason = `Sustained Structural Integrity Violations: ${dominantStructuralViolation} (${maxStructuralConsecutive} consecutive cycles)`;
             } else if (this.consecutiveConfidenceBreaches >= MVP_CONFIG.RISK_PROTECTION.CONSECUTIVE_CONFIDENCE_CRITICAL) {
                 riskLevel = 'CRITICAL';
                 activeViolation = RiskViolationType.LOW_CONFIDENCE;
                 activeReason = `Sustained Confidence Score Degradation (${this.consecutiveConfidenceBreaches} consecutive cycles under threshold ${MVP_CONFIG.RISK_PROTECTION.CONFIDENCE_WARNING_THRESHOLD})`;
-            } else if (this.consecutiveStructuralViolations >= MVP_CONFIG.RISK_PROTECTION.CONSECUTIVE_STRUCTURAL_WARNING) {
+            } else if (maxStructuralConsecutive >= MVP_CONFIG.RISK_PROTECTION.CONSECUTIVE_STRUCTURAL_WARNING && dominantStructuralViolation) {
                 riskLevel = 'WARNING';
-                activeViolation = this.lastActiveViolationType || RiskViolationType.INVALID_TRANSITION;
-                activeReason = `Structural Integrity Violation observed (${this.consecutiveStructuralViolations} consecutive cycle)`;
+                activeViolation = dominantStructuralViolation;
+                activeReason = `Structural Integrity Violation observed: ${dominantStructuralViolation} (${maxStructuralConsecutive} consecutive cycles)`;
             } else if (this.consecutiveConfidenceBreaches >= MVP_CONFIG.RISK_PROTECTION.CONSECUTIVE_CONFIDENCE_WARNING) {
                 riskLevel = 'WARNING';
                 activeViolation = RiskViolationType.LOW_CONFIDENCE;

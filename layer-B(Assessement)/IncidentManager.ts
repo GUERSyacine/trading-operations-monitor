@@ -299,6 +299,43 @@ export class IncidentManager {
         }
     }
 
+    async resolveIncidentsBySourcePrefix(sourcePrefix: string, symbol: string): Promise<void> {
+        const now = Date.now();
+        const keysToDelete: string[] = [];
+        const sourcesToDelete: string[] = [];
+
+        for (const [key, incident] of Object.entries(this.state.symbols)) {
+            if (incident.symbol === symbol && incident.source.startsWith(sourcePrefix)) {
+                keysToDelete.push(key);
+                sourcesToDelete.push(incident.source);
+            }
+        }
+
+        for (const key of keysToDelete) {
+            delete this.state.symbols[key];
+        }
+
+        if (sourcesToDelete.length > 0) {
+            try {
+                await prisma.incident.updateMany({
+                    where: {
+                        symbol,
+                        source: {
+                            in: sourcesToDelete
+                        },
+                        resolvedAt: null
+                    },
+                    data: {
+                        resolvedAt: BigInt(now)
+                    }
+                });
+                console.log(`[IncidentManager] Resolved DB incidents matching source prefix ${sourcePrefix} for symbol ${symbol}`);
+            } catch (error: any) {
+                console.error(`[IncidentManager] Failed to resolve DB incidents by source prefix ${sourcePrefix} / ${symbol}:`, error?.message || error);
+            }
+        }
+    }
+
     getActiveIncidentsCount(): number {
         return this.globalIncidents.size + Object.keys(this.state.symbols).length;
     }
