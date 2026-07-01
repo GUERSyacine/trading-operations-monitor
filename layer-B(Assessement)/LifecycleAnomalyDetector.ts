@@ -58,7 +58,7 @@ export class LifecycleAnomalyDetector {
 
                 // Check if the order has been open/unfilled for longer than stuckTimeoutMs
                 if (now - observedAt > stuckTimeoutMs) {
-                    const sourceKey = `ORDER_PIPELINE:${tradeId}`;
+                    const sourceKey = `OP:${tradeId}`;
                     if (!resolvedTradeIds.has(tradeId)) {
                         // Order is stuck and has no resolve event. Report Incident.
                         await this.incidentManager.reportIncident({

@@ -766,7 +766,7 @@ async function runTests() {
         assert((watchdog as any).consecutiveStructuralViolations === 1, 'Run 1: consecutiveStructuralViolations should be 1.');
         assert(mockIncidentManager.incidentsReported.length === 2, 'Run 1: Should report 2 warning incidents (1 trade-specific, 1 global).');
         assert(mockIncidentManager.incidentsReported.some((i: any) => i.source === 'LIFECYCLE_INTEGRITY' && i.level === 'HIGH'), 'Run 1: Global incident level should be HIGH.');
-        assert(mockIncidentManager.incidentsReported.some((i: any) => i.source.startsWith('ORDER_PIPELINE:t100:') && i.level === 'HIGH' && i.reason.includes('BACKWARD_TRANSITION')), 'Run 1: Trade-specific incident level should be HIGH and reason should include BACKWARD_TRANSITION.');
+        assert(mockIncidentManager.incidentsReported.some((i: any) => i.source.startsWith('OP:t100:') && i.level === 'HIGH' && i.reason.includes('BACKWARD_TRANSITION')), 'Run 1: Trade-specific incident level should be HIGH and reason should include BACKWARD_TRANSITION.');
         assert(mockHaltCalled === null, 'Run 1: No halt called in ALERT_ONLY mode.');
 
         // Run 2: Structural violation

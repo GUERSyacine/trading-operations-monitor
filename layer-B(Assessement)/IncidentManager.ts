@@ -355,6 +355,7 @@ export class IncidentManager {
             if (
                 (inc.symbol && inc.symbol.startsWith('sim_')) ||
                 inc.source.startsWith('ORDER_PIPELINE:sim_') ||
+                inc.source.startsWith('OP:sim_') ||
                 inc.source.includes('SIMULATOR') ||
                 inc.reason.includes('sim_')
             ) {
@@ -363,7 +364,7 @@ export class IncidentManager {
         }
         // 2. Clear in-memory global incidents starting with or involving simulation
         for (const [source, inc] of this.globalIncidents.entries()) {
-            if (source.includes('SIMULATOR') || source.startsWith('ORDER_PIPELINE:sim_') || inc.reason.includes('sim_')) {
+            if (source.includes('SIMULATOR') || source.startsWith('ORDER_PIPELINE:sim_') || source.startsWith('OP:sim_') || inc.reason.includes('sim_')) {
                 this.globalIncidents.delete(source);
             }
         }
@@ -373,6 +374,7 @@ export class IncidentManager {
                 where: {
                     OR: [
                         { source: { startsWith: 'ORDER_PIPELINE:sim_' } },
+                        { source: { startsWith: 'OP:sim_' } },
                         { source: { contains: 'SIMULATOR' } },
                         { symbol: { startsWith: 'sim_' } },
                         { reason: { contains: 'sim_' } }

@@ -27,7 +27,7 @@ model Incident {
   id         Int      @id @default(autoincrement())
   symbol     String?  @db.VarChar(20)
   level      String   @db.VarChar(20)
-  source     String   @db.VarChar(50)
+  source     String   @db.VarChar(100)
   reason     String
   detectedAt BigInt   @map("detected_at")
   resolvedAt BigInt?  @map("resolved_at")

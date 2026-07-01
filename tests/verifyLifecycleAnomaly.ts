@@ -20,7 +20,7 @@ async function runTest() {
 
     const mockTradeId = '999';
     const mockSymbol = 'BTCUSDT';
-    const sourceKey = `ORDER_PIPELINE:${mockTradeId}`;
+    const sourceKey = `OP:${mockTradeId}`;
     const compositeKey = `${mockSymbol}:${sourceKey}`;
 
     // 1. Cleanup database mock data and pre-existing incidents to guarantee clean environment

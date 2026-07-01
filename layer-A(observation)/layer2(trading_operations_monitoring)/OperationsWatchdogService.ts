@@ -1427,31 +1427,31 @@ export class OperationsWatchdogService {
                             this.lastActiveViolationType = tradeViolationType;
                             observedViolationsInCycle.add(tradeViolationType);
 
-                            // Report symbol-specific / trade-specific incident with source ORDER_PIPELINE:${tradeId}:${violationType}
-                            const sourceKey = `ORDER_PIPELINE:${tradeId}:${tradeViolationType}`;
-                            await this.incidentManager.reportIncident({
-                                symbol: tradeSymbol,
-                                level: 'HIGH',
-                                source: sourceKey,
-                                reason: `Execution Risk Violation (Type: ${tradeViolationType}, Trade ID: ${tradeId})`,
-                                since: Date.now()
-                            });
-                        }
-                    } else if (hasIncompleteOrder) {
-                        incompleteTrades++;
-                    } else {
-                        validTrades++;
-                    }
-
-                    // If trade is valid (or no longer has anomalies), resolve any active incidents matching the trade ID source prefix
-                    if (!tradeIsInvalid) {
-                        const sourcePrefix = `ORDER_PIPELINE:${tradeId}:`;
-                        if (typeof this.incidentManager.resolveIncidentsBySourcePrefix === 'function') {
-                            await this.incidentManager.resolveIncidentsBySourcePrefix(sourcePrefix, tradeSymbol);
-                        } else {
-                            await this.incidentManager.resolveIncidentBySource(`ORDER_PIPELINE:${tradeId}`, tradeSymbol);
-                        }
-                    }
+                             // Report symbol-specific / trade-specific incident with source OP:${tradeId}:${violationType}
+                             const sourceKey = `OP:${tradeId}:${tradeViolationType}`;
+                             await this.incidentManager.reportIncident({
+                                 symbol: tradeSymbol,
+                                 level: 'HIGH',
+                                 source: sourceKey,
+                                 reason: `Execution Risk Violation (Type: ${tradeViolationType}, Trade ID: ${tradeId})`,
+                                 since: Date.now()
+                             });
+                         }
+                     } else if (hasIncompleteOrder) {
+                         incompleteTrades++;
+                     } else {
+                         validTrades++;
+                     }
+ 
+                     // If trade is valid (or no longer has anomalies), resolve any active incidents matching the trade ID source prefix
+                     if (!tradeIsInvalid) {
+                         const sourcePrefix = `OP:${tradeId}:`;
+                         if (typeof this.incidentManager.resolveIncidentsBySourcePrefix === 'function') {
+                             await this.incidentManager.resolveIncidentsBySourcePrefix(sourcePrefix, tradeSymbol);
+                         } else {
+                             await this.incidentManager.resolveIncidentBySource(`OP:${tradeId}`, tradeSymbol);
+                         }
+                     }
 
                     const tradeIsTerminal = !hasIncompleteOrder && hasTerminalOrder;
                     if (tradeIsTerminal) {
