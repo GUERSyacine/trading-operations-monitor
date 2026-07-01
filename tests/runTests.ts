@@ -830,6 +830,35 @@ async function runTests() {
         assert((watchdog as any).consecutiveStructuralViolationsMap.get(RiskViolationType.BACKWARD_TRANSITION) === 0, 'Recovery: map for BACKWARD_TRANSITION resets to 0.');
         assert(mockIncidentManager.incidentsResolved.some((r: any) => r.source === 'LIFECYCLE_INTEGRITY'), 'Recovery: resolves LIFECYCLE_INTEGRITY incident.');
 
+        // Test J6: TimelineConfidence & UNEXPECTED_FILL regression checks
+        console.log('   > Running Test J6: TimelineConfidence & UNEXPECTED_FILL regression checks...');
+        
+        // 1. Real Trade with partial timeline (only ORDER_FILLED) -> PARTIAL confidence -> NO UNEXPECTED_FILL
+        mockFindMany = async () => [
+            { classification: 'ORDER_FILLED', createdAt: new Date(Date.now() - 10 * 1000), metadata: { tradeId: 'real_trade_123', symbol: 'BTCUSDT', source: 'FREQTRADE' } }
+        ];
+        (watchdog as any).consecutiveStructuralViolations = 0;
+        (watchdog as any).consecutiveStructuralViolationsMap.clear();
+        mockIncidentManager.incidentsReported = [];
+        
+        const checkJ6_1 = await watchdog.checkOrderPipeline(5 * 60 * 1000);
+        assert(checkJ6_1.metadata?.observability?.lifecycle?.invalidTrades === 0, 'Real trade with partial timeline should have 0 invalid trades.');
+        assert(checkJ6_1.metadata?.observability?.lifecycle?.validTrades === 1, 'Real trade with partial timeline should have 1 valid trade.');
+        assert((watchdog as any).consecutiveStructuralViolations === 0, 'Real trade with partial timeline should not increment structural violations.');
+
+        // 2. Simulator Trade with partial timeline (only ORDER_FILLED) -> FULL confidence -> UNEXPECTED_FILL triggered
+        mockFindMany = async () => [
+            { classification: 'ORDER_FILLED', createdAt: new Date(Date.now() - 10 * 1000), metadata: { tradeId: 'sim_trade_123', symbol: 'BTCUSDT', source: 'SIMULATOR' } }
+        ];
+        (watchdog as any).consecutiveStructuralViolations = 0;
+        (watchdog as any).consecutiveStructuralViolationsMap.clear();
+        mockIncidentManager.incidentsReported = [];
+        
+        const checkJ6_2 = await watchdog.checkOrderPipeline(5 * 60 * 1000);
+        assert(checkJ6_2.metadata?.observability?.lifecycle?.invalidTrades === 1, 'Simulator trade with partial timeline should have 1 invalid trade.');
+        assert((watchdog as any).consecutiveStructuralViolations === 1, 'Simulator trade with partial timeline should increment structural violations.');
+        assert(mockIncidentManager.incidentsReported.some((i: any) => i.reason.includes('UNEXPECTED_FILL')), 'Simulator trade with partial timeline should report UNEXPECTED_FILL incident.');
+
         // Reset mocks
         mockCreate = async (args: any) => args.data as any;
         (prisma.decisionAudit as any).findFirst = originalFindFirst;

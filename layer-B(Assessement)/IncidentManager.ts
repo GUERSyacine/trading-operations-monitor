@@ -97,36 +97,51 @@ export class IncidentManager {
     async reportIncident(incident: SymbolIncidentState | { level: IncidentSeverity, source: string, reason: string }): Promise<void> {
         const isSymbolSpecific = 'symbol' in incident && incident.symbol;
 
-        // 1. Deduplication / Cooldown Guard (Noise Prevention)
+        // 1. Deduplication / Cooldown Guard (Noise Prevention based on Active Identity)
         if (isSymbolSpecific) {
             const key = this.buildIncidentKey(incident.symbol, incident.source);
             const activeSymbolIncident = this.state.symbols[key];
-            if (activeSymbolIncident && activeSymbolIncident.level === incident.level && activeSymbolIncident.reason === incident.reason) {
-                // Duplicate incident, skip persistence & duplicate alert log rows
-                return;
+            if (activeSymbolIncident) {
+                if (activeSymbolIncident.level === incident.level) {
+                    // Level is the same, ignore duplicate report (prevent spamming/multiple writes)
+                    return;
+                }
+                // Level is different (escalation/de-escalation), update existing in memory
+                activeSymbolIncident.level = incident.level;
+                activeSymbolIncident.reason = incident.reason;
+            } else {
+                // Not active, add it
+                this.state.symbols[key] = incident as SymbolIncidentState;
             }
         } else {
             const existing = this.globalIncidents.get(incident.source);
-            if (existing && existing.level === incident.level && existing.reason === incident.reason) {
-                // Duplicate global incident for this source, ignore duplicate insertion
-                return;
+            if (existing) {
+                if (existing.level === incident.level) {
+                    // Level is the same, ignore duplicate report
+                    return;
+                }
+                // Level is different, update existing in memory
+                existing.level = incident.level;
+                existing.reason = incident.reason;
+            } else {
+                // Not active, add it
+                const detectedAt = (incident as any).since || Date.now();
+                this.globalIncidents.set(incident.source, {
+                    level: incident.level,
+                    reason: incident.reason,
+                    since: detectedAt
+                });
             }
         }
 
         // 2. State & Database persistence execution
         if (isSymbolSpecific) {
             console.warn(`[IncidentManager] Symbol Incident: ${incident.symbol} -> ${incident.level} (${incident.reason})`);
-            const key = this.buildIncidentKey(incident.symbol, incident.source);
-            this.state.symbols[key] = incident as SymbolIncidentState;
             await this.persistIncident(incident.symbol, incident.level, incident.source, incident.reason, (incident as any).since || Date.now());
         } else {
             console.warn(`[IncidentManager] GLOBAL Incident: ${incident.level} (${incident.reason}) from source ${incident.source}`);
-            const detectedAt = (incident as any).since || Date.now();
-            this.globalIncidents.set(incident.source, {
-                level: incident.level,
-                reason: incident.reason,
-                since: detectedAt
-            });
+            const existing = this.globalIncidents.get(incident.source);
+            const detectedAt = existing ? existing.since : ((incident as any).since || Date.now());
             await this.persistIncident(null, incident.level, incident.source, incident.reason, detectedAt);
         }
 
@@ -393,10 +408,12 @@ export class IncidentManager {
                 this.globalIncidents.delete(source);
             }
         }
-        // 3. Delete from DB where source/symbol matches simulation markers
+        // 3. Resolve simulation incidents in DB instead of deleting
+        const now = Date.now();
         try {
-            await prisma.incident.deleteMany({
+            await prisma.incident.updateMany({
                 where: {
+                    resolvedAt: null,
                     OR: [
                         { source: { startsWith: 'ORDER_PIPELINE:sim_' } },
                         { source: { startsWith: 'OP:sim_' } },
@@ -405,11 +422,14 @@ export class IncidentManager {
                         { symbol: { startsWith: 'sim_' } },
                         { reason: { contains: 'sim_' } }
                     ]
+                },
+                data: {
+                    resolvedAt: BigInt(now)
                 }
             });
-            console.log('[IncidentManager] Cleared all simulation incidents from database and memory.');
+            console.log('[IncidentManager] Resolved all active simulation incidents in Neon DB.');
         } catch (error: any) {
-            console.error('[IncidentManager] Failed to delete simulation incidents from Prisma:', error?.message || error);
+            console.error('[IncidentManager] Failed to resolve simulation incidents in Prisma:', error?.message || error);
         }
     }
 }

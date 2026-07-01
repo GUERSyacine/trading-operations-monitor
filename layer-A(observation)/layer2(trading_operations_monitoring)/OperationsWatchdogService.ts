@@ -41,6 +41,11 @@ export enum RiskViolationType {
     UNEXPECTED_FILL = 'UNEXPECTED_FILL'
 }
 
+export enum TimelineConfidence {
+    FULL = 'FULL',
+    PARTIAL = 'PARTIAL'
+}
+
 export interface ProtectionAction {
     execute(): Promise<void>;
 }
@@ -159,7 +164,8 @@ export class OperationsWatchdogService {
     private validateOrderTimeline(
         timeline: OrderTimeline,
         isGuaranteedStep: (step: string) => boolean,
-        hasSignalOrCreatedInTrade: boolean = false
+        hasSufficientEvidence: boolean = false,
+        timelineConfidence: TimelineConfidence = TimelineConfidence.PARTIAL
     ): ValidationResult {
         const events = timeline.events;
         let isInvalid = false;
@@ -220,7 +226,7 @@ export class OperationsWatchdogService {
                         const stepName = this.canonicalOrder[stepIdx];
                         if (isGuaranteedStep(stepName)) {
                             hasSkipped = true;
-                            if (classification === 'ORDER_FILLED' && !hasSignalOrCreatedInTrade) {
+                            if (classification === 'ORDER_FILLED' && !hasSufficientEvidence && timelineConfidence === TimelineConfidence.FULL) {
                                 isInvalid = true;
                                 violationType = RiskViolationType.UNEXPECTED_FILL;
                             }
@@ -1266,9 +1272,9 @@ export class OperationsWatchdogService {
                     list.push(audit);
                 }
 
-                // Determine tradeSource from audits to resolve capabilities
+                // Determine tradeSource and calculate TimelineConfidence
                 let tradeSource: LifecycleSource = 'FREQTRADE';
-                let hasSignalOrCreatedInTrade = false;
+                let hasSufficientEvidence = false;
                 for (const audit of tradeTimeline) {
                     const meta = audit.metadata as Record<string, any> || {};
                     const s = meta.lifecycleEvent?.source || meta.source;
@@ -1277,11 +1283,11 @@ export class OperationsWatchdogService {
                     }
                     const classification = audit.classification.toUpperCase();
                     if (classification === 'SIGNAL' || classification === 'ORDER_CREATED') {
-                        hasSignalOrCreatedInTrade = true;
+                        hasSufficientEvidence = true;
                     }
                 }
 
-                if (!hasSignalOrCreatedInTrade) {
+                if (!hasSufficientEvidence) {
                     try {
                         const tradeIdNum = Number(tradeId);
                         const isNumber = !isNaN(tradeIdNum);
@@ -1325,11 +1331,18 @@ export class OperationsWatchdogService {
                             }
                         });
                         if (dbMatch) {
-                            hasSignalOrCreatedInTrade = true;
+                            hasSufficientEvidence = true;
                         }
                     } catch (error: any) {
                         console.error(`[OperationsWatchdog] Error querying database for trade ${tradeId} lifecycle source:`, error?.message || error);
                     }
+                }
+
+                // Determine TimelineConfidence recomputed on every cycle from the current timeline
+                let timelineConfidence = TimelineConfidence.PARTIAL;
+                // TODO: Refine timeline confidence checks as more adapters/exchanges are integrated.
+                if (tradeSource === 'SIMULATOR' || tradeId.startsWith('sim_') || hasSufficientEvidence) {
+                    timelineConfidence = TimelineConfidence.FULL;
                 }
 
                 const caps = SOURCE_CAPABILITIES[tradeSource] || SOURCE_CAPABILITIES.FREQTRADE;
@@ -1440,7 +1453,7 @@ export class OperationsWatchdogService {
                 let hasValidatedOrder = false;
 
                 for (const timeline of orderTimelines) {
-                    const result = this.validateOrderTimeline(timeline, isGuaranteedStep, hasSignalOrCreatedInTrade);
+                    const result = this.validateOrderTimeline(timeline, isGuaranteedStep, hasSufficientEvidence, timelineConfidence);
 
                     hasValidatedOrder = true;
                     if (!result.valid) {
