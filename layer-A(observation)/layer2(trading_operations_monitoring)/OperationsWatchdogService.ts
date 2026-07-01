@@ -1858,10 +1858,7 @@ export class OperationsWatchdogService {
             const allViolationTypes = Object.values(RiskViolationType);
             for (const vType of allViolationTypes) {
                 if (observedViolationsInCycle.has(vType)) {
-                    let currentCount = this.consecutiveStructuralViolationsMap.get(vType) || 0;
-                    if (this.consecutiveStructuralViolations !== currentCount) {
-                        currentCount = this.consecutiveStructuralViolations;
-                    }
+                    const currentCount = this.consecutiveStructuralViolationsMap.get(vType) || 0;
                     this.consecutiveStructuralViolationsMap.set(vType, currentCount + 1);
                 } else {
                     this.consecutiveStructuralViolationsMap.set(vType, 0);

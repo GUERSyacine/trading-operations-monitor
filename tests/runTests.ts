@@ -1,7 +1,7 @@
 import { flashCrashDetector } from '../layer-A(observation)/layer3(market-monitoring)/execution-intelligence/detectors/FlashCrashDetector';
 import { spreadAnomalyDetector } from '../layer-A(observation)/layer3(market-monitoring)/execution-intelligence/detectors/SpreadDetector';
 import { slippageIncident } from '../layer-A(observation)/layer3(market-monitoring)/execution-intelligence/detectors/SlippageDetector';
-import { OperationsWatchdogService } from '../layer-A(observation)/layer2(trading_operations_monitoring)/OperationsWatchdogService';
+import { OperationsWatchdogService, RiskViolationType } from '../layer-A(observation)/layer2(trading_operations_monitoring)/OperationsWatchdogService';
 import { InfrastructureWatchdogService } from '../layer-A(observation)/layer1(infrastructure_monitoring)/InfrastructureWatchdogService';
 import { HealthCheckResult } from '../layer-A(observation)/types';
 import { ExecutionIntelligenceService } from '../layer-A(observation)/layer3(market-monitoring)/execution-intelligence/ExecutionIntelligenceService';
@@ -751,6 +751,7 @@ async function runTests() {
         MVP_CONFIG.RISK_PROTECTION.PROTECTION_MODE = 'ALERT_ONLY';
         (watchdog as any).consecutiveConfidenceBreaches = 0;
         (watchdog as any).consecutiveStructuralViolations = 0;
+        (watchdog as any).consecutiveStructuralViolationsMap.clear();
         mockHaltCalled = null;
         mockIncidentManager.incidentsReported = [];
         mockIncidentManager.incidentsResolved = [];
@@ -783,6 +784,7 @@ async function runTests() {
         MVP_CONFIG.RISK_PROTECTION.PROTECTION_MODE = 'STOP_BUY';
         (watchdog as any).consecutiveConfidenceBreaches = 0;
         (watchdog as any).consecutiveStructuralViolations = 2; // pre-set to 2 to trigger on next run
+        (watchdog as any).consecutiveStructuralViolationsMap.set(RiskViolationType.BACKWARD_TRANSITION, 2);
         mockHaltCalled = null;
         mockIncidentManager.incidentsReported = [];
 
@@ -795,6 +797,7 @@ async function runTests() {
         MVP_CONFIG.RISK_PROTECTION.PROTECTION_MODE = 'STOP';
         (watchdog as any).consecutiveConfidenceBreaches = 0;
         (watchdog as any).consecutiveStructuralViolations = 2; // pre-set to 2
+        (watchdog as any).consecutiveStructuralViolationsMap.set(RiskViolationType.BACKWARD_TRANSITION, 2);
         mockHaltCalled = null;
         mockIncidentManager.incidentsReported = [];
 
@@ -806,6 +809,7 @@ async function runTests() {
         MVP_CONFIG.RISK_PROTECTION.PROTECTION_MODE = 'STOP_BUY';
         (watchdog as any).consecutiveConfidenceBreaches = 4; // pre-set to 4 to trigger on next run
         (watchdog as any).consecutiveStructuralViolations = 0; // avoid structural trigger
+        (watchdog as any).consecutiveStructuralViolationsMap.clear();
         mockHaltCalled = null;
         mockIncidentManager.incidentsReported = [];
 
@@ -823,6 +827,7 @@ async function runTests() {
         await watchdog.checkOrderPipeline(5 * 60 * 1000);
         assert((watchdog as any).consecutiveConfidenceBreaches === 0, 'Recovery: confidence breaches reset to 0.');
         assert((watchdog as any).consecutiveStructuralViolations === 0, 'Recovery: structural violations reset to 0.');
+        assert((watchdog as any).consecutiveStructuralViolationsMap.get(RiskViolationType.BACKWARD_TRANSITION) === 0, 'Recovery: map for BACKWARD_TRANSITION resets to 0.');
         assert(mockIncidentManager.incidentsResolved.some((r: any) => r.source === 'LIFECYCLE_INTEGRITY'), 'Recovery: resolves LIFECYCLE_INTEGRITY incident.');
 
         // Reset mocks
