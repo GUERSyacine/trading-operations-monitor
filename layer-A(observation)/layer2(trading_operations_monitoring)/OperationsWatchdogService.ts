@@ -1281,6 +1281,57 @@ export class OperationsWatchdogService {
                     }
                 }
 
+                if (!hasSignalOrCreatedInTrade) {
+                    try {
+                        const tradeIdNum = Number(tradeId);
+                        const isNumber = !isNaN(tradeIdNum);
+                        const orConditions: any[] = [
+                            {
+                                metadata: {
+                                    path: ['tradeId'],
+                                    equals: tradeId
+                                }
+                            },
+                            {
+                                metadata: {
+                                    path: ['lifecycleEvent', 'tradeId'],
+                                    equals: tradeId
+                                }
+                            }
+                        ];
+                        if (isNumber) {
+                            orConditions.push(
+                                {
+                                    metadata: {
+                                        path: ['tradeId'],
+                                        equals: tradeIdNum
+                                    }
+                                },
+                                {
+                                    metadata: {
+                                        path: ['lifecycleEvent', 'tradeId'],
+                                        equals: tradeIdNum
+                                    }
+                                }
+                            );
+                        }
+
+                        const dbMatch = await prisma.decisionAudit.findFirst({
+                            where: {
+                                classification: {
+                                    in: ['SIGNAL', 'ORDER_CREATED']
+                                },
+                                OR: orConditions
+                            }
+                        });
+                        if (dbMatch) {
+                            hasSignalOrCreatedInTrade = true;
+                        }
+                    } catch (error: any) {
+                        console.error(`[OperationsWatchdog] Error querying database for trade ${tradeId} lifecycle source:`, error?.message || error);
+                    }
+                }
+
                 const caps = SOURCE_CAPABILITIES[tradeSource] || SOURCE_CAPABILITIES.FREQTRADE;
                 const isGuaranteedStep = (step: string): boolean => {
                     if (step === 'ORDER_FILLED') {
