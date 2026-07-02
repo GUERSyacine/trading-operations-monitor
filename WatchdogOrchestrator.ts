@@ -257,7 +257,20 @@ export class WatchdogOrchestrator {
 
             for (const check of checks) {
                 try {
-                    await check.fn();
+                    const result = await check.fn();
+                    if (!result.healthy) {
+                        if (!result.severity) {
+                            console.error(`[Orchestrator] [ERROR] HealthCheckResult from ${check.name} is unhealthy but missing severity!`);
+                            continue;
+                        }
+                        await this.incidentManager.reportIncident({
+                            level: result.severity,
+                            source: result.source,
+                            reason: result.message || `${check.name} critical failure`
+                        });
+                    } else {
+                        await this.incidentManager.resolveIncidentBySource(result.source);
+                    }
                 } catch (e: any) {
                     console.error(`[Orchestrator] [ERROR] Infrastructure check failed (${check.name}):`, e.message || e);
                 }

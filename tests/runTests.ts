@@ -11,6 +11,7 @@ import { AlertingService } from '../layer-D(notification)/alerting/AlertingServi
 import { HealthTreeService } from '../layer-B(Assessement)/HealthTreeService';
 import { prisma } from '../prisma';
 import { FreqtradeWebhookReceiver } from '../layer-A(observation)/layer1(infrastructure_monitoring)/FreqtradeWebhookReceiver';
+import { WatchdogOrchestrator } from '../WatchdogOrchestrator';
 import { EventPersistenceService } from '../adapters/base/EventPersistenceService';
 import { MVP_CONFIG } from '../mvpConfig';
 
@@ -2195,6 +2196,253 @@ async function runTests() {
         process.env.TELEGRAM_CHAT_ID = prevChatId;
     } catch (e: any) {
         console.error('❌ Alerting Service test crashed:', e.message || e);
+    }
+    console.log('');
+
+    // ----------------------------------------------------
+    // TEST 8: Infrastructure Integration via Orchestrator
+    // ----------------------------------------------------
+    try {
+        console.log('--- Checking Orchestrator: Infrastructure Integration & Idempotency ---');
+        
+        const mockAlertingForOrch: any = {
+            alertsSent: [] as any[],
+            async sendAlert(alert: any) {
+                this.alertsSent.push(alert);
+            }
+        };
+
+        const orchestrator = new WatchdogOrchestrator();
+        // Inject our mock alerting service and a real incident manager with the mock alerting
+        const mgr = new IncidentManager(mockAlertingForOrch);
+        (orchestrator as any).incidentManager = mgr;
+        (orchestrator as any).alertingService = mockAlertingForOrch;
+
+        // Mock database
+        let databaseIncidents: any[] = [];
+        let databaseIncidentGroups: any[] = [];
+        let transitions: any[] = [];
+        let nextIncidentId = 1;
+        let nextGroupId = 1;
+
+        const originalIncidentCreate = prisma.incident.create;
+        const originalIncidentFindFirst = prisma.incident.findFirst;
+        const originalIncidentFindMany = prisma.incident.findMany;
+        const originalIncidentUpdate = prisma.incident.update;
+        const originalIncidentUpdateMany = prisma.incident.updateMany;
+        const originalIncidentGroupCreate = prisma.incidentGroup.create;
+        const originalIncidentGroupFindFirst = prisma.incidentGroup.findFirst;
+        const originalIncidentGroupUpdate = prisma.incidentGroup.update;
+        const originalTransitionCreate = prisma.incidentTransition.create;
+
+        (prisma.incident as any).create = async (args: any) => {
+            const newIncident = {
+                id: nextIncidentId++,
+                symbol: args.data.symbol,
+                level: args.data.level,
+                source: args.data.source,
+                reason: args.data.reason,
+                detectedAt: args.data.detectedAt,
+                resolvedAt: null,
+                groupId: args.data.groupId
+            };
+            databaseIncidents.push(newIncident);
+            return newIncident;
+        };
+
+        (prisma.incident as any).findFirst = async (args: any) => {
+            const symbol = args.where?.symbol;
+            const source = args.where?.source;
+            const resolvedAt = args.where?.resolvedAt;
+            return databaseIncidents.find(i => i.symbol === symbol && i.source === source && i.resolvedAt === resolvedAt) || null;
+        };
+
+        (prisma.incident as any).findMany = async (args: any) => {
+            let res = databaseIncidents;
+            if (args && args.where) {
+                if (args.where.groupId) {
+                    res = res.filter(i => i.groupId === args.where.groupId);
+                }
+                if (args.where.symbol !== undefined) {
+                    res = res.filter(i => i.symbol === args.where.symbol);
+                }
+                if (args.where.source) {
+                    res = res.filter(i => i.source === args.where.source);
+                }
+                if ('resolvedAt' in args.where) {
+                    res = res.filter(i => i.resolvedAt === args.where.resolvedAt);
+                }
+            }
+            return res;
+        };
+
+        (prisma.incident as any).update = async (args: any) => {
+            const inc = databaseIncidents.find(i => i.id === args.where.id);
+            if (inc) {
+                inc.level = args.data.level ?? inc.level;
+                inc.reason = args.data.reason ?? inc.reason;
+                inc.detectedAt = args.data.detectedAt ?? inc.detectedAt;
+            }
+            return inc;
+        };
+
+        (prisma.incident as any).updateMany = async (args: any) => {
+            const ids = args.where.id?.in || [];
+            const matches = databaseIncidents.filter(i => ids.includes(i.id));
+            for (const m of matches) {
+                m.resolvedAt = args.data.resolvedAt;
+            }
+            return { count: matches.length };
+        };
+
+        (prisma.incidentGroup as any).create = async (args: any) => {
+            const g = {
+                id: nextGroupId++,
+                correlationKey: args.data.correlationKey,
+                symbol: args.data.symbol,
+                groupType: args.data.groupType,
+                openedAt: args.data.openedAt,
+                resolvedAt: null,
+                highestSeverity: args.data.highestSeverity
+            };
+            databaseIncidentGroups.push(g);
+            return g;
+        };
+
+        (prisma.incidentGroup as any).findFirst = async (args: any) => {
+            const correlationKey = args.where?.correlationKey;
+            const resolvedAt = args.where?.resolvedAt;
+            const groupType = args.where?.groupType;
+            const openedAtGte = args.where?.openedAt?.gte;
+            return databaseIncidentGroups.find(g => 
+                (!correlationKey || g.correlationKey === correlationKey) && 
+                (!groupType || g.groupType === groupType) &&
+                g.resolvedAt === resolvedAt && 
+                (!openedAtGte || g.openedAt >= openedAtGte)
+            ) || null;
+        };
+
+        (prisma.incidentGroup as any).update = async (args: any) => {
+            const g = databaseIncidentGroups.find(x => x.id === args.where.id);
+            if (g) {
+                if (args.data.highestSeverity !== undefined) {
+                    g.highestSeverity = args.data.highestSeverity;
+                }
+                if (args.data.resolvedAt !== undefined) {
+                    g.resolvedAt = args.data.resolvedAt;
+                }
+            }
+            return g;
+        };
+
+        (prisma.incidentTransition as any).create = async (args: any) => {
+            const t = {
+                id: transitions.length + 1,
+                incidentId: args.data.incidentId,
+                transitionType: args.data.transitionType,
+                level: args.data.level,
+                reason: args.data.reason,
+                occurredAt: args.data.occurredAt
+            };
+            transitions.push(t);
+            return t;
+        };
+
+        // Now mock the InfrastructureWatchdogService methods
+        let mockDockerHealthy = true;
+        let mockFreqtradeHealthy = true;
+        let mockVmHealthy = true;
+
+        (orchestrator as any).infraService.checkDockerContainerHealth = async () => {
+            if (mockDockerHealthy) {
+                return { source: 'DOCKER', healthy: true, checkedAt: new Date(), checkDurationMs: 5 };
+            } else {
+                return { source: 'DOCKER', healthy: false, checkedAt: new Date(), checkDurationMs: 5, severity: 'CRITICAL', message: 'Docker crash' };
+            }
+        };
+
+        (orchestrator as any).infraService.checkFreqtradeAPI = async () => {
+            if (mockFreqtradeHealthy) {
+                return { source: 'FREQTRADE', healthy: true, checkedAt: new Date(), checkDurationMs: 5 };
+            } else {
+                return { source: 'FREQTRADE', healthy: false, checkedAt: new Date(), checkDurationMs: 5, severity: 'WARNING', message: 'API slow' };
+            }
+        };
+
+        (orchestrator as any).infraService.checkVMHealth = async () => {
+            if (mockVmHealthy) {
+                return { source: 'VM', healthy: true, checkedAt: new Date(), checkDurationMs: 5 };
+            } else {
+                return { source: 'VM', healthy: false, checkedAt: new Date(), checkDurationMs: 5, severity: 'CRITICAL', message: 'CPU high' };
+            }
+        };
+
+        // Mock others to return healthy
+        (orchestrator as any).infraService.checkHostNetwork = async () => ({ source: 'NETWORK', healthy: true, checkedAt: new Date(), checkDurationMs: 5 });
+        (orchestrator as any).infraService.checkExchangeReachability = async () => ({ source: 'EXCHANGE', healthy: true, checkedAt: new Date(), checkDurationMs: 5 });
+        (orchestrator as any).infraService.checkDnsResolution = async () => ({ source: 'DNS', healthy: true, checkedAt: new Date(), checkDurationMs: 5 });
+
+        // --- Cycle 1: Everything is healthy ---
+        await (orchestrator as any).runInfraLoop();
+        assert(databaseIncidents.length === 0, 'Healthy cycle should not create any incidents.');
+        assert(databaseIncidentGroups.length === 0, 'Healthy cycle should not create any incident groups.');
+
+        // --- Cycle 2: Docker goes unhealthy ---
+        mockDockerHealthy = false;
+        await (orchestrator as any).runInfraLoop();
+        assert(databaseIncidents.length === 1, 'Docker failure should create an incident.');
+        assert(databaseIncidents[0].source === 'DOCKER' && databaseIncidents[0].level === 'CRITICAL', 'Docker incident details should match.');
+        assert(databaseIncidentGroups.length === 1, 'Incident group should be created.');
+        assert(databaseIncidentGroups[0].groupType === 'INFRASTRUCTURE', 'Group type should be INFRASTRUCTURE.');
+        assert(databaseIncidentGroups[0].highestSeverity === 'CRITICAL', 'Group severity should be CRITICAL.');
+
+        // --- Cycle 3: Docker is STILL unhealthy (repeated unhealthy cycle) ---
+        await (orchestrator as any).runInfraLoop();
+        assert(databaseIncidents.length === 1, 'Repeated unhealthy cycle should not duplicate incident.');
+        assert(databaseIncidentGroups.length === 1, 'Repeated unhealthy cycle should not duplicate group.');
+
+        // --- Cycle 4: Freqtrade API and VM ALSO go unhealthy ---
+        mockFreqtradeHealthy = false;
+        mockVmHealthy = false;
+        await (orchestrator as any).runInfraLoop();
+        assert(databaseIncidents.length === 3, 'VM and Freqtrade failures should create additional incidents.');
+        // Verify they group into the same INFRASTRUCTURE group
+        assert(databaseIncidents.every(i => i.groupId === databaseIncidentGroups[0].id), 'All infra incidents should bind to the same INFRASTRUCTURE group.');
+        assert(databaseIncidentGroups.length === 1, 'Should keep only 1 INFRASTRUCTURE group.');
+
+        // --- Cycle 5: VM recovers (healthy), Docker and Freqtrade still unhealthy ---
+        mockVmHealthy = true;
+        await (orchestrator as any).runInfraLoop();
+        const vmIncident = databaseIncidents.find(i => i.source === 'VM');
+        assert(vmIncident.resolvedAt !== null, 'VM incident should be resolved.');
+        assert(databaseIncidentGroups[0].resolvedAt === null, 'INFRASTRUCTURE group should remain open since Docker/Freqtrade are still active.');
+
+        // --- Cycle 6: VM is STILL healthy (repeated healthy cycle) ---
+        const prevResolvedAt = vmIncident.resolvedAt;
+        await (orchestrator as any).runInfraLoop();
+        assert(vmIncident.resolvedAt === prevResolvedAt, 'Repeated healthy cycle should not mutate resolvedAt.');
+
+        // --- Cycle 7: Docker and Freqtrade recover (everything healthy now) ---
+        mockDockerHealthy = true;
+        mockFreqtradeHealthy = true;
+        await (orchestrator as any).runInfraLoop();
+        assert(databaseIncidents.every(i => i.resolvedAt !== null), 'All incidents should be resolved.');
+        assert(databaseIncidentGroups[0].resolvedAt !== null, 'INFRASTRUCTURE group should now be resolved.');
+
+        // Cleanup
+        prisma.incident.create = originalIncidentCreate;
+        prisma.incident.findFirst = originalIncidentFindFirst;
+        prisma.incident.findMany = originalIncidentFindMany;
+        prisma.incident.update = originalIncidentUpdate;
+        prisma.incident.updateMany = originalIncidentUpdateMany;
+        prisma.incidentGroup.create = originalIncidentGroupCreate;
+        prisma.incidentGroup.findFirst = originalIncidentGroupFindFirst;
+        prisma.incidentGroup.update = originalIncidentGroupUpdate;
+        prisma.incidentTransition.create = originalTransitionCreate;
+
+        console.log('✅ [PASS] Orchestrator integration, idempotency, and multi-source grouping verified successfully.');
+    } catch (e: any) {
+        console.error('❌ Orchestrator Infrastructure Integration test crashed:', e.message || e);
     }
     console.log('');
 
