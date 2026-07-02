@@ -220,7 +220,8 @@ export class IncidentManager {
 
     private static readonly INFRA_SOURCES = new Set([
         'CPU', 'MEMORY', 'DISK', 'DOCKER_CONTAINER', 
-        'DNS', 'NETWORK', 'FREQTRADE_API', 'EXCHANGE'
+        'DNS', 'NETWORK', 'FREQTRADE_API', 'EXCHANGE',
+        'VM', 'DOCKER', 'FREQTRADE'
     ]);
 
     private isInfrastructureSource(source: string): boolean {
@@ -284,18 +285,54 @@ export class IncidentManager {
                     incidentId = existing.id;
                 } else {
                     const timeThreshold = BigInt(detectedAt - MVP_CONFIG.INCIDENTS.GROUPING_WINDOW_MS);
-                    let group = await tx.incidentGroup.findFirst({
-                        where: {
-                            correlationKey,
-                            resolvedAt: null,
-                            openedAt: {
-                                gte: timeThreshold
+                    let group = null;
+
+                    if (groupType === 'OPERATIONS') {
+                        if (symbol && symbol !== 'GLOBAL') {
+                            // Symbol incident priority:
+                            // 1. Exact OPS:<symbol>
+                            group = await tx.incidentGroup.findFirst({
+                                where: {
+                                    correlationKey,
+                                    resolvedAt: null,
+                                    openedAt: { gte: timeThreshold }
+                                },
+                                orderBy: { openedAt: 'desc' }
+                            });
+                            // 2. Fall back to active OPS:GLOBAL group
+                            if (!group) {
+                                group = await tx.incidentGroup.findFirst({
+                                    where: {
+                                        correlationKey: 'OPS:GLOBAL',
+                                        resolvedAt: null,
+                                        openedAt: { gte: timeThreshold }
+                                    },
+                                    orderBy: { openedAt: 'desc' }
+                                });
                             }
-                        },
-                        orderBy: {
-                            openedAt: 'desc'
+                        } else {
+                            // Global incident priority:
+                            // 1. Most recently opened active OPERATIONS group within window
+                            group = await tx.incidentGroup.findFirst({
+                                where: {
+                                    groupType: 'OPERATIONS',
+                                    resolvedAt: null,
+                                    openedAt: { gte: timeThreshold }
+                                },
+                                orderBy: { openedAt: 'desc' }
+                            });
                         }
-                    });
+                    } else {
+                        // Infrastructure incident: exact match on INFRA:GLOBAL
+                        group = await tx.incidentGroup.findFirst({
+                            where: {
+                                correlationKey,
+                                resolvedAt: null,
+                                openedAt: { gte: timeThreshold }
+                            },
+                            orderBy: { openedAt: 'desc' }
+                        });
+                    }
 
                     if (!group) {
                         group = await tx.incidentGroup.create({
