@@ -1351,6 +1351,13 @@ async function runTests() {
         };
         (prisma.incident as any).create = async (args: any) => mockIncidentCreate(args);
         (prisma.incident as any).findFirst = async () => null;
+        (prisma.incident as any).findUnique = async () => ({ groupId: 1 });
+        (prisma.incident as any).findMany = async () => [];
+        (prisma.incident as any).update = async () => ({});
+        (prisma.incidentGroup as any).create = async (args: any) => ({ id: 1, ...args.data });
+        (prisma.incidentGroup as any).findFirst = async () => null;
+        (prisma.incidentGroup as any).update = async () => ({});
+        (prisma.incidentGroup as any).updateMany = async () => ({});
         (prisma.incidentTransition as any).create = async () => ({});
         (prisma as any).$transaction = async (callback: any) => callback(prisma);
 
@@ -1563,6 +1570,32 @@ async function runTests() {
             return { count: matches.length };
         };
 
+        (prisma.incident as any).findUnique = async (args: any) => {
+            return databaseIncidents.find(i => i.id === args.where.id) || null;
+        };
+
+        let databaseIncidentGroups: any[] = [];
+        let nextGroupId = 1;
+        (prisma.incidentGroup as any).create = async (args: any) => {
+            const g = {
+                id: nextGroupId++,
+                ...args.data
+            };
+            databaseIncidentGroups.push(g);
+            return g;
+        };
+        (prisma.incidentGroup as any).findFirst = async (args: any) => {
+            return databaseIncidentGroups.find(g => g.correlationKey === args.where.correlationKey && g.resolvedAt === null) || null;
+        };
+        (prisma.incidentGroup as any).update = async (args: any) => {
+            const g = databaseIncidentGroups.find(x => x.id === args.where.id);
+            if (g) {
+                Object.assign(g, args.data);
+            }
+            return g || {};
+        };
+        (prisma.incidentGroup as any).updateMany = async () => ({ count: 0 });
+
         (prisma.incidentTransition as any).create = async (args: any) => {
             transitions.push(args.data);
             return args.data;
@@ -1710,6 +1743,32 @@ async function runTests() {
             return { count: matches.length };
         };
 
+        (prisma.incident as any).findUnique = async (args: any) => {
+            return databaseIncidents.find(i => i.id === args.where.id) || null;
+        };
+
+        let databaseIncidentGroups: any[] = [];
+        let nextGroupId = 1;
+        (prisma.incidentGroup as any).create = async (args: any) => {
+            const g = {
+                id: nextGroupId++,
+                ...args.data
+            };
+            databaseIncidentGroups.push(g);
+            return g;
+        };
+        (prisma.incidentGroup as any).findFirst = async (args: any) => {
+            return databaseIncidentGroups.find(g => g.correlationKey === args.where.correlationKey && g.resolvedAt === null) || null;
+        };
+        (prisma.incidentGroup as any).update = async (args: any) => {
+            const g = databaseIncidentGroups.find(x => x.id === args.where.id);
+            if (g) {
+                Object.assign(g, args.data);
+            }
+            return g || {};
+        };
+        (prisma.incidentGroup as any).updateMany = async () => ({ count: 0 });
+
         (prisma.incidentTransition as any).create = async (args: any) => {
             transitions.push(args.data);
             return args.data;
@@ -1767,6 +1826,232 @@ async function runTests() {
         console.log('✅ [PASS] Incident Timeline Transition and Chronological Ordering verified.');
     } catch (e: any) {
         console.error('❌ Incident Timeline regression test failed:', e.message || e);
+    }
+    console.log('');
+
+    // ---------------------------------------------------------------------------------
+    // TEST 5.3: Incident Correlation & Lifecycles Regression Test
+    // ---------------------------------------------------------------------------------
+    try {
+        console.log('--- Checking IncidentManager: Incident Grouping / Correlation & Lifecycles ---');
+        const mockAlertingForGrouping: any = {
+            alertsSent: [] as any[],
+            async sendAlert(alert: any) {
+                this.alertsSent.push(alert);
+            }
+        };
+
+        const mgr = new IncidentManager(mockAlertingForGrouping);
+        let databaseIncidents: any[] = [];
+        let databaseIncidentGroups: any[] = [];
+        let transitions: any[] = [];
+        let nextIncidentId = 1;
+        let nextGroupId = 1;
+
+        (prisma.incident as any).create = async (args: any) => {
+            const newIncident = {
+                id: nextIncidentId++,
+                symbol: args.data.symbol,
+                level: args.data.level,
+                source: args.data.source,
+                reason: args.data.reason,
+                detectedAt: args.data.detectedAt,
+                resolvedAt: null,
+                groupId: args.data.groupId
+            };
+            databaseIncidents.push(newIncident);
+            return newIncident;
+        };
+
+        (prisma.incident as any).findFirst = async (args: any) => {
+            const symbol = args.where.symbol;
+            const source = args.where.source;
+            const resolvedAt = args.where.resolvedAt;
+            return databaseIncidents.find(i => i.symbol === symbol && i.source === source && i.resolvedAt === resolvedAt) || null;
+        };
+
+        (prisma.incident as any).findUnique = async (args: any) => {
+            return databaseIncidents.find(i => i.id === args.where.id) || null;
+        };
+
+        (prisma.incident as any).findMany = async (args: any) => {
+            let res = databaseIncidents;
+            if (args && args.where) {
+                if (args.where.groupId) {
+                    res = res.filter(i => i.groupId === args.where.groupId);
+                }
+                if (args.where.symbol) {
+                    res = res.filter(i => i.symbol === args.where.symbol);
+                }
+                if (args.where.source) {
+                    res = res.filter(i => i.source === args.where.source);
+                }
+                if ('resolvedAt' in args.where) {
+                    res = res.filter(i => i.resolvedAt === args.where.resolvedAt);
+                }
+            }
+            return res;
+        };
+
+        (prisma.incident as any).update = async (args: any) => {
+            const inc = databaseIncidents.find(i => i.id === args.where.id);
+            if (inc) {
+                inc.level = args.data.level ?? inc.level;
+                inc.reason = args.data.reason ?? inc.reason;
+                inc.detectedAt = args.data.detectedAt ?? inc.detectedAt;
+            }
+            return inc;
+        };
+
+        (prisma.incident as any).updateMany = async (args: any) => {
+            const ids = args.where.id?.in || [];
+            const matches = databaseIncidents.filter(i => ids.includes(i.id));
+            for (const m of matches) {
+                m.resolvedAt = args.data.resolvedAt;
+            }
+            return { count: matches.length };
+        };
+
+        (prisma.incidentGroup as any).create = async (args: any) => {
+            const g = {
+                id: nextGroupId++,
+                correlationKey: args.data.correlationKey,
+                symbol: args.data.symbol,
+                groupType: args.data.groupType,
+                openedAt: args.data.openedAt,
+                resolvedAt: null,
+                highestSeverity: args.data.highestSeverity
+            };
+            databaseIncidentGroups.push(g);
+            return g;
+        };
+
+        (prisma.incidentGroup as any).findFirst = async (args: any) => {
+            const correlationKey = args.where.correlationKey;
+            const resolvedAt = args.where.resolvedAt;
+            const openedAtGte = args.where.openedAt?.gte;
+            return databaseIncidentGroups.find(g => 
+                g.correlationKey === correlationKey && 
+                g.resolvedAt === resolvedAt && 
+                (!openedAtGte || g.openedAt >= openedAtGte)
+            ) || null;
+        };
+
+        (prisma.incidentGroup as any).update = async (args: any) => {
+            const g = databaseIncidentGroups.find(x => x.id === args.where.id);
+            if (g) {
+                if (args.data.highestSeverity !== undefined) {
+                    g.highestSeverity = args.data.highestSeverity;
+                }
+                if (args.data.resolvedAt !== undefined) {
+                    g.resolvedAt = args.data.resolvedAt;
+                }
+            }
+            return g || {};
+        };
+
+        (prisma.incidentGroup as any).updateMany = async () => ({ count: 0 });
+
+        (prisma.incidentTransition as any).create = async (args: any) => {
+            transitions.push(args.data);
+            return args.data;
+        };
+        (prisma as any).$transaction = async (callback: any) => callback(prisma);
+
+        // 1. Report Incident A (Symbol: BTCUSDT, Source: ORDER_PIPELINE, Severity: WARNING)
+        await mgr.reportIncident({
+            symbol: 'BTCUSDT',
+            level: 'WARNING',
+            source: 'ORDER_PIPELINE',
+            reason: 'Order stale'
+        });
+        assert(databaseIncidentGroups.length === 1, 'Group 1 should be created.');
+        assert(databaseIncidentGroups[0].correlationKey === 'OPS:BTCUSDT', 'Group 1 correlation key should be OPS:BTCUSDT.');
+        assert(databaseIncidentGroups[0].highestSeverity === 'WARNING', 'Group 1 severity should be WARNING.');
+        assert(databaseIncidents.length === 1, 'Incident A should be created.');
+        assert(databaseIncidents[0].groupId === databaseIncidentGroups[0].id, 'Incident A should link to Group 1.');
+
+        // 2. Report Incident B (Symbol: BTCUSDT, Source: SIGNAL_INTEGRITY, Severity: CRITICAL) within 10s
+        await mgr.reportIncident({
+            symbol: 'BTCUSDT',
+            level: 'CRITICAL',
+            source: 'SIGNAL_INTEGRITY',
+            reason: 'Signal missing'
+        });
+        assert(databaseIncidentGroups.length === 1, 'Incident B should bind to the existing Group 1.');
+        assert(databaseIncidents.length === 2, 'Incident B should be created.');
+        assert(databaseIncidents[1].groupId === databaseIncidentGroups[0].id, 'Incident B should link to Group 1.');
+        assert(databaseIncidentGroups[0].highestSeverity === 'CRITICAL', 'Group 1 severity should escalate to CRITICAL.');
+
+        // 3. Report Incident C (Symbol: ETHUSDT, Source: ORDER_PIPELINE, Severity: LOW)
+        await mgr.reportIncident({
+            symbol: 'ETHUSDT',
+            level: 'LOW',
+            source: 'ORDER_PIPELINE',
+            reason: 'ETH order stale'
+        });
+        assert(databaseIncidentGroups.length === 2, 'Group 2 should be created due to symbol difference.');
+        assert(databaseIncidentGroups[1].correlationKey === 'OPS:ETHUSDT', 'Group 2 correlation key should be OPS:ETHUSDT.');
+
+        // 4. Report Infrastructure Incident (Source: CPU, Severity: WARNING)
+        await mgr.reportIncident({
+            level: 'WARNING',
+            source: 'CPU_HIGH',
+            reason: 'CPU overload'
+        });
+        assert(databaseIncidentGroups.length === 3, 'Group 3 should be created for infrastructure.');
+        assert(databaseIncidentGroups[2].groupType === 'INFRASTRUCTURE', 'Group 3 type should be INFRASTRUCTURE.');
+        assert(databaseIncidentGroups[2].correlationKey === 'INFRA:GLOBAL', 'Group 3 correlation key should be INFRA:GLOBAL.');
+
+        // 5. Mixed Severity Timeline & Recalculation (Test 5.3.5)
+        databaseIncidents = [];
+        databaseIncidentGroups = [];
+        nextIncidentId = 1;
+        nextGroupId = 1;
+
+        // A (HIGH)
+        await mgr.reportIncident({
+            symbol: 'BTCUSDT',
+            level: 'HIGH',
+            source: 'ORDER_PIPELINE_STALE',
+            reason: 'HIGH severity incident'
+        });
+        // B (CRITICAL)
+        await mgr.reportIncident({
+            symbol: 'BTCUSDT',
+            level: 'CRITICAL',
+            source: 'SIGNAL_INTEGRITY_BREACH',
+            reason: 'CRITICAL severity incident'
+        });
+        // C (WARNING)
+        await mgr.reportIncident({
+            symbol: 'BTCUSDT',
+            level: 'WARNING',
+            source: 'LATENCY_SPIKE',
+            reason: 'WARNING severity incident'
+        });
+
+        assert(databaseIncidentGroups.length === 1, 'All BTCUSDT incidents should be correlated to Group 1.');
+        assert(databaseIncidentGroups[0].highestSeverity === 'CRITICAL', 'Initial group severity should be CRITICAL.');
+
+        // Resolve B (CRITICAL)
+        await mgr.resolveIncidentBySource('SIGNAL_INTEGRITY_BREACH', 'BTCUSDT');
+        assert(databaseIncidentGroups[0].resolvedAt === null, 'Group 1 should remain open.');
+        assert(databaseIncidentGroups[0].highestSeverity === 'HIGH', 'Group severity should recalculate down to HIGH.');
+
+        // Resolve A (HIGH)
+        await mgr.resolveIncidentBySource('ORDER_PIPELINE_STALE', 'BTCUSDT');
+        assert(databaseIncidentGroups[0].resolvedAt === null, 'Group 1 should remain open.');
+        assert(databaseIncidentGroups[0].highestSeverity === 'WARNING', 'Group severity should recalculate down to WARNING.');
+
+        // Resolve C (WARNING)
+        await mgr.resolveIncidentBySource('LATENCY_SPIKE', 'BTCUSDT');
+        assert(databaseIncidentGroups[0].resolvedAt !== null, 'Group 1 should now be resolved.');
+        assert(databaseIncidentGroups[0].highestSeverity === 'CRITICAL', 'Resolved group severity should freeze at historical peak CRITICAL.');
+
+        console.log('✅ [PASS] Incident Correlation and Dynamic Group Severity Lifecycles verified.');
+    } catch (e: any) {
+        console.error('❌ Incident Grouping / Correlation regression test failed:', e.message || e);
     }
     console.log('');
 

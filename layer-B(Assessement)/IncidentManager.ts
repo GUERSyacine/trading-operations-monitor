@@ -1,7 +1,8 @@
 import { IncidentControllerState, IncidentSeverity, SymbolIncidentState } from '../layer-A(observation)/layer3(market-monitoring)/execution-intelligence/types';
 import { prisma } from '../prisma';
 import { AlertingService } from '../layer-D(notification)/alerting/AlertingService';
-import { IncidentSeverity as PrismaSeverity, IncidentTransitionType, IncidentActor } from '@prisma/client';
+import { IncidentSeverity as PrismaSeverity, IncidentTransitionType, IncidentActor, IncidentGroupType } from '@prisma/client';
+import { MVP_CONFIG } from '../mvpConfig';
 
 /**
  * Incident Manager (Step 12)
@@ -217,11 +218,47 @@ export class IncidentManager {
         });
     }
 
+    private static readonly INFRA_SOURCES = new Set([
+        'CPU', 'MEMORY', 'DISK', 'DOCKER_CONTAINER', 
+        'DNS', 'NETWORK', 'FREQTRADE_API', 'EXCHANGE'
+    ]);
+
+    private isInfrastructureSource(source: string): boolean {
+        for (const prefix of IncidentManager.INFRA_SOURCES) {
+            if (source.startsWith(prefix)) return true;
+        }
+        return source === 'INFRASTRUCTURE';
+    }
+
+    private getGroupTypeAndCorrelationKey(symbol: string | null, source: string): { groupType: IncidentGroupType; correlationKey: string } {
+        if (this.isInfrastructureSource(source)) {
+            return {
+                groupType: 'INFRASTRUCTURE',
+                correlationKey: 'INFRA:GLOBAL'
+            };
+        } else {
+            return {
+                groupType: 'OPERATIONS',
+                correlationKey: `OPS:${symbol || 'GLOBAL'}`
+            };
+        }
+    }
+
+    private static readonly SEVERITY_ORDER: Record<PrismaSeverity, number> = {
+        INFO: 1,
+        LOW: 2,
+        MEDIUM: 3,
+        WARNING: 4,
+        HIGH: 5,
+        CRITICAL: 6
+    };
+
     private async persistIncident(symbol: string | null, level: IncidentSeverity, source: string, reason: string, detectedAt: number) {
         try {
             const now = Date.now();
             const prismaLevel = level as PrismaSeverity;
             const actor = this.determineActor(symbol, source);
+            const { groupType, correlationKey } = this.getGroupTypeAndCorrelationKey(symbol, source);
 
             await prisma.$transaction(async (tx) => {
                 const existing = await tx.incident.findFirst({
@@ -231,6 +268,8 @@ export class IncidentManager {
                         resolvedAt: null
                     }
                 });
+
+                let incidentId: number;
 
                 if (existing) {
                     await tx.incident.update({
@@ -242,17 +281,87 @@ export class IncidentManager {
                         }
                     });
                     await this.logTransition(tx, existing.id, 'LEVEL_CHANGED', prismaLevel, reason, now, actor);
+                    incidentId = existing.id;
                 } else {
+                    const timeThreshold = BigInt(detectedAt - MVP_CONFIG.INCIDENTS.GROUPING_WINDOW_MS);
+                    let group = await tx.incidentGroup.findFirst({
+                        where: {
+                            correlationKey,
+                            resolvedAt: null,
+                            openedAt: {
+                                gte: timeThreshold
+                            }
+                        },
+                        orderBy: {
+                            openedAt: 'desc'
+                        }
+                    });
+
+                    if (!group) {
+                        group = await tx.incidentGroup.create({
+                            data: {
+                                correlationKey,
+                                symbol,
+                                groupType,
+                                openedAt: BigInt(detectedAt),
+                                resolvedAt: null,
+                                highestSeverity: prismaLevel
+                            }
+                        });
+                    }
+
                     const newIncident = await tx.incident.create({
                         data: {
                             symbol,
                             level: prismaLevel,
                             source,
                             reason,
-                            detectedAt: BigInt(detectedAt)
+                            detectedAt: BigInt(detectedAt),
+                            groupId: group.id
                         }
                     });
                     await this.logTransition(tx, newIncident.id, 'DETECTED', prismaLevel, reason, now, actor);
+                    incidentId = newIncident.id;
+                }
+
+                const incidentRecord = await tx.incident.findUnique({
+                    where: { id: incidentId },
+                    select: { groupId: true }
+                });
+
+                if (incidentRecord && incidentRecord.groupId) {
+                    const groupId = incidentRecord.groupId;
+                    const activeChildren = await tx.incident.findMany({
+                        where: {
+                            groupId,
+                            resolvedAt: null
+                        }
+                    });
+
+                    let maxSeverity: PrismaSeverity;
+                    if (activeChildren.length > 0) {
+                        maxSeverity = activeChildren[0].level;
+                        for (const child of activeChildren) {
+                            if (IncidentManager.SEVERITY_ORDER[child.level] > IncidentManager.SEVERITY_ORDER[maxSeverity]) {
+                                maxSeverity = child.level;
+                            }
+                        }
+                    } else {
+                        const allChildren = await tx.incident.findMany({
+                            where: { groupId }
+                        });
+                        maxSeverity = allChildren[0]?.level || prismaLevel;
+                        for (const child of allChildren) {
+                            if (IncidentManager.SEVERITY_ORDER[child.level] > IncidentManager.SEVERITY_ORDER[maxSeverity]) {
+                                maxSeverity = child.level;
+                            }
+                        }
+                    }
+
+                    await tx.incidentGroup.update({
+                        where: { id: groupId },
+                        data: { highestSeverity: maxSeverity }
+                    });
                 }
             });
         } catch (error: any) {
@@ -287,6 +396,55 @@ export class IncidentManager {
                             now,
                             actor
                         );
+                    }
+
+                    const groupIds = Array.from(new Set(active.map(i => i.groupId).filter(Boolean))) as number[];
+                    for (const groupId of groupIds) {
+                        const activeChildren = await tx.incident.findMany({
+                            where: {
+                                groupId: groupId,
+                                resolvedAt: null
+                            }
+                        });
+
+                        if (activeChildren.length === 0) {
+                            const allChildren = await tx.incident.findMany({
+                                where: { groupId }
+                            });
+
+                            let peakSeverity: PrismaSeverity = 'INFO';
+                            if (allChildren.length > 0) {
+                                peakSeverity = allChildren[0].level;
+                                for (const child of allChildren) {
+                                    if (IncidentManager.SEVERITY_ORDER[child.level] > IncidentManager.SEVERITY_ORDER[peakSeverity]) {
+                                        peakSeverity = child.level;
+                                    }
+                                }
+                            }
+
+                            await tx.incidentGroup.update({
+                                where: { id: groupId },
+                                data: {
+                                    resolvedAt: BigInt(now),
+                                    highestSeverity: peakSeverity
+                                }
+                            });
+                            console.log(`[IncidentManager] Automatically resolved IncidentGroup #${groupId} with peak severity ${peakSeverity} as all child incidents resolved.`);
+                        } else {
+                            let maxSeverity = activeChildren[0].level;
+                            for (const child of activeChildren) {
+                                if (IncidentManager.SEVERITY_ORDER[child.level] > IncidentManager.SEVERITY_ORDER[maxSeverity]) {
+                                    maxSeverity = child.level;
+                                }
+                            }
+
+                            await tx.incidentGroup.update({
+                                where: { id: groupId },
+                                data: {
+                                    highestSeverity: maxSeverity
+                                }
+                            });
+                        }
                     }
                 }
             });

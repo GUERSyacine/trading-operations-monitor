@@ -45,6 +45,11 @@ enum IncidentSeverity {
   CRITICAL
 }
 
+enum IncidentGroupType {
+  INFRASTRUCTURE
+  OPERATIONS
+}
+
 // 2. Incidents Table (Tracks Global and Symbol level incidents)
 model Incident {
   id          Int                  @id @default(autoincrement())
@@ -56,9 +61,27 @@ model Incident {
   resolvedAt  BigInt?              @map("resolved_at")
   transitions IncidentTransition[]
 
+  groupId     Int?                 @map("group_id")
+  group       IncidentGroup?       @relation(fields: [groupId], references: [id])
+
   @@index([symbol])
   @@index([level])
+  @@index([groupId])
   @@map("incidents")
+}
+
+model IncidentGroup {
+  id              Int               @id @default(autoincrement())
+  correlationKey  String            @map("correlation_key") @db.VarChar(100)
+  symbol          String?           @db.VarChar(20)
+  groupType       IncidentGroupType @map("group_type")
+  openedAt        BigInt            @map("opened_at")
+  resolvedAt      BigInt?           @map("resolved_at")
+  highestSeverity IncidentSeverity  @map("highest_severity")
+  incidents       Incident[]
+
+  @@index([correlationKey, resolvedAt])
+  @@map("incident_groups")
 }
 
 model IncidentTransition {

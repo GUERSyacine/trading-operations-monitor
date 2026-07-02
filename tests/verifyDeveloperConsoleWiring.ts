@@ -34,6 +34,11 @@ async function testInterceptionWraps() {
     (prisma.incident as any).update = async () => ({});
     (prisma.incident as any).updateMany = async () => ({});
     (prisma.incident as any).findMany = async () => [];
+    (prisma.incident as any).findUnique = async () => ({ groupId: 1 });
+    (prisma.incidentGroup as any).create = async (args: any) => ({ id: 1, ...args.data });
+    (prisma.incidentGroup as any).findFirst = async () => null;
+    (prisma.incidentGroup as any).update = async () => ({});
+    (prisma.incidentGroup as any).updateMany = async () => ({});
     (prisma.incidentTransition as any).create = async () => ({});
     (prisma.alertLog as any).create = async () => ({});
     (prisma as any).$transaction = async (callback: any) => callback(prisma);
