@@ -1351,7 +1351,8 @@ async function runTests() {
         };
         (prisma.incident as any).create = async (args: any) => mockIncidentCreate(args);
         (prisma.incident as any).findFirst = async () => null;
-        (prisma.incident as any).update = async (args: any) => mockIncidentCreate(args);
+        (prisma.incidentTransition as any).create = async () => ({});
+        (prisma as any).$transaction = async (callback: any) => callback(prisma);
 
         const execIntel = new ExecutionIntelligenceService(incidentManager);
 
@@ -1499,19 +1500,74 @@ async function runTests() {
         };
 
         const mgr = new IncidentManager(mockAlertingForManager);
+        let databaseIncidents: any[] = [];
+        let transitions: any[] = [];
         let persisted: any[] = [];
+        let nextIncidentId = 1;
+
         (prisma.incident as any).create = async (args: any) => {
+            const newIncident = {
+                id: nextIncidentId++,
+                symbol: args.data.symbol,
+                level: args.data.level,
+                source: args.data.source,
+                reason: args.data.reason,
+                detectedAt: args.data.detectedAt,
+                resolvedAt: null
+            };
+            databaseIncidents.push(newIncident);
             persisted.push(args.data);
-            return args.data;
+            return newIncident;
         };
-        (prisma.incident as any).findFirst = async () => null;
+
+        (prisma.incident as any).findFirst = async (args: any) => {
+            const symbol = args.where.symbol;
+            const source = args.where.source;
+            const resolvedAt = args.where.resolvedAt;
+            return databaseIncidents.find(i => i.symbol === symbol && i.source === source && i.resolvedAt === resolvedAt) || null;
+        };
+
+        (prisma.incident as any).findMany = async (args: any) => {
+            let res = databaseIncidents;
+            if (args && args.where) {
+                if ('symbol' in args.where) {
+                    res = res.filter(i => i.symbol === args.where.symbol);
+                }
+                if ('source' in args.where) {
+                    res = res.filter(i => i.source === args.where.source);
+                }
+                if ('resolvedAt' in args.where) {
+                    res = res.filter(i => i.resolvedAt === args.where.resolvedAt);
+                }
+            }
+            return res;
+        };
+
         (prisma.incident as any).update = async (args: any) => {
+            const inc = databaseIncidents.find(i => i.id === args.where.id);
+            if (inc) {
+                inc.level = args.data.level ?? inc.level;
+                inc.reason = args.data.reason ?? inc.reason;
+                inc.detectedAt = args.data.detectedAt ?? inc.detectedAt;
+            }
             persisted.push(args.data);
+            return inc;
+        };
+
+        (prisma.incident as any).updateMany = async (args: any) => {
+            const ids = args.where.id?.in || [];
+            const matches = databaseIncidents.filter(i => ids.includes(i.id) || (args.where.symbol === i.symbol && args.where.source === i.source));
+            for (const m of matches) {
+                m.resolvedAt = args.data.resolvedAt;
+            }
+            return { count: matches.length };
+        };
+
+        (prisma.incidentTransition as any).create = async (args: any) => {
+            transitions.push(args.data);
             return args.data;
         };
-        (prisma.incident as any).updateMany = async (args: any) => {
-            return { count: 1 };
-        };
+        (prisma as any).$transaction = async (callback: any) => callback(prisma);
 
         // 1. Report HEARTBEAT critical failure
         persisted = [];
@@ -1578,6 +1634,139 @@ async function runTests() {
         console.log('✅ [PASS] IncidentManager source-keyed global state and deduplication works perfectly.');
     } catch (e: any) {
         console.error('❌ IncidentManager test crashed:', e.message || e);
+    }
+    console.log('');
+
+    // ---------------------------------------------------------------------------------
+    // TEST 5.2: Incident Timeline Transition & Chronological Ordering Regression Test
+    // ---------------------------------------------------------------------------------
+    try {
+        console.log('--- Checking IncidentManager: Transition Timeline & Ordering ---');
+        const mockAlertingForTimeline: any = {
+            alertsSent: [] as any[],
+            async sendAlert(alert: any) {
+                this.alertsSent.push(alert);
+            }
+        };
+
+        const mgr = new IncidentManager(mockAlertingForTimeline);
+        let databaseIncidents: any[] = [];
+        let transitions: any[] = [];
+        let nextIncidentId = 1;
+
+        (prisma.incident as any).create = async (args: any) => {
+            const newIncident = {
+                id: nextIncidentId++,
+                symbol: args.data.symbol,
+                level: args.data.level,
+                source: args.data.source,
+                reason: args.data.reason,
+                detectedAt: args.data.detectedAt,
+                resolvedAt: null
+            };
+            databaseIncidents.push(newIncident);
+            return newIncident;
+        };
+
+        (prisma.incident as any).findFirst = async (args: any) => {
+            const symbol = args.where.symbol;
+            const source = args.where.source;
+            const resolvedAt = args.where.resolvedAt;
+            return databaseIncidents.find(i => i.symbol === symbol && i.source === source && i.resolvedAt === resolvedAt) || null;
+        };
+
+        (prisma.incident as any).findMany = async (args: any) => {
+            let res = databaseIncidents;
+            if (args && args.where) {
+                if ('symbol' in args.where) {
+                    res = res.filter(i => i.symbol === args.where.symbol);
+                }
+                if ('source' in args.where) {
+                    res = res.filter(i => i.source === args.where.source);
+                }
+                if ('resolvedAt' in args.where) {
+                    res = res.filter(i => i.resolvedAt === args.where.resolvedAt);
+                }
+            }
+            return res;
+        };
+
+        (prisma.incident as any).update = async (args: any) => {
+            const inc = databaseIncidents.find(i => i.id === args.where.id);
+            if (inc) {
+                inc.level = args.data.level ?? inc.level;
+                inc.reason = args.data.reason ?? inc.reason;
+                inc.detectedAt = args.data.detectedAt ?? inc.detectedAt;
+            }
+            return inc;
+        };
+
+        (prisma.incident as any).updateMany = async (args: any) => {
+            const ids = args.where.id?.in || [];
+            const matches = databaseIncidents.filter(i => ids.includes(i.id) || (args.where.symbol === i.symbol && args.where.source === i.source));
+            for (const m of matches) {
+                m.resolvedAt = args.data.resolvedAt;
+            }
+            return { count: matches.length };
+        };
+
+        (prisma.incidentTransition as any).create = async (args: any) => {
+            transitions.push(args.data);
+            return args.data;
+        };
+        (prisma as any).$transaction = async (callback: any) => callback(prisma);
+
+        // 1. WARNING incident reported
+        await mgr.reportIncident({
+            level: 'WARNING',
+            source: 'TEST_SOURCE',
+            reason: 'First Warning'
+        });
+        assert(transitions.length === 1, 'Should log exactly 1 transition on initial warning detection.');
+        assert(transitions[0].transitionType === 'DETECTED', 'Initial transition type should be DETECTED.');
+        assert(transitions[0].level === 'WARNING', 'Initial transition level should be WARNING.');
+
+        // Let's add a tiny delay to ensure timestamps are strictly increasing
+        await new Promise(resolve => setTimeout(resolve, 5));
+
+        // 2. CRITICAL incident reported (Escalation)
+        await mgr.reportIncident({
+            level: 'CRITICAL',
+            source: 'TEST_SOURCE',
+            reason: 'Escalated to Critical'
+        });
+        assert(transitions.length === 2, 'Should log exactly 2 transitions after escalation.');
+        assert(transitions[1].transitionType === 'LEVEL_CHANGED', 'Escalation transition type should be LEVEL_CHANGED.');
+        assert(transitions[1].level === 'CRITICAL', 'Escalation transition level should be CRITICAL.');
+
+        await new Promise(resolve => setTimeout(resolve, 5));
+
+        // 3. CRITICAL incident reported again (Duplicate / Level unchanged)
+        await mgr.reportIncident({
+            level: 'CRITICAL',
+            source: 'TEST_SOURCE',
+            reason: 'Still Critical'
+        });
+        assert(transitions.length === 2, 'Should NOT log any transition for duplicate level report.');
+
+        await new Promise(resolve => setTimeout(resolve, 5));
+
+        // 4. Incident resolved
+        await mgr.resolveIncidentBySource('TEST_SOURCE');
+        assert(transitions.length === 3, 'Should log exactly 3 transitions after resolution.');
+        assert(transitions[2].transitionType === 'RESOLVED', 'Resolution transition type should be RESOLVED.');
+        assert(transitions[2].level === null, 'Resolution transition level should be null.');
+
+        // 5. Verify occurredAt chronological ordering
+        const t1 = Number(transitions[0].occurredAt);
+        const t2 = Number(transitions[1].occurredAt);
+        const t3 = Number(transitions[2].occurredAt);
+        assert(t1 < t2, 'occurredAt 1 should be less than occurredAt 2.');
+        assert(t2 < t3, 'occurredAt 2 should be less than occurredAt 3.');
+
+        console.log('✅ [PASS] Incident Timeline Transition and Chronological Ordering verified.');
+    } catch (e: any) {
+        console.error('❌ Incident Timeline regression test failed:', e.message || e);
     }
     console.log('');
 

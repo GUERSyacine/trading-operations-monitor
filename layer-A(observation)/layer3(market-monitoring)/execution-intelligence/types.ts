@@ -2,7 +2,7 @@
  * Incident Types and State Definitions
  */
 
-export type IncidentSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+export type IncidentSeverity = 'INFO' | 'LOW' | 'MEDIUM' | 'HIGH' | 'WARNING' | 'CRITICAL';
 
 export interface SymbolIncidentState {
     symbol: string;

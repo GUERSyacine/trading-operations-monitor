@@ -22,19 +22,57 @@ model DecisionAudit {
   @@map("decision_audit")
 }
 
+enum IncidentTransitionType {
+  DETECTED
+  LEVEL_CHANGED
+  RESOLVED
+}
+
+enum IncidentActor {
+  WATCHDOG
+  SYSTEM
+  USER
+  SIMULATOR
+  RECOVERY
+}
+
+enum IncidentSeverity {
+  INFO
+  LOW
+  MEDIUM
+  HIGH
+  WARNING
+  CRITICAL
+}
+
 // 2. Incidents Table (Tracks Global and Symbol level incidents)
 model Incident {
-  id         Int      @id @default(autoincrement())
-  symbol     String?  @db.VarChar(20)
-  level      String   @db.VarChar(20)
-  source     String   @db.VarChar(100)
-  reason     String
-  detectedAt BigInt   @map("detected_at")
-  resolvedAt BigInt?  @map("resolved_at")
+  id          Int                  @id @default(autoincrement())
+  symbol      String?              @db.VarChar(20)
+  level       IncidentSeverity
+  source      String               @db.VarChar(100)
+  reason      String
+  detectedAt  BigInt               @map("detected_at")
+  resolvedAt  BigInt?              @map("resolved_at")
+  transitions IncidentTransition[]
 
   @@index([symbol])
   @@index([level])
   @@map("incidents")
+}
+
+model IncidentTransition {
+  id             Int                    @id @default(autoincrement())
+  incidentId     Int                    @map("incident_id")
+  incident       Incident               @relation(fields: [incidentId], references: [id])
+  transitionType IncidentTransitionType @map("transition_type")
+  level          IncidentSeverity?
+  reason         String
+  actor          IncidentActor
+  occurredAt     BigInt                 @map("occurred_at")
+
+  @@index([incidentId, occurredAt])
+  @@map("incident_transitions")
 }
 
 // 3. Alert Log Table (Deduplicated System Warnings)
@@ -69,4 +107,27 @@ model MonitoredBot {
   createdAt    DateTime @default(now()) @map("created_at")
 
   @@map("monitored_bot")
+}
+
+// 6. User Table (External table to preserve during migrations)
+model User {
+  id                  String    @id
+  nin                 String?
+  phoneNumber         String?
+  password            String?
+  nom                 String?
+  prenom              String?
+  date_de_naissance   String?
+  profileImageUrl     String?
+  identityDocumentUrl String?
+  selfieImageUrl      String?
+  app_role            String?
+  isVerified          Boolean?
+  otp                 String?
+  otpExpiresAt        DateTime?
+  createdAt           DateTime?
+  updatedAt           DateTime?
+  tempPhoneNumber     String?
+
+  @@map("User")
 }

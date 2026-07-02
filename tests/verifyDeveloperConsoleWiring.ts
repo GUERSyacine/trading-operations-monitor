@@ -30,9 +30,13 @@ async function testInterceptionWraps() {
     (prisma.decisionAudit as any).findFirst = async () => null;
     (prisma.decisionAudit as any).findMany = async () => [];
     (prisma.incident as any).create = async () => ({});
+    (prisma.incident as any).findFirst = async () => null;
+    (prisma.incident as any).update = async () => ({});
     (prisma.incident as any).updateMany = async () => ({});
     (prisma.incident as any).findMany = async () => [];
+    (prisma.incidentTransition as any).create = async () => ({});
     (prisma.alertLog as any).create = async () => ({});
+    (prisma as any).$transaction = async (callback: any) => callback(prisma);
 
     const bus = EventBus.getInstance();
     const failures = new FailureInjectionService(bus);

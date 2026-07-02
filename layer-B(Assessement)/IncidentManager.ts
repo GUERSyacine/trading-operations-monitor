@@ -1,6 +1,7 @@
 import { IncidentControllerState, IncidentSeverity, SymbolIncidentState } from '../layer-A(observation)/layer3(market-monitoring)/execution-intelligence/types';
 import { prisma } from '../prisma';
 import { AlertingService } from '../layer-D(notification)/alerting/AlertingService';
+import { IncidentSeverity as PrismaSeverity, IncidentTransitionType, IncidentActor } from '@prisma/client';
 
 /**
  * Incident Manager (Step 12)
@@ -182,36 +183,78 @@ export class IncidentManager {
         }
     }
 
+    private determineActor(symbol: string | null, source: string): IncidentActor {
+        if (source === 'SIMULATOR' || (symbol && symbol.startsWith('sim_')) || source.startsWith('sim_')) {
+            return 'SIMULATOR';
+        }
+        if (source === 'RECOVERY') {
+            return 'RECOVERY';
+        }
+        if (source === 'USER') {
+            return 'USER';
+        }
+        return 'WATCHDOG';
+    }
+
+    private async logTransition(
+        tx: any,
+        incidentId: number,
+        transitionType: IncidentTransitionType,
+        level: PrismaSeverity | null,
+        reason: string,
+        timestamp: number,
+        actor: IncidentActor
+    ) {
+        await tx.incidentTransition.create({
+            data: {
+                incidentId,
+                transitionType,
+                level,
+                reason,
+                actor,
+                occurredAt: BigInt(timestamp)
+            }
+        });
+    }
+
     private async persistIncident(symbol: string | null, level: IncidentSeverity, source: string, reason: string, detectedAt: number) {
         try {
-            const existing = await prisma.incident.findFirst({
-                where: {
-                    symbol,
-                    source,
-                    resolvedAt: null
+            const now = Date.now();
+            const prismaLevel = level as PrismaSeverity;
+            const actor = this.determineActor(symbol, source);
+
+            await prisma.$transaction(async (tx) => {
+                const existing = await tx.incident.findFirst({
+                    where: {
+                        symbol,
+                        source,
+                        resolvedAt: null
+                    }
+                });
+
+                if (existing) {
+                    await tx.incident.update({
+                        where: { id: existing.id },
+                        data: {
+                            level: prismaLevel,
+                            reason,
+                            detectedAt: BigInt(detectedAt)
+                        }
+                    });
+                    await this.logTransition(tx, existing.id, 'LEVEL_CHANGED', prismaLevel, reason, now, actor);
+                } else {
+                    const newIncident = await tx.incident.create({
+                        data: {
+                            symbol,
+                            level: prismaLevel,
+                            source,
+                            reason,
+                            detectedAt: BigInt(detectedAt)
+                        }
+                    });
+                    await this.logTransition(tx, newIncident.id, 'DETECTED', prismaLevel, reason, now, actor);
                 }
             });
-
-            if (existing) {
-                await prisma.incident.update({
-                    where: { id: existing.id },
-                    data: {
-                        level,
-                        reason,
-                        detectedAt: BigInt(detectedAt)
-                    }
-                });
-            } else {
-                await prisma.incident.create({
-                    data: {
-                        symbol,
-                        level,
-                        source,
-                        reason,
-                        detectedAt: BigInt(detectedAt)
-                    }
-                });
-            }
         } catch (error: any) {
             console.error('[IncidentManager] Failed to persist incident in Prisma/Neon:', error?.message || error);
         }
@@ -219,6 +262,39 @@ export class IncidentManager {
 
     // Recovery Logic
     // We need methods to clear incidents, via manual intervention or TTL
+    private async resolveAndLogIncidents(
+        whereClause: any,
+        actor: IncidentActor,
+        reason: string,
+        now: number
+    ) {
+        try {
+            await prisma.$transaction(async (tx) => {
+                const active = await tx.incident.findMany({ where: whereClause });
+                if (active.length > 0) {
+                    const ids = active.map(i => i.id);
+                    await tx.incident.updateMany({
+                        where: { id: { in: ids } },
+                        data: { resolvedAt: BigInt(now) }
+                    });
+                    for (const incident of active) {
+                        await this.logTransition(
+                            tx,
+                            incident.id,
+                            'RESOLVED',
+                            null,
+                            reason,
+                            now,
+                            actor
+                        );
+                    }
+                }
+            });
+        } catch (error: any) {
+            console.error('[IncidentManager] Failed to resolve and log incidents:', error?.message || error);
+        }
+    }
+
     async resolveIncident(symbol: string | null): Promise<void> {
         const now = Date.now();
         if (symbol) {
@@ -230,36 +306,21 @@ export class IncidentManager {
                 }
             }
             if (deletedCount > 0) {
-                // Update DB resolution
-                try {
-                    await prisma.incident.updateMany({
-                        where: {
-                            symbol,
-                            resolvedAt: null
-                        },
-                        data: {
-                            resolvedAt: BigInt(now)
-                        }
-                    });
-                } catch (error: any) {
-                    console.error(`[IncidentManager] Failed to resolve DB incident for ${symbol}:`, error?.message || error);
-                }
+                await this.resolveAndLogIncidents(
+                    { symbol, resolvedAt: null },
+                    'RECOVERY',
+                    `Resolved incident for symbol: ${symbol}`,
+                    now
+                );
             }
         } else {
             this.globalIncidents.clear();
-            try {
-                await prisma.incident.updateMany({
-                    where: {
-                        symbol: null,
-                        resolvedAt: null
-                    },
-                    data: {
-                        resolvedAt: BigInt(now)
-                    }
-                });
-            } catch (error: any) {
-                console.error('[IncidentManager] Failed to resolve DB global incidents:', error?.message || error);
-            }
+            await this.resolveAndLogIncidents(
+                { symbol: null, resolvedAt: null },
+                'RECOVERY',
+                'Resolved all global incidents',
+                now
+            );
         }
     }
 
@@ -268,21 +329,13 @@ export class IncidentManager {
         const active = this.state.symbols[key];
         if (active) {
             delete this.state.symbols[key];
-            try {
-                await prisma.incident.updateMany({
-                    where: {
-                        symbol: active.symbol,
-                        source: active.source,
-                        resolvedAt: null
-                    },
-                    data: {
-                        resolvedAt: BigInt(now)
-                    }
-                });
-                console.log(`[IncidentManager] Resolved DB incident for key ${key}`);
-            } catch (error: any) {
-                console.error(`[IncidentManager] Failed to resolve DB incident for key ${key}:`, error?.message || error);
-            }
+            await this.resolveAndLogIncidents(
+                { symbol: active.symbol, source: active.source, resolvedAt: null },
+                'RECOVERY',
+                `Resolved incident by key: ${key}`,
+                now
+            );
+            console.log(`[IncidentManager] Resolved DB incident for key ${key}`);
         }
     }
 
@@ -294,41 +347,27 @@ export class IncidentManager {
             if (active) {
                 delete this.state.symbols[key];
                 delete this.state.symbols[symbol];
-                try {
-                    await prisma.incident.updateMany({
-                        where: {
-                            symbol,
-                            source,
-                            resolvedAt: null
-                        },
-                        data: {
-                            resolvedAt: BigInt(now)
-                        }
-                    });
-                    console.log(`[IncidentManager] Resolved incident for symbol ${symbol} from source ${source}`);
-                } catch (error: any) {
-                    console.error(`[IncidentManager] Failed to resolve DB incident for ${symbol} / ${source}:`, error?.message || error);
-                }
+                const actor = this.determineActor(symbol, source);
+                await this.resolveAndLogIncidents(
+                    { symbol, source, resolvedAt: null },
+                    actor,
+                    `Resolved incident for symbol ${symbol} from source ${source}`,
+                    now
+                );
+                console.log(`[IncidentManager] Resolved incident for symbol ${symbol} from source ${source}`);
             }
         } else {
             const active = this.globalIncidents.get(source);
             if (active) {
                 this.globalIncidents.delete(source);
-                try {
-                    await prisma.incident.updateMany({
-                        where: {
-                            symbol: null,
-                            source,
-                            resolvedAt: null
-                        },
-                        data: {
-                            resolvedAt: BigInt(now)
-                        }
-                    });
-                    console.log(`[IncidentManager] Resolved global incident from source ${source}`);
-                } catch (error: any) {
-                    console.error(`[IncidentManager] Failed to resolve DB global incident for source ${source}:`, error?.message || error);
-                }
+                const actor = this.determineActor(null, source);
+                await this.resolveAndLogIncidents(
+                    { symbol: null, source, resolvedAt: null },
+                    actor,
+                    `Resolved global incident from source ${source}`,
+                    now
+                );
+                console.log(`[IncidentManager] Resolved global incident from source ${source}`);
             }
         }
     }
@@ -350,23 +389,13 @@ export class IncidentManager {
         }
 
         if (sourcesToDelete.length > 0) {
-            try {
-                await prisma.incident.updateMany({
-                    where: {
-                        symbol,
-                        source: {
-                            in: sourcesToDelete
-                        },
-                        resolvedAt: null
-                    },
-                    data: {
-                        resolvedAt: BigInt(now)
-                    }
-                });
-                console.log(`[IncidentManager] Resolved DB incidents matching source prefix ${sourcePrefix} for symbol ${symbol}`);
-            } catch (error: any) {
-                console.error(`[IncidentManager] Failed to resolve DB incidents by source prefix ${sourcePrefix} / ${symbol}:`, error?.message || error);
-            }
+            await this.resolveAndLogIncidents(
+                { symbol, source: { in: sourcesToDelete }, resolvedAt: null },
+                'RECOVERY',
+                `Resolved incidents matching source prefix ${sourcePrefix} for symbol ${symbol}`,
+                now
+            );
+            console.log(`[IncidentManager] Resolved DB incidents matching source prefix ${sourcePrefix} for symbol ${symbol}`);
         }
     }
 
@@ -383,7 +412,6 @@ export class IncidentManager {
      * Clear all simulation incidents from both the database and the in-memory state.
      */
     async clearSimulationIncidents(): Promise<void> {
-        // 1. Clear in-memory symbol incidents starting with 'sim_' or source involving 'SIM'
         for (const key of Object.keys(this.state.symbols)) {
             const inc = this.state.symbols[key];
             if (
@@ -396,7 +424,6 @@ export class IncidentManager {
                 delete this.state.symbols[key];
             }
         }
-        // 2. Clear in-memory global incidents starting with or involving simulation
         for (const [source, inc] of this.globalIncidents.entries()) {
             if (
                 source.includes('SIMULATOR') ||
@@ -408,29 +435,20 @@ export class IncidentManager {
                 this.globalIncidents.delete(source);
             }
         }
-        // 3. Resolve simulation incidents in DB instead of deleting
         const now = Date.now();
-        try {
-            await prisma.incident.updateMany({
-                where: {
-                    resolvedAt: null,
-                    OR: [
-                        { source: { startsWith: 'ORDER_PIPELINE:sim_' } },
-                        { source: { startsWith: 'OP:sim_' } },
-                        { source: { contains: 'SIMULATOR' } },
-                        { source: 'LIFECYCLE_INTEGRITY' },
-                        { symbol: { startsWith: 'sim_' } },
-                        { reason: { contains: 'sim_' } }
-                    ]
-                },
-                data: {
-                    resolvedAt: BigInt(now)
-                }
-            });
-            console.log('[IncidentManager] Resolved all active simulation incidents in Neon DB.');
-        } catch (error: any) {
-            console.error('[IncidentManager] Failed to resolve simulation incidents in Prisma:', error?.message || error);
-        }
+        const whereClause = {
+            resolvedAt: null,
+            OR: [
+                { source: { startsWith: 'ORDER_PIPELINE:sim_' } },
+                { source: { startsWith: 'OP:sim_' } },
+                { source: { contains: 'SIMULATOR' } },
+                { source: 'LIFECYCLE_INTEGRITY' },
+                { symbol: { startsWith: 'sim_' } },
+                { reason: { contains: 'sim_' } }
+            ]
+        };
+        await this.resolveAndLogIncidents(whereClause, 'SIMULATOR', 'Resolved by simulator reset', now);
+        console.log('[IncidentManager] Resolved all active simulation incidents in Neon DB.');
     }
 }
 
