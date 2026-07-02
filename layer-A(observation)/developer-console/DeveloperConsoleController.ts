@@ -84,8 +84,26 @@ export class DeveloperConsoleController {
     public async resetSimulationLab(correlationId?: string): Promise<void> {
         this.assertWriteAllowed();
         
-        // 1. Database is treated as an immutable history; resets affect only in-memory states and active incident resolution status.
-        // No deleteMany calls are run here.
+        // Purge synthetic simulator telemetry.
+        // Production telemetry is never deleted.
+        await prisma.decisionAudit.deleteMany({
+            where: {
+                OR: [
+                    {
+                        metadata: {
+                            path: ['telemetrySource'],
+                            equals: 'SIMULATOR'
+                        }
+                    },
+                    {
+                        metadata: {
+                            path: ['lifecycleEvent', 'source'],
+                            equals: 'SIMULATOR'
+                        }
+                    }
+                ]
+            }
+        });
 
         // 2. Reset IncidentManager memory & DB state
         await this.incidentManager.clearSimulationIncidents();
