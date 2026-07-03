@@ -14,6 +14,7 @@ import { FreqtradeWebhookReceiver } from '../layer-A(observation)/layer1(infrast
 import { WatchdogOrchestrator } from '../WatchdogOrchestrator';
 import { EventPersistenceService } from '../adapters/base/EventPersistenceService';
 import { MVP_CONFIG } from '../mvpConfig';
+import { EvidenceCollector } from '../layer-B(Assessement)/EvidenceCollector';
 
 async function runTests() {
     console.log('====================================================');
@@ -2443,6 +2444,128 @@ async function runTests() {
         console.log('✅ [PASS] Orchestrator integration, idempotency, and multi-source grouping verified successfully.');
     } catch (e: any) {
         console.error('❌ Orchestrator Infrastructure Integration test crashed:', e.message || e);
+    }
+    console.log('');
+
+    // ----------------------------------------------------
+    // TEST 9: Evidence Collection (RCA Phase 3.1)
+    // ----------------------------------------------------
+    try {
+        console.log('--- Checking RCA Phase 3.1: Evidence Collection ---');
+
+        const originalFindUniqueGroup = prisma.incidentGroup.findUnique;
+        const originalFindManyAudits = prisma.decisionAudit.findMany;
+
+        const mockGroup = {
+            id: 101,
+            correlationKey: 'INFRA:GLOBAL',
+            symbol: null,
+            groupType: 'INFRASTRUCTURE',
+            openedAt: BigInt(1710000000000),
+            resolvedAt: BigInt(1710000060000),
+            highestSeverity: 'CRITICAL',
+            incidents: [
+                {
+                    id: 501,
+                    symbol: null,
+                    level: 'CRITICAL',
+                    source: 'DOCKER',
+                    reason: 'Docker container down',
+                    detectedAt: BigInt(1710000005000),
+                    resolvedAt: BigInt(1710000045000),
+                    groupId: 101
+                },
+                {
+                    id: 502,
+                    symbol: null,
+                    level: 'WARNING',
+                    source: 'VM',
+                    reason: 'High CPU utilization',
+                    detectedAt: BigInt(1710000010000),
+                    resolvedAt: null,
+                    groupId: 101
+                }
+            ]
+        } as any;
+
+        const mockAudits = [
+            {
+                id: 'audit-1',
+                classification: 'VM_HEALTH',
+                rejectionReason: 'CPU is at 98%',
+                systemRiskState: 'NORMAL',
+                htf: null,
+                metadata: { cpu: 98 },
+                createdAt: new Date(1710000008000)
+            },
+            {
+                id: 'audit-2', // Out of bounds audit
+                classification: 'EXCHANGE_HEALTH',
+                rejectionReason: 'Binance slow response',
+                systemRiskState: 'NORMAL',
+                htf: null,
+                metadata: null,
+                createdAt: new Date(1710000090000)
+            }
+        ] as any;
+
+        (prisma.incidentGroup as any).findUnique = async (args: any) => {
+            if (args.where.id === 101) return mockGroup;
+            return null;
+        };
+
+        (prisma.decisionAudit as any).findMany = async (args: any) => {
+            const gte = args.where.createdAt.gte.getTime();
+            const lte = args.where.createdAt.lte.getTime();
+            return mockAudits.filter((a: any) => a.createdAt.getTime() >= gte && a.createdAt.getTime() <= lte);
+        };
+
+        const collector = new EvidenceCollector();
+        const evidence = await collector.collectEvidence(101);
+
+        // Assertions
+        assert(evidence.length === 6, 'Should collect exactly 6 evidence items.');
+        
+        // Check sorting and sequence mapping
+        assert(evidence[0].category === 'GROUP' && evidence[0].event === 'CREATED' && evidence[0].timestamp === 1710000000000, 'Sequence 1 should be group creation.');
+        assert(evidence[0].sequence === 1, 'Sequence 1 should have sequence index 1.');
+        assert(evidence[0].groupId === 101, 'Group created evidence should hold correct groupId.');
+        assert(evidence[0].correlationKey === 'INFRA:GLOBAL', 'Group created evidence should hold correlation key.');
+        assert(evidence[0].severity === 'CRITICAL', 'Group created evidence should hold highestSeverity.');
+
+        assert(evidence[1].category === 'INCIDENT' && evidence[1].event === 'DETECTED' && evidence[1].source === 'DOCKER' && evidence[1].timestamp === 1710000005000, 'Sequence 2 should be DOCKER incident detection.');
+        assert(evidence[1].sequence === 2, 'Sequence 2 should have sequence index 2.');
+        assert(evidence[1].groupId === 101, 'DOCKER incident should have correct groupId.');
+        assert(evidence[1].severity === 'CRITICAL', 'DOCKER incident should have CRITICAL level.');
+
+        assert(evidence[2].category === 'AUDIT' && evidence[2].event === 'OBSERVED' && evidence[2].source === 'VM_HEALTH' && evidence[2].timestamp === 1710000008000, 'Sequence 3 should be VM_HEALTH audit.');
+        assert(evidence[2].sequence === 3, 'Sequence 3 should have sequence index 3.');
+        assert(evidence[2].groupId === 101, 'Audit evidence should have correct groupId.');
+        assert(evidence[2].origin === 'OBSERVATION', 'Audit evidence should have origin OBSERVATION.');
+        assert((evidence[2].metadata as any)?.cpu === 98, 'Audit evidence should preserve metadata.');
+
+        assert(evidence[3].category === 'INCIDENT' && evidence[3].event === 'DETECTED' && evidence[3].source === 'VM' && evidence[3].timestamp === 1710000010000, 'Sequence 4 should be VM incident detection.');
+        assert(evidence[3].sequence === 4, 'Sequence 4 should have sequence index 4.');
+        assert(evidence[3].severity === 'WARNING', 'VM incident should have WARNING level.');
+
+        assert(evidence[4].category === 'INCIDENT' && evidence[4].event === 'RESOLVED' && evidence[4].source === 'DOCKER' && evidence[4].timestamp === 1710000045000, 'Sequence 5 should be DOCKER incident resolution.');
+        assert(evidence[4].sequence === 5, 'Sequence 5 should have sequence index 5.');
+
+        assert(evidence[5].category === 'GROUP' && evidence[5].event === 'RESOLVED' && evidence[5].timestamp === 1710000060000, 'Sequence 6 should be group resolution.');
+        assert(evidence[5].sequence === 6, 'Sequence 6 should have sequence index 6.');
+        assert(evidence[5].origin === 'ASSESSMENT', 'Group resolution should have origin ASSESSMENT.');
+
+        // Verify out of bounds audit was excluded
+        const hasExchangeAudit = evidence.some(e => e.source === 'EXCHANGE_HEALTH');
+        assert(!hasExchangeAudit, 'Should exclude audits outside group active timeframe.');
+
+        // Restore mocks
+        prisma.incidentGroup.findUnique = originalFindUniqueGroup;
+        prisma.decisionAudit.findMany = originalFindManyAudits;
+
+        console.log('✅ [PASS] Evidence Collection sequence, types, sorting, and boundary exclusions verified.');
+    } catch (e: any) {
+        console.error('❌ Evidence Collection test crashed:', e.message || e);
     }
     console.log('');
 
