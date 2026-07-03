@@ -1172,7 +1172,7 @@ async function runTests() {
         mockAlerting.alertsSent = [];
         const exchangeHealthy = await infraWatchdog.checkExchangeReachability();
         assert(exchangeHealthy.healthy === true, 'Exchange reachability check should pass when API is online.');
-        assert(exchangeHealthy.source === 'EXCHANGE', 'Exchange check returns source EXCHANGE.');
+        assert(exchangeHealthy.source === 'EXCHANGE_REACHABILITY', 'Exchange check returns source EXCHANGE_REACHABILITY.');
         assert(exchangeHealthy.metadata?.maxFailures === 3, 'Exchange reachability metadata includes maxFailures.');
         assert(createdAudits.length === 1 && createdAudits[0].classification === 'EXCHANGE_HEALTH' && createdAudits[0].systemRiskState === 'NORMAL', 'Should log EXCHANGE_HEALTH as NORMAL.');
 
@@ -2379,7 +2379,7 @@ async function runTests() {
 
         // Mock others to return healthy
         (orchestrator as any).infraService.checkHostNetwork = async () => ({ source: 'NETWORK', healthy: true, checkedAt: new Date(), checkDurationMs: 5 });
-        (orchestrator as any).infraService.checkExchangeReachability = async () => ({ source: 'EXCHANGE', healthy: true, checkedAt: new Date(), checkDurationMs: 5 });
+        (orchestrator as any).infraService.checkExchangeReachability = async () => ({ source: 'EXCHANGE_REACHABILITY', healthy: true, checkedAt: new Date(), checkDurationMs: 5 });
         (orchestrator as any).infraService.checkDnsResolution = async () => ({ source: 'DNS', healthy: true, checkedAt: new Date(), checkDurationMs: 5 });
 
         // --- Cycle 1: Everything is healthy ---

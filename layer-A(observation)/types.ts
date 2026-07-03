@@ -4,7 +4,7 @@ export type HealthSource =
     | 'FREQTRADE'
     | 'NETWORK'
     | 'DNS'
-    | 'EXCHANGE'
+    | 'EXCHANGE_REACHABILITY'
     | 'HEARTBEAT'
     | 'TRADE_FREQUENCY'
     | 'BROKER_CONNECTION'

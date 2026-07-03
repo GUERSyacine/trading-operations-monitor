@@ -220,7 +220,7 @@ export class IncidentManager {
 
     private static readonly INFRA_SOURCES = new Set([
         'CPU', 'MEMORY', 'DISK', 'DOCKER_CONTAINER', 
-        'DNS', 'NETWORK', 'FREQTRADE_API', 'EXCHANGE',
+        'DNS', 'NETWORK', 'FREQTRADE_API', 'EXCHANGE_REACHABILITY',
         'VM', 'DOCKER', 'FREQTRADE'
     ]);
 

@@ -753,7 +753,7 @@ export class InfrastructureWatchdogService {
                     : null;
 
                 const metadata = {
-                    source: 'EXCHANGE',
+                    source: 'EXCHANGE_REACHABILITY',
                     url,
                     statusCode,
                     responseTimeMs,
@@ -783,34 +783,34 @@ export class InfrastructureWatchdogService {
                         });
                     }
                     return {
-                        source: 'EXCHANGE',
+                        source: 'EXCHANGE_REACHABILITY',
                         healthy: false,
                         checkedAt: new Date(),
                         checkDurationMs: Date.now() - checkStart,
                         severity: isAlarm ? 'CRITICAL' : 'WARNING',
                         message: isAlarm ? (alarmMessage || 'Unreachable') : 'Exchange reachability warning',
-                        metadata: this.enrichMetadata('EXCHANGE', metadata)
+                        metadata: this.enrichMetadata('EXCHANGE_REACHABILITY', metadata)
                     };
                 }
 
                 console.log(`[InfrastructureWatchdog] Exchange reachability is healthy (${responseTimeMs}ms).`);
                 return {
-                    source: 'EXCHANGE',
+                    source: 'EXCHANGE_REACHABILITY',
                     healthy: true,
                     checkedAt: new Date(),
                     checkDurationMs: Date.now() - checkStart,
-                    metadata: this.enrichMetadata('EXCHANGE', metadata)
+                    metadata: this.enrichMetadata('EXCHANGE_REACHABILITY', metadata)
                 };
             } catch (innerError: any) {
                 console.error('[InfrastructureWatchdog] Failed exchange reachability check audit logging:', innerError?.message || innerError);
                 return {
-                    source: 'EXCHANGE',
+                    source: 'EXCHANGE_REACHABILITY',
                     healthy: false,
                     checkedAt: new Date(),
                     checkDurationMs: Date.now() - checkStart,
                     severity: 'CRITICAL',
                     message: innerError?.message || String(innerError),
-                    metadata: this.enrichMetadata('EXCHANGE')
+                    metadata: this.enrichMetadata('EXCHANGE_REACHABILITY')
                 };
             }
         };
@@ -839,13 +839,13 @@ export class InfrastructureWatchdogService {
                         dedupKey: 'exchange_api_unreachable'
                     });
                     return {
-                        source: 'EXCHANGE',
+                        source: 'EXCHANGE_REACHABILITY',
                         healthy: false,
                         checkedAt: new Date(),
                         checkDurationMs: Date.now() - checkStart,
                         severity: 'CRITICAL',
                         message: errMsg,
-                        metadata: this.enrichMetadata('EXCHANGE', { simulated: true })
+                        metadata: this.enrichMetadata('EXCHANGE_REACHABILITY', { simulated: true })
                     };
                 }
             });
@@ -986,7 +986,7 @@ export class InfrastructureWatchdogService {
             'DOCKER': { id: 'infra.docker_health', name: 'Docker Health' },
             'FREQTRADE': { id: 'infra.freqtrade_api', name: 'Freqtrade API' },
             'NETWORK': { id: 'infra.host_network', name: 'Host Network' },
-            'EXCHANGE': { id: 'infra.exchange_reachability', name: 'Exchange Reachability' },
+            'EXCHANGE_REACHABILITY': { id: 'infra.exchange_reachability', name: 'Exchange Reachability' },
             'DNS': { id: 'infra.dns_resolution', name: 'DNS Resolution' }
         };
 
