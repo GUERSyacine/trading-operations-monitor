@@ -110,9 +110,9 @@ export class CascadeSequenceRule implements ScoreRule {
     public evaluate(candidate: RootCauseCandidate, timeline: Timeline, query: TimelineQuery): ScoreContribution[] {
         if (candidate.id !== 'DOCKER_CONTAINER_EXITED') return [];
 
-        const de = query.findFirstDetected('DOCKER');
-        const apiEvents = query.findBySource('FREQTRADE_API').filter(e => e.event === 'DETECTED');
-        const hbEvents = query.findBySource('HEARTBEAT').filter(e => e.event === 'DETECTED');
+        const de = query.findFirstUnhealthy(['DOCKER', 'DOCKER_HEALTH']);
+        const apiEvents = query.findUnhealthyEvents(['FREQTRADE', 'FREQTRADE_API']);
+        const hbEvents = query.findUnhealthyEvents(['HEARTBEAT']);
 
         if (de && apiEvents.length > 0) {
             const api = apiEvents[0];
@@ -152,16 +152,36 @@ export class FirstOccurrenceRule implements ScoreRule {
 
     public evaluate(candidate: RootCauseCandidate, timeline: Timeline, query: TimelineQuery): ScoreContribution[] {
         const trigger = candidate.triggerSignal;
-        const firstTriggerEv = query.findFirstDetected(trigger);
+        const aliases = trigger === 'DOCKER' ? ['DOCKER', 'DOCKER_HEALTH'] :
+                        trigger === 'FREQTRADE' ? ['FREQTRADE', 'FREQTRADE_API'] :
+                        trigger === 'VM' ? ['CPU', 'MEMORY', 'DISK', 'VM_HEALTH'] :
+                        trigger === 'NETWORK' ? ['NETWORK', 'NETWORK_HEALTH', 'DNS', 'DNS_HEALTH'] :
+                        trigger === 'EXCHANGE_REACHABILITY' ? ['EXCHANGE_REACHABILITY', 'EXCHANGE_HEALTH'] :
+                        [trigger];
+
+        const firstTriggerEv = query.findFirstUnhealthy(aliases);
         if (!firstTriggerEv) return [];
 
-        const firstGlobalIncident = query.findFirstIncident();
-        if (firstGlobalIncident && firstGlobalIncident.id === firstTriggerEv.id) {
+        const allUnhealthy = query.findUnhealthyEvents([
+            'DOCKER', 'DOCKER_HEALTH',
+            'FREQTRADE', 'FREQTRADE_API',
+            'HEARTBEAT',
+            'BROKER_CONNECTION', 'BROKER_PING',
+            'MARKET_DATA', 'MARKET_DATA_STALE',
+            'CPU', 'MEMORY', 'DISK', 'VM_HEALTH',
+            'NETWORK', 'NETWORK_HEALTH',
+            'DNS', 'DNS_HEALTH',
+            'EXCHANGE_REACHABILITY', 'EXCHANGE_HEALTH',
+            'LIFECYCLE_ANOMALY'
+        ]);
+        const firstGlobalUnhealthy = allUnhealthy.length > 0 ? allUnhealthy.sort((a, b) => a.timestamp - b.timestamp)[0] : undefined;
+
+        if (firstGlobalUnhealthy && firstGlobalUnhealthy.id === firstTriggerEv.id) {
             return [{
                 ruleId: this.ruleId,
                 score: this.config.temporalBonus,
                 polarity: 'POSITIVE',
-                reason: `Trigger signal ${trigger} was the absolute first incident detected in the group`,
+                reason: `Trigger signal ${trigger} was the absolute first incident/issue detected in the group`,
                 evidenceIds: [firstTriggerEv.id]
             }];
         } else {
@@ -169,7 +189,7 @@ export class FirstOccurrenceRule implements ScoreRule {
                 ruleId: this.ruleId,
                 score: -this.config.temporalBonus,
                 polarity: 'NEGATIVE',
-                reason: `Trigger signal ${trigger} was NOT the first incident detected in the group`,
+                reason: `Trigger signal ${trigger} was NOT the first incident/issue detected in the group`,
                 evidenceIds: [firstTriggerEv.id]
             }];
         }
@@ -185,10 +205,16 @@ export class LifecycleDurationRule implements ScoreRule {
     public evaluate(candidate: RootCauseCandidate, timeline: Timeline, query: TimelineQuery): ScoreContribution[] {
         const trigger = candidate.triggerSignal;
         const lifecycles = timeline.incidentLifecycles;
+        const aliases = trigger === 'DOCKER' ? ['DOCKER', 'DOCKER_HEALTH'] :
+                        trigger === 'FREQTRADE' ? ['FREQTRADE', 'FREQTRADE_API'] :
+                        trigger === 'VM' ? ['CPU', 'MEMORY', 'DISK', 'VM_HEALTH'] :
+                        trigger === 'NETWORK' ? ['NETWORK', 'NETWORK_HEALTH', 'DNS', 'DNS_HEALTH'] :
+                        trigger === 'EXCHANGE_REACHABILITY' ? ['EXCHANGE_REACHABILITY', 'EXCHANGE_HEALTH'] :
+                        [trigger];
 
         const matches = Object.values(lifecycles).filter((l: any) => {
             const ev = timeline.events.find(e => e.id === l.incidentId);
-            return ev && ev.source === trigger;
+            return ev && aliases.includes(ev.source);
         });
 
         if (matches.length === 0) return [];

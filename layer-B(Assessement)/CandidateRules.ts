@@ -14,11 +14,11 @@ export class DockerRule implements CandidateRule {
     constructor(private readonly config: RcaRuleConfig) {}
 
     public evaluate(query: TimelineQuery): CandidateMatch[] {
-        const de = query.findFirstDetected('DOCKER');
+        const de = query.findFirstUnhealthy(['DOCKER', 'DOCKER_HEALTH']);
         if (!de) return [];
 
-        const apiEvents = query.findBySource('FREQTRADE_API').filter(e => e.event === 'DETECTED');
-        const hbEvents = query.findBySource('HEARTBEAT').filter(e => e.event === 'DETECTED');
+        const apiEvents = query.findUnhealthyEvents(['FREQTRADE', 'FREQTRADE_API']);
+        const hbEvents = query.findUnhealthyEvents(['HEARTBEAT']);
         
         const evidence = [de.id, ...apiEvents.map(e => e.id), ...hbEvents.map(e => e.id)];
         const conditions = ['Docker failure incident detected'];
@@ -64,7 +64,7 @@ export class DockerRule implements CandidateRule {
                     hints.push({
                         id: 'HEARTBEAT_HEALTHY',
                         polarity: 'NEGATIVE',
-                        description: 'Heartbeat continued running (no outage)',
+                        description: 'No heartbeat failure observed (no active incident)',
                         evidenceIds: []
                     });
                 }
@@ -74,7 +74,13 @@ export class DockerRule implements CandidateRule {
             hints.push({
                 id: 'HEARTBEAT_HEALTHY',
                 polarity: 'NEGATIVE',
-                description: 'Freqtrade API remained online',
+                description: 'No Freqtrade API failure observed (no active incident)',
+                evidenceIds: []
+            });
+            hints.push({
+                id: 'HEARTBEAT_HEALTHY',
+                polarity: 'NEGATIVE',
+                description: 'No heartbeat failure observed (no active incident)',
                 evidenceIds: []
             });
         }
@@ -104,7 +110,7 @@ export class TelemetryRule implements CandidateRule {
     constructor(private readonly config: RcaRuleConfig) {}
 
     public evaluate(query: TimelineQuery): CandidateMatch[] {
-        const events = query.findDetectedEvents(['HEARTBEAT', 'BROKER_CONNECTION', 'MARKET_DATA_STALE']);
+        const events = query.findUnhealthyEvents(['HEARTBEAT', 'BROKER_CONNECTION', 'BROKER_PING', 'MARKET_DATA', 'MARKET_DATA_STALE']);
         if (events.length === 0) return [];
 
         const supportingEvidence = events.map(e => e.id);
@@ -122,7 +128,12 @@ export class TelemetryRule implements CandidateRule {
 
         const failedSources = events.map(e => e.source);
         for (const source of ['HEARTBEAT', 'BROKER_CONNECTION', 'MARKET_DATA_STALE']) {
-            if (!failedSources.includes(source)) {
+            const hasFailure = failedSources.some(fs => 
+                (source === 'HEARTBEAT' && fs === 'HEARTBEAT') ||
+                (source === 'BROKER_CONNECTION' && (fs === 'BROKER_CONNECTION' || fs === 'BROKER_PING')) ||
+                (source === 'MARKET_DATA_STALE' && (fs === 'MARKET_DATA' || fs === 'MARKET_DATA_STALE'))
+            );
+            if (!hasFailure) {
                 missing.push(source);
                 hints.push({
                     id: 'TELEMETRY_HEALTHY',
@@ -158,7 +169,7 @@ export class VMRule implements CandidateRule {
     constructor(private readonly config: RcaRuleConfig) {}
 
     public evaluate(query: TimelineQuery): CandidateMatch[] {
-        const events = query.findDetectedEvents(['CPU', 'MEMORY', 'DISK']);
+        const events = query.findUnhealthyEvents(['CPU', 'MEMORY', 'DISK', 'VM_HEALTH']);
         if (events.length === 0) return [];
 
         const supportingEvidence = events.map(e => e.id);
@@ -227,8 +238,8 @@ export class NetworkRule implements CandidateRule {
     constructor(private readonly config: RcaRuleConfig) {}
 
     public evaluate(query: TimelineQuery): CandidateMatch[] {
-        const netEvents = query.findBySource('NETWORK').filter(e => e.event === 'DETECTED');
-        const dnsEvents = query.findBySource('DNS').filter(e => e.event === 'DETECTED');
+        const netEvents = query.findUnhealthyEvents(['NETWORK', 'NETWORK_HEALTH']);
+        const dnsEvents = query.findUnhealthyEvents(['DNS', 'DNS_HEALTH']);
 
         if (netEvents.length === 0 && dnsEvents.length === 0) return [];
 
@@ -313,11 +324,11 @@ export class ExchangeRule implements CandidateRule {
     constructor(private readonly config: RcaRuleConfig) {}
 
     public evaluate(query: TimelineQuery): CandidateMatch[] {
-        const exEvents = query.findBySource('EXCHANGE_REACHABILITY').filter(e => e.event === 'DETECTED');
+        const exEvents = query.findUnhealthyEvents(['EXCHANGE_REACHABILITY', 'EXCHANGE_HEALTH']);
         if (exEvents.length === 0) return [];
 
-        const netEvents = query.findBySource('NETWORK').filter(e => e.event === 'DETECTED');
-        const dnsEvents = query.findBySource('DNS').filter(e => e.event === 'DETECTED');
+        const netEvents = query.findUnhealthyEvents(['NETWORK', 'NETWORK_HEALTH']);
+        const dnsEvents = query.findUnhealthyEvents(['DNS', 'DNS_HEALTH']);
         const localNetworkIssues = [...netEvents, ...dnsEvents];
 
         const contradictingEvidence: string[] = [];
@@ -379,7 +390,7 @@ export class LifecycleRule implements CandidateRule {
     constructor(private readonly config: RcaRuleConfig) {}
 
     public evaluate(query: TimelineQuery): CandidateMatch[] {
-        const events = query.findBySource('LIFECYCLE_ANOMALY').filter(e => e.event === 'DETECTED');
+        const events = query.findUnhealthyEvents(['LIFECYCLE_ANOMALY']);
         if (events.length === 0) return [];
 
         const supportingEvidence = events.map(e => e.id);

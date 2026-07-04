@@ -85,6 +85,30 @@ export class TimelineQuery {
         return this.findBySource(source).find(e => e.event === 'DETECTED');
     }
 
+    public findUnhealthyEvents(sources: string[]): TimelineEvent[] {
+        const events: TimelineEvent[] = [];
+        for (const src of sources) {
+            const srcEvents = this.timeline.eventsBySource[src] || [];
+            events.push(...srcEvents);
+        }
+        return events.filter(e => {
+            if (e.event === 'DETECTED') return true;
+            if (e.category === 'AUDIT') {
+                if (e.message && !e.message.startsWith('Audit:')) return true;
+                const meta = e.metadata as any;
+                if (meta && (meta.consecutiveFailures > 0 || meta.error || (meta.statusCode && meta.statusCode !== 200) || meta.connected === false || meta.status === 'disconnected')) {
+                    return true;
+                }
+            }
+            return false;
+        });
+    }
+
+    public findFirstUnhealthy(sources: string[]): TimelineEvent | undefined {
+        const unhealthy = this.findUnhealthyEvents(sources);
+        return unhealthy.length > 0 ? unhealthy.sort((a, b) => a.timestamp - b.timestamp)[0] : undefined;
+    }
+
     public findLatestDetected(source: string): TimelineEvent | undefined {
         const events = this.findBySource(source).filter(e => e.event === 'DETECTED');
         return events.length > 0 ? events[events.length - 1] : undefined;
