@@ -16,6 +16,8 @@ import { EventPersistenceService } from '../adapters/base/EventPersistenceServic
 import { MVP_CONFIG } from '../mvpConfig';
 import { EvidenceCollector } from '../layer-B(Assessement)/EvidenceCollector';
 import { TimelineReconstructor } from '../layer-B(Assessement)/TimelineReconstructor';
+import { CandidateGenerator } from '../layer-B(Assessement)/CandidateGenerator';
+import { DockerRule, TelemetryRule, VMRule, NetworkRule, ExchangeRule, LifecycleRule } from '../layer-B(Assessement)/CandidateRules';
 
 async function runTests() {
     console.log('====================================================');
@@ -2722,6 +2724,208 @@ async function runTests() {
         console.log('✅ [PASS] Timeline reconstruction, temporal deltas, serialization records, statistical metrics, and non-chaining concurrency verified.');
     } catch (e: any) {
         console.error('❌ Timeline Reconstruction test crashed:', e.message || e);
+    }
+    console.log('');
+
+    // ----------------------------------------------------
+    // TEST 11: Candidate Hypothesis Generation (RCA Phase 3.3)
+    // ----------------------------------------------------
+    try {
+        console.log('--- Checking Playbook 11: Candidate Hypothesis Generation ---');
+
+        // Setup test config with windows matching MVP_CONFIG
+        const config = {
+            dockerCascadeWindowMs: MVP_CONFIG.RCA.DOCKER_CASCADE_WINDOW_MS,
+            telemetryWindowMs: MVP_CONFIG.RCA.TELEMETRY_WINDOW_MS,
+            vmExhaustionWindowMs: MVP_CONFIG.RCA.VM_EXHAUSTION_WINDOW_MS,
+            networkOutageWindowMs: MVP_CONFIG.RCA.NETWORK_OUTAGE_WINDOW_MS
+        };
+
+        const rules = [
+            new DockerRule(config),
+            new TelemetryRule(config),
+            new VMRule(config),
+            new NetworkRule(config),
+            new ExchangeRule(config),
+            new LifecycleRule(config)
+        ];
+
+        const generator = new CandidateGenerator(rules);
+
+        // 1. Build mock Timeline for Scenario A (VM Exhaustion) + Scenario B (Isolated Telemetry Blip) + Scenario C (Isolated Exchange API Outage)
+        const mockTimelineA: any = {
+            events: [
+                { id: 'ev-cpu', source: 'CPU', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 },
+                { id: 'ev-mem', source: 'MEMORY', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000500 },
+                { id: 'ev-hb', source: 'HEARTBEAT', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000005000 },
+                { id: 'ev-ex', source: 'EXCHANGE_REACHABILITY', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010000 }
+            ],
+            eventsBySource: {
+                'CPU': [{ id: 'ev-cpu', source: 'CPU', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 }],
+                'MEMORY': [{ id: 'ev-mem', source: 'MEMORY', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000500 }],
+                'HEARTBEAT': [{ id: 'ev-hb', source: 'HEARTBEAT', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000005000 }],
+                'EXCHANGE_REACHABILITY': [{ id: 'ev-ex', source: 'EXCHANGE_REACHABILITY', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010000 }]
+            },
+            eventsByCategory: {
+                'INCIDENT': [
+                    { id: 'ev-cpu', source: 'CPU', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 },
+                    { id: 'ev-mem', source: 'MEMORY', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000500 },
+                    { id: 'ev-hb', source: 'HEARTBEAT', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000005000 },
+                    { id: 'ev-ex', source: 'EXCHANGE_REACHABILITY', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010000 }
+                ]
+            },
+            concurrencyClusters: [
+                [
+                    { id: 'ev-cpu', source: 'CPU', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 },
+                    { id: 'ev-mem', source: 'MEMORY', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000500 }
+                ]
+            ],
+            incidentLifecycles: {
+                'ev-cpu-lifecycle': { incidentId: 'ev-cpu', isResolved: false },
+                'ev-mem-lifecycle': { incidentId: 'ev-mem', isResolved: false },
+                'ev-hb-lifecycle': { incidentId: 'ev-hb', isResolved: false },
+                'ev-ex-lifecycle': { incidentId: 'ev-ex', isResolved: false }
+            },
+            firstIncident: { id: 'ev-cpu', source: 'CPU', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 }
+        };
+
+        let candidates = generator.generateCandidates(mockTimelineA);
+
+        // Assertions for mockTimelineA:
+        // - VM_RESOURCE_EXHAUSTION should exist
+        const vmCand = candidates.find(c => c.id === 'VM_RESOURCE_EXHAUSTION');
+        assert(vmCand !== undefined, 'VM Exhaustion hypothesis should be generated.');
+        if (vmCand) {
+            assert(vmCand.supportingEvidence.includes('ev-cpu') && vmCand.supportingEvidence.includes('ev-mem'), 'VM Exhaustion should list CPU and MEMORY as supporting evidence.');
+            assert(vmCand.missingEvidence.includes('DISK'), 'VM Exhaustion should note DISK is missing from the resource breaches.');
+            assert(vmCand.evaluationHints.some(h => h.id === 'VM_RESOURCE_OVERLOAD' && h.description === 'Concurrent resource threshold breach' && h.evidenceIds.includes('ev-cpu')), 'VM Exhaustion should include positive concurrency hint.');
+        }
+
+        // - TELEMETRY_BLACKOUT should exist (since HEARTBEAT is down)
+        const telCand = candidates.find(c => c.id === 'TELEMETRY_BLACKOUT');
+        assert(telCand !== undefined, 'Telemetry blackout hypothesis should be generated.');
+        if (telCand) {
+            assert(telCand.missingEvidence.includes('BROKER_CONNECTION') && telCand.missingEvidence.includes('MARKET_DATA_STALE'), 'Telemetry blackout should flag BROKER_CONNECTION and MARKET_DATA_STALE as missing.');
+        }
+
+        // - EXCHANGE_OUTAGE should exist and be healthy (no network/DNS outage contradicting it)
+        const exCand = candidates.find(c => c.id === 'EXCHANGE_OUTAGE');
+        assert(exCand !== undefined, 'Exchange outage hypothesis should be generated.');
+        if (exCand) {
+            assert(exCand.contradictingEvidence.length === 0, 'Exchange outage should have zero contradicting evidence when network is healthy.');
+            assert(exCand.evaluationHints.some(h => h.id === 'LOCAL_NETWORK_DNS_HEALTHY' && h.description === 'Local network and DNS are operational'), 'Exchange outage should note local network health as a positive hint.');
+        }
+
+        // Docker, Network, and Lifecycle rule should output empty (or not be merged as active candidates)
+        assert(!candidates.some(c => c.id === 'DOCKER_CONTAINER_EXITED'), 'Should not generate Docker candidate when Docker events are absent.');
+        assert(!candidates.some(c => c.id === 'NETWORK_OUTAGE'), 'Should not generate Network candidate when Network and DNS events are absent.');
+        assert(!candidates.some(c => c.id === 'LIFECYCLE_MUTATION'), 'Should not generate Lifecycle candidate when Lifecycle events are absent.');
+
+
+        // 2. Build mock Timeline for Scenario D (Exchange Outage with concurrent Network Outage)
+        const mockTimelineB: any = {
+            events: [
+                { id: 'ev-ex', source: 'EXCHANGE_REACHABILITY', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010000 },
+                { id: 'ev-net', source: 'NETWORK', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010100 },
+                { id: 'ev-dns', source: 'DNS', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010150 }
+            ],
+            eventsBySource: {
+                'EXCHANGE_REACHABILITY': [{ id: 'ev-ex', source: 'EXCHANGE_REACHABILITY', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010000 }],
+                'NETWORK': [{ id: 'ev-net', source: 'NETWORK', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010100 }],
+                'DNS': [{ id: 'ev-dns', source: 'DNS', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010150 }]
+            },
+            eventsByCategory: {
+                'INCIDENT': [
+                    { id: 'ev-ex', source: 'EXCHANGE_REACHABILITY', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010000 },
+                    { id: 'ev-net', source: 'NETWORK', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010100 },
+                    { id: 'ev-dns', source: 'DNS', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010150 }
+                ]
+            },
+            concurrencyClusters: [
+                [
+                    { id: 'ev-ex', source: 'EXCHANGE_REACHABILITY', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010000 },
+                    { id: 'ev-net', source: 'NETWORK', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010100 },
+                    { id: 'ev-dns', source: 'DNS', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010150 }
+                ]
+            ],
+            incidentLifecycles: {
+                'ev-ex-lifecycle': { incidentId: 'ev-ex', isResolved: false },
+                'ev-net-lifecycle': { incidentId: 'ev-net', isResolved: false },
+                'ev-dns-lifecycle': { incidentId: 'ev-dns', isResolved: false }
+            },
+            firstIncident: { id: 'ev-ex', source: 'EXCHANGE_REACHABILITY', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010000 }
+        };
+
+        candidates = generator.generateCandidates(mockTimelineB);
+
+        // Assertions for mockTimelineB:
+        // - NETWORK_OUTAGE should exist
+        const netCand = candidates.find(c => c.id === 'NETWORK_OUTAGE');
+        assert(netCand !== undefined, 'Network outage candidate should be generated.');
+        if (netCand) {
+            assert(netCand.supportingEvidence.includes('ev-net') && netCand.supportingEvidence.includes('ev-dns'), 'Network outage should list NETWORK and DNS as supporting evidence.');
+            assert(netCand.evaluationHints.some(h => h.id === 'NET_DNS_OUTAGE' && h.description === 'Concurrent Network and DNS outage' && h.evidenceIds.includes('ev-net')), 'Network outage should include concurrency hint.');
+        }
+
+        // - EXCHANGE_OUTAGE should exist, but local network events must be in contradictingEvidence
+        const exCandB = candidates.find(c => c.id === 'EXCHANGE_OUTAGE');
+        assert(exCandB !== undefined, 'Exchange outage candidate should still be generated.');
+        if (exCandB) {
+            assert(exCandB.contradictingEvidence.includes('ev-net') && exCandB.contradictingEvidence.includes('ev-dns'), 'Exchange outage contradictingEvidence should contain local Network/DNS event IDs.');
+            assert(exCandB.evaluationHints.some(h => h.id === 'LOCAL_NETWORK_DOWN_CONCURRENCY' && h.description === 'Local network down concurrently' && h.evidenceIds.includes('ev-net')), 'Exchange outage should include negative hint reflecting local outage.');
+            assert(exCandB.matchedSignals.includes('NETWORK:DETECTED') && exCandB.matchedSignals.includes('DNS:DETECTED'), 'Exchange outage matchedSignals should contain local Network and DNS indicators.');
+        }
+
+
+        // 3. Build mock Timeline for Scenario F (Docker Cascade Sequence: DOCKER -> FREQTRADE_API -> HEARTBEAT)
+        const mockTimelineC: any = {
+            events: [
+                { id: 'ev-doc', source: 'DOCKER', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 },
+                { id: 'ev-api', source: 'FREQTRADE_API', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010000 },
+                { id: 'ev-hb', source: 'HEARTBEAT', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000020000 }
+            ],
+            eventsBySource: {
+                'DOCKER': [{ id: 'ev-doc', source: 'DOCKER', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 }],
+                'FREQTRADE_API': [{ id: 'ev-api', source: 'FREQTRADE_API', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010000 }],
+                'HEARTBEAT': [{ id: 'ev-hb', source: 'HEARTBEAT', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000020000 }]
+            },
+            eventsByCategory: {
+                'INCIDENT': [
+                    { id: 'ev-doc', source: 'DOCKER', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 },
+                    { id: 'ev-api', source: 'FREQTRADE_API', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010000 },
+                    { id: 'ev-hb', source: 'HEARTBEAT', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000020000 }
+                ]
+            },
+            concurrencyClusters: [
+                [
+                    { id: 'ev-doc', source: 'DOCKER', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 },
+                    { id: 'ev-api', source: 'FREQTRADE_API', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010000 },
+                    { id: 'ev-hb', source: 'HEARTBEAT', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000020000 }
+                ]
+            ],
+            incidentLifecycles: {
+                'ev-doc-lifecycle': { incidentId: 'ev-doc', isResolved: false },
+                'ev-api-lifecycle': { incidentId: 'ev-api', isResolved: false },
+                'ev-hb-lifecycle': { incidentId: 'ev-hb', isResolved: false }
+            },
+            firstIncident: { id: 'ev-doc', source: 'DOCKER', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 }
+        };
+
+        candidates = generator.generateCandidates(mockTimelineC);
+
+        const docCand = candidates.find(c => c.id === 'DOCKER_CONTAINER_EXITED');
+        assert(docCand !== undefined, 'Docker container exited hypothesis should be generated.');
+        if (docCand) {
+            assert(docCand.supportingEvidence.includes('ev-doc') && docCand.supportingEvidence.includes('ev-api') && docCand.supportingEvidence.includes('ev-hb'), 'Docker candidate should link full Docker -> API -> Heartbeat evidence.');
+            assert(docCand.matchedSignals.includes('DOCKER:DETECTED') && docCand.matchedSignals.includes('FREQTRADE_API:DETECTED') && docCand.matchedSignals.includes('HEARTBEAT:DETECTED'), 'Docker candidate matchedSignals should list Docker, API, and Heartbeat tags.');
+            assert(docCand.matchedConditions.includes('Docker to Freqtrade API cascade sequence matched'), 'Docker candidate should note API cascade match.');
+            assert(docCand.matchedConditions.includes('Heartbeat silence cascaded after Freqtrade API timeout'), 'Docker candidate should note full Heartbeat cascade match.');
+            assert(docCand.missingEvidence.length === 0, 'Docker candidate missingEvidence should be empty when full cascade occurs.');
+        }
+
+        console.log('✅ [PASS] Candidate hypothesis generation, cascade sequences, missing evidence tracking, and local network contradiction checks verified.');
+    } catch (e: any) {
+        console.error('❌ Candidate hypothesis generation test crashed:', e.message || e);
     }
     console.log('');
 
