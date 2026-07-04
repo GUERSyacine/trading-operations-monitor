@@ -3,9 +3,23 @@ import { prisma } from '../prisma';
 
 async function run() {
     try {
-        console.log('🔍 Collecting evidence for incident group 77...');
+        let groupId = parseInt(process.argv[2] || '');
+        if (isNaN(groupId)) {
+            const latestGroup = await prisma.incidentGroup.findFirst({
+                orderBy: { openedAt: 'desc' }
+            });
+            if (!latestGroup) {
+                console.error('❌ No incident groups found in database!');
+                return;
+            }
+            groupId = latestGroup.id;
+            console.log(`ℹ️ No group ID provided. Using latest group ID from database: ${groupId}`);
+        } else {
+            console.log(`🔍 Collecting evidence for incident group ${groupId}...`);
+        }
+
         const collector = new EvidenceCollector();
-        const evidence = await collector.collectEvidence(77);
+        const evidence = await collector.collectEvidence(groupId);
         console.table(
             evidence.map(e => ({
                 seq: e.sequence,
