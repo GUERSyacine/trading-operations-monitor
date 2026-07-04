@@ -16,8 +16,19 @@ import { EventPersistenceService } from '../adapters/base/EventPersistenceServic
 import { MVP_CONFIG } from '../mvpConfig';
 import { EvidenceCollector } from '../layer-B(Assessement)/EvidenceCollector';
 import { TimelineReconstructor } from '../layer-B(Assessement)/TimelineReconstructor';
-import { CandidateGenerator } from '../layer-B(Assessement)/CandidateGenerator';
+import { CandidateGenerator, RootCauseCandidate } from '../layer-B(Assessement)/CandidateGenerator';
 import { DockerRule, TelemetryRule, VMRule, NetworkRule, ExchangeRule, LifecycleRule } from '../layer-B(Assessement)/CandidateRules';
+import { RootCauseScoringEngine } from '../layer-B(Assessement)/RootCauseScoringEngine';
+import {
+    SupportingEvidenceRule,
+    ContradictionRule,
+    MissingEvidenceRule,
+    ConcurrencyRule,
+    CascadeSequenceRule,
+    FirstOccurrenceRule,
+    LifecycleDurationRule,
+    EvaluationHintRule
+} from '../layer-B(Assessement)/ScoringRules';
 
 async function runTests() {
     console.log('====================================================');
@@ -2926,6 +2937,324 @@ async function runTests() {
         console.log('✅ [PASS] Candidate hypothesis generation, cascade sequences, missing evidence tracking, and local network contradiction checks verified.');
     } catch (e: any) {
         console.error('❌ Candidate hypothesis generation test crashed:', e.message || e);
+    }
+    // ----------------------------------------------------
+    // TEST 12: Root Cause Candidate Scoring (RCA Phase 3.4)
+    // ----------------------------------------------------
+    try {
+        console.log('--- Checking Playbook 12: Root Cause Candidate Scoring ---');
+
+        const scoreConfig = MVP_CONFIG.RCA.SCORING;
+        const scoreRules = [
+            new SupportingEvidenceRule(scoreConfig),
+            new ContradictionRule(scoreConfig),
+            new MissingEvidenceRule(scoreConfig),
+            new ConcurrencyRule(scoreConfig),
+            new CascadeSequenceRule(scoreConfig),
+            new FirstOccurrenceRule(scoreConfig),
+            new LifecycleDurationRule(scoreConfig),
+            new EvaluationHintRule(scoreConfig)
+        ];
+        const scoringEngine = new RootCauseScoringEngine(scoreRules, scoreConfig);
+
+        // Scenario A: Full Docker Cascade (Scenario C from Candidate Generator)
+        const mockTimelineDockerCascade: any = {
+            events: [
+                { id: 'ev-doc', source: 'DOCKER', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 },
+                { id: 'ev-api', source: 'FREQTRADE_API', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010000 },
+                { id: 'ev-hb', source: 'HEARTBEAT', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000020000 }
+            ],
+            eventsBySource: {
+                'DOCKER': [{ id: 'ev-doc', source: 'DOCKER', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 }],
+                'FREQTRADE_API': [{ id: 'ev-api', source: 'FREQTRADE_API', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010000 }],
+                'HEARTBEAT': [{ id: 'ev-hb', source: 'HEARTBEAT', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000020000 }]
+            },
+            eventsByCategory: {
+                'INCIDENT': [
+                    { id: 'ev-doc', source: 'DOCKER', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 },
+                    { id: 'ev-api', source: 'FREQTRADE_API', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010000 },
+                    { id: 'ev-hb', source: 'HEARTBEAT', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000020000 }
+                ]
+            },
+            concurrencyClusters: [
+                [
+                    { id: 'ev-doc', source: 'DOCKER', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 },
+                    { id: 'ev-api', source: 'FREQTRADE_API', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010000 },
+                    { id: 'ev-hb', source: 'HEARTBEAT', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000020000 }
+                ]
+            ],
+            incidentLifecycles: {
+                'ev-doc-lifecycle': { incidentId: 'ev-doc', isResolved: false },
+                'ev-api-lifecycle': { incidentId: 'ev-api', isResolved: false },
+                'ev-hb-lifecycle': { incidentId: 'ev-hb', isResolved: false }
+            },
+            firstIncident: { id: 'ev-doc', source: 'DOCKER', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 }
+        };
+
+        const config = {
+            dockerCascadeWindowMs: MVP_CONFIG.RCA.DOCKER_CASCADE_WINDOW_MS,
+            telemetryWindowMs: MVP_CONFIG.RCA.TELEMETRY_WINDOW_MS,
+            vmExhaustionWindowMs: MVP_CONFIG.RCA.VM_EXHAUSTION_WINDOW_MS,
+            networkOutageWindowMs: MVP_CONFIG.RCA.NETWORK_OUTAGE_WINDOW_MS
+        };
+
+        const rules = [
+            new DockerRule(config),
+            new TelemetryRule(config),
+            new VMRule(config),
+            new NetworkRule(config),
+            new ExchangeRule(config),
+            new LifecycleRule(config)
+        ];
+
+        const generator = new CandidateGenerator(rules);
+        const dockerCandidates = generator.generateCandidates(mockTimelineDockerCascade);
+
+        const scoredDocker = scoringEngine.scoreCandidates(dockerCandidates, mockTimelineDockerCascade);
+
+        // Case 1: Full Docker Cascade
+        const scoredDockerCand = scoredDocker.find(s => s.candidate.id === 'DOCKER_CONTAINER_EXITED');
+        assert(scoredDockerCand !== undefined, 'Docker candidate should be scored.');
+        if (scoredDockerCand) {
+            assert(scoredDockerCand.normalizedScore === 100, 'Full Docker cascade should hit normalizedScore = 100.');
+            assert(scoredDockerCand.confidence === 1.0, 'Full Docker cascade confidence should be 1.0.');
+            assert(scoredDockerCand.contributions.some(c => c.ruleId === 'SCR_CASCADE_SEQUENCE' && c.polarity === 'POSITIVE'), 'Should have a positive cascade sequence contribution.');
+            assert(scoredDockerCand.contributions.some(c => c.ruleId === 'SCR_FIRST_OCCURRENCE' && c.polarity === 'POSITIVE'), 'Should have a positive first occurrence contribution.');
+            assert(scoredDockerCand.metadata.candidateId === 'DOCKER_CONTAINER_EXITED', 'ScoreMetadata should contain the correct candidateId.');
+            assert(scoredDockerCand.metadata.executionTimeMs >= 0, 'ScoreMetadata should contain a valid non-negative executionTimeMs.');
+        }
+
+        // Case 2: Broken/Out-of-order Docker Cascade (Heartbeat happens FIRST, then Docker)
+        const mockTimelineBrokenDocker: any = {
+            events: [
+                { id: 'ev-hb', source: 'HEARTBEAT', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 },
+                { id: 'ev-doc', source: 'DOCKER', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010000 },
+                { id: 'ev-api', source: 'FREQTRADE_API', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000020000 }
+            ],
+            eventsBySource: {
+                'HEARTBEAT': [{ id: 'ev-hb', source: 'HEARTBEAT', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 }],
+                'DOCKER': [{ id: 'ev-doc', source: 'DOCKER', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010000 }],
+                'FREQTRADE_API': [{ id: 'ev-api', source: 'FREQTRADE_API', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000020000 }]
+            },
+            eventsByCategory: {
+                'INCIDENT': [
+                    { id: 'ev-hb', source: 'HEARTBEAT', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 },
+                    { id: 'ev-doc', source: 'DOCKER', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010000 },
+                    { id: 'ev-api', source: 'FREQTRADE_API', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000020000 }
+                ]
+            },
+            concurrencyClusters: [
+                [
+                    { id: 'ev-hb', source: 'HEARTBEAT', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 },
+                    { id: 'ev-doc', source: 'DOCKER', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010000 },
+                    { id: 'ev-api', source: 'FREQTRADE_API', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000020000 }
+                ]
+            ],
+            incidentLifecycles: {
+                'ev-hb-lifecycle': { incidentId: 'ev-hb', isResolved: false },
+                'ev-doc-lifecycle': { incidentId: 'ev-doc', isResolved: false },
+                'ev-api-lifecycle': { incidentId: 'ev-api', isResolved: false }
+            },
+            firstIncident: { id: 'ev-hb', source: 'HEARTBEAT', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 }
+        };
+
+        const brokenCandidates = generator.generateCandidates(mockTimelineBrokenDocker);
+        const scoredBroken = scoringEngine.scoreCandidates(brokenCandidates, mockTimelineBrokenDocker);
+        const scoredBrokenDocker = scoredBroken.find(s => s.candidate.id === 'DOCKER_CONTAINER_EXITED');
+        assert(scoredBrokenDocker !== undefined, 'Broken Docker candidate should be scored.');
+        if (scoredBrokenDocker) {
+            assert(scoredBrokenDocker.rawScore < (scoredDockerCand?.rawScore || 100), 'Broken Docker cascade should score lower than full Docker cascade.');
+            assert(scoredBrokenDocker.contributions.some(c => c.ruleId === 'SCR_CASCADE_SEQUENCE' && c.polarity === 'NEGATIVE'), 'Broken Docker cascade should receive negative sequence contribution.');
+            assert(scoredBrokenDocker.contributions.some(c => c.ruleId === 'SCR_FIRST_OCCURRENCE' && c.polarity === 'NEGATIVE'), 'Broken Docker cascade should receive negative first occurrence contribution.');
+        }
+
+        // Scenario B: Exchange Reachability with Local Network Contradiction (Scenario D from Candidate Generator)
+        const mockTimelineExchangeContradiction: any = {
+            events: [
+                { id: 'ev-ex', source: 'EXCHANGE_REACHABILITY', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010000 },
+                { id: 'ev-net', source: 'NETWORK', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010100 },
+                { id: 'ev-dns', source: 'DNS', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010150 }
+            ],
+            eventsBySource: {
+                'EXCHANGE_REACHABILITY': [{ id: 'ev-ex', source: 'EXCHANGE_REACHABILITY', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010000 }],
+                'NETWORK': [{ id: 'ev-net', source: 'NETWORK', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010100 }],
+                'DNS': [{ id: 'ev-dns', source: 'DNS', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010150 }]
+            },
+            eventsByCategory: {
+                'INCIDENT': [
+                    { id: 'ev-ex', source: 'EXCHANGE_REACHABILITY', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010000 },
+                    { id: 'ev-net', source: 'NETWORK', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010100 },
+                    { id: 'ev-dns', source: 'DNS', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010150 }
+                ]
+            },
+            concurrencyClusters: [
+                [
+                    { id: 'ev-ex', source: 'EXCHANGE_REACHABILITY', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010000 },
+                    { id: 'ev-net', source: 'NETWORK', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010100 },
+                    { id: 'ev-dns', source: 'DNS', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010150 }
+                ]
+            ],
+            incidentLifecycles: {
+                'ev-ex-lifecycle': { incidentId: 'ev-ex', isResolved: false },
+                'ev-net-lifecycle': { incidentId: 'ev-net', isResolved: false },
+                'ev-dns-lifecycle': { incidentId: 'ev-dns', isResolved: false }
+            },
+            firstIncident: { id: 'ev-ex', source: 'EXCHANGE_REACHABILITY', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000010000 }
+        };
+
+        const exCandidates = generator.generateCandidates(mockTimelineExchangeContradiction);
+        const scoredEx = scoringEngine.scoreCandidates(exCandidates, mockTimelineExchangeContradiction);
+
+        // Case 3: Exchange reachability with network contradiction
+        const scoredExCand = scoredEx.find(s => s.candidate.id === 'EXCHANGE_OUTAGE');
+        assert(scoredExCand !== undefined, 'Exchange outage candidate should be scored.');
+        if (scoredExCand) {
+            assert(scoredExCand.contributions.some(c => c.ruleId === 'SCR_CONTRADICTION' && c.polarity === 'NEGATIVE'), 'Exchange outage should have network contradictions.');
+            assert(scoredExCand.contributions.some(c => c.ruleId === 'SCR_EVALUATION_HINT' && c.polarity === 'NEGATIVE' && c.reason.includes('Local network down concurrently')), 'Exchange outage should receive negative hint contribution.');
+        }
+
+        // Scenario C: VM Resource Exhaustion (Scenario A from Candidate Generator)
+        const mockTimelineVM: any = {
+            events: [
+                { id: 'ev-cpu', source: 'CPU', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 },
+                { id: 'ev-mem', source: 'MEMORY', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000500 }
+            ],
+            eventsBySource: {
+                'CPU': [{ id: 'ev-cpu', source: 'CPU', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 }],
+                'MEMORY': [{ id: 'ev-mem', source: 'MEMORY', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000500 }]
+            },
+            eventsByCategory: {
+                'INCIDENT': [
+                    { id: 'ev-cpu', source: 'CPU', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 },
+                    { id: 'ev-mem', source: 'MEMORY', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000500 }
+                ]
+            },
+            concurrencyClusters: [
+                [
+                    { id: 'ev-cpu', source: 'CPU', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 },
+                    { id: 'ev-mem', source: 'MEMORY', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000500 }
+                ]
+            ],
+            incidentLifecycles: {
+                'ev-cpu-lifecycle': { incidentId: 'ev-cpu', isResolved: false },
+                'ev-mem-lifecycle': { incidentId: 'ev-mem', isResolved: false }
+            },
+            firstIncident: { id: 'ev-cpu', source: 'CPU', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 }
+        };
+
+        const vmCandidates = generator.generateCandidates(mockTimelineVM);
+        const scoredVM = scoringEngine.scoreCandidates(vmCandidates, mockTimelineVM);
+
+        // Case 4: VM resource exhaustion concurrency and hints
+        const scoredVMCand = scoredVM.find(s => s.candidate.id === 'VM_RESOURCE_EXHAUSTION');
+        assert(scoredVMCand !== undefined, 'VM candidate should be scored.');
+        if (scoredVMCand) {
+            assert(scoredVMCand.contributions.some(c => c.ruleId === 'SCR_CONCURRENCY' && c.polarity === 'POSITIVE'), 'VM Exhaustion should receive concurrency bonus.');
+            assert(scoredVMCand.contributions.some(c => c.ruleId === 'SCR_EVALUATION_HINT' && c.polarity === 'POSITIVE' && c.reason.includes('Concurrent resource threshold breach')), 'VM Exhaustion should receive positive evaluation hint bonus.');
+        }
+
+        // Case 5: No evidence baseline scenario
+        const mockEmptyTimeline: any = {
+            events: [],
+            eventsBySource: {},
+            eventsByCategory: { 'INCIDENT': [] },
+            concurrencyClusters: [],
+            incidentLifecycles: {},
+            firstIncident: undefined
+        };
+
+        const noEvidenceCandidate: RootCauseCandidate = {
+            id: 'VM_RESOURCE_EXHAUSTION',
+            title: 'VM Resource Exhaustion',
+            description: 'System CPU, memory, or disk constraints reached critical limits.',
+            triggerSignal: 'VM',
+            hypothesisType: 'INFRASTRUCTURE',
+            affectedLayer: 'LAYER_A',
+            evidenceIds: [],
+            supportingEvidence: [],
+            contradictingEvidence: [],
+            missingEvidence: ['CPU', 'MEMORY', 'DISK'],
+            matchedSignals: [],
+            matchedRules: ['VMRule'],
+            matchedConditions: [],
+            evaluationHints: []
+        };
+
+        const scoredNoEvidence = scoringEngine.scoreCandidates([noEvidenceCandidate], mockEmptyTimeline);
+        assert(scoredNoEvidence.length === 1, 'Should score the empty evidence candidate.');
+        const emptyResult = scoredNoEvidence[0];
+        assert(emptyResult.rawScore < 40, 'Empty candidate raw score should be below the base score (40) due to missing evidence penalties.');
+        assert(emptyResult.normalizedScore >= 0 && emptyResult.normalizedScore < 20, 'Normalized score should be near zero.');
+        assert(emptyResult.confidence < 0.2, 'Confidence should be near zero.');
+
+        // Case 6: Tie-breaker validation (100 vs 100 normalized score but different raw scores)
+        const candidateHighRaw: RootCauseCandidate = {
+            id: 'CANDIDATE_HIGH',
+            title: 'High Raw Candidate',
+            description: 'A candidate with very high raw score',
+            triggerSignal: 'CPU',
+            hypothesisType: 'INFRASTRUCTURE',
+            affectedLayer: 'LAYER_A',
+            evidenceIds: Array.from({ length: 15 }, (_, i) => `ev-${i + 1}`),
+            supportingEvidence: Array.from({ length: 15 }, (_, i) => `ev-${i + 1}`),
+            contradictingEvidence: [],
+            missingEvidence: [],
+            matchedSignals: [],
+            matchedRules: [],
+            matchedConditions: [],
+            evaluationHints: []
+        };
+
+        const candidateLowRaw: RootCauseCandidate = {
+            id: 'CANDIDATE_LOW',
+            title: 'Low Raw Candidate',
+            description: 'A candidate with lower raw score but still reaching max',
+            triggerSignal: 'CPU',
+            hypothesisType: 'INFRASTRUCTURE',
+            affectedLayer: 'LAYER_A',
+            evidenceIds: Array.from({ length: 13 }, (_, i) => `ev-${i + 1}`),
+            supportingEvidence: Array.from({ length: 13 }, (_, i) => `ev-${i + 1}`),
+            contradictingEvidence: [],
+            missingEvidence: [],
+            matchedSignals: [],
+            matchedRules: [],
+            matchedConditions: [],
+            evaluationHints: []
+        };
+
+        // Standard timeline containing all events
+        const mockTieEvents = Array.from({ length: 15 }, (_, i) => ({
+            id: `ev-${i + 1}`,
+            source: 'CPU',
+            event: 'DETECTED',
+            category: 'INCIDENT',
+            timestamp: 1710000000000 + i * 1000
+        }));
+
+        const mockTieTimeline: any = {
+            events: mockTieEvents,
+            eventsBySource: {
+                'CPU': mockTieEvents
+            },
+            eventsByCategory: {
+                'INCIDENT': mockTieEvents
+            },
+            concurrencyClusters: [mockTieEvents],
+            incidentLifecycles: {
+                'ev-1-lifecycle': { incidentId: 'ev-1', isResolved: false }
+            },
+            firstIncident: { id: 'ev-1', source: 'CPU', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 }
+        };
+
+        const sortedResult = scoringEngine.scoreCandidates([candidateLowRaw, candidateHighRaw], mockTieTimeline);
+
+        assert(sortedResult[0].candidate.id === 'CANDIDATE_HIGH', 'Tie-breaker: CANDIDATE_HIGH (higher raw score) should be sorted first.');
+        assert(sortedResult[0].normalizedScore === 100 && sortedResult[1].normalizedScore === 100, 'Both candidates in tie-breaker should have normalizedScore = 100.');
+        assert(sortedResult[0].rawScore > sortedResult[1].rawScore, 'CANDIDATE_HIGH should have a strictly higher raw score than CANDIDATE_LOW.');
+
+        console.log('✅ [PASS] Evidence scoring rules, centralized weighting, normalization, duration checks, empty baselines, and raw score tie-breaking verified.');
+    } catch (e: any) {
+        console.error('❌ Evidence scoring test crashed:', e.message || e);
     }
     console.log('');
 

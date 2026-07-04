@@ -64,7 +64,29 @@ export const MVP_CONFIG = {
         DOCKER_CASCADE_WINDOW_MS: envNumber(process.env.RCA_DOCKER_CASCADE_WINDOW_MS, 120_000),
         TELEMETRY_WINDOW_MS: envNumber(process.env.RCA_TELEMETRY_WINDOW_MS, 120_000),
         VM_EXHAUSTION_WINDOW_MS: envNumber(process.env.RCA_VM_EXHAUSTION_WINDOW_MS, 120_000),
-        NETWORK_OUTAGE_WINDOW_MS: envNumber(process.env.RCA_NETWORK_OUTAGE_WINDOW_MS, 60_000)
+        NETWORK_OUTAGE_WINDOW_MS: envNumber(process.env.RCA_NETWORK_OUTAGE_WINDOW_MS, 60_000),
+        SCORING: {
+            baseScore: 40,
+            supportingEvidenceWeight: 5,
+            contradictionPenalty: 15,
+            missingPenalty: 8,
+            concurrencyBonus: 10,
+            temporalBonus: 12,
+            durationBonus: 8,
+            hintBonus: 5,
+            hintPenalty: 5,
+            maxScore: 100,
+            ruleWeights: {
+                SCR_SUPPORTING: 1.0,
+                SCR_CONTRADICTION: 1.0,
+                SCR_MISSING: 1.0,
+                SCR_CONCURRENCY: 0.9,
+                SCR_CASCADE_SEQUENCE: 1.0,
+                SCR_FIRST_OCCURRENCE: 0.85,
+                SCR_LIFECYCLE_DURATION: 0.9,
+                SCR_EVALUATION_HINT: 0.95
+            }
+        }
     }
 };
 
