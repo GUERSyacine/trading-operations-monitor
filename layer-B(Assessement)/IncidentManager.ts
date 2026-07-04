@@ -3,6 +3,7 @@ import { prisma } from '../prisma';
 import { AlertingService } from '../layer-D(notification)/alerting/AlertingService';
 import { IncidentSeverity as PrismaSeverity, IncidentTransitionType, IncidentActor, IncidentGroupType } from '@prisma/client';
 import { MVP_CONFIG } from '../mvpConfig';
+import { IncidentClassifier } from './IncidentClassifier';
 
 /**
  * Incident Manager (Step 12)
@@ -218,21 +219,8 @@ export class IncidentManager {
         });
     }
 
-    private static readonly INFRA_SOURCES = new Set([
-        'CPU', 'MEMORY', 'DISK', 'DOCKER_CONTAINER', 
-        'DNS', 'NETWORK', 'FREQTRADE_API', 'EXCHANGE_REACHABILITY',
-        'VM', 'DOCKER', 'FREQTRADE'
-    ]);
-
-    private isInfrastructureSource(source: string): boolean {
-        for (const prefix of IncidentManager.INFRA_SOURCES) {
-            if (source.startsWith(prefix)) return true;
-        }
-        return source === 'INFRASTRUCTURE';
-    }
-
     private getGroupTypeAndCorrelationKey(symbol: string | null, source: string): { groupType: IncidentGroupType; correlationKey: string } {
-        if (this.isInfrastructureSource(source)) {
+        if (IncidentClassifier.isInfrastructure(source)) {
             return {
                 groupType: 'INFRASTRUCTURE',
                 correlationKey: 'INFRA:GLOBAL'

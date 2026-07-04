@@ -15,6 +15,7 @@ import { WatchdogOrchestrator } from '../WatchdogOrchestrator';
 import { EventPersistenceService } from '../adapters/base/EventPersistenceService';
 import { MVP_CONFIG } from '../mvpConfig';
 import { EvidenceCollector } from '../layer-B(Assessement)/EvidenceCollector';
+import { TimelineReconstructor } from '../layer-B(Assessement)/TimelineReconstructor';
 
 async function runTests() {
     console.log('====================================================');
@@ -2566,6 +2567,161 @@ async function runTests() {
         console.log('✅ [PASS] Evidence Collection sequence, types, sorting, and boundary exclusions verified.');
     } catch (e: any) {
         console.error('❌ Evidence Collection test crashed:', e.message || e);
+    }
+    console.log('');
+
+    // ----------------------------------------------------
+    // TEST 10: Timeline Reconstruction & Temporal Clustering (RCA Phase 3.2)
+    // ----------------------------------------------------
+    try {
+        console.log('--- Checking RCA Phase 3.2: Timeline Reconstruction & Temporal Clustering ---');
+
+        const mockEvidenceList = [
+            {
+                id: 'ev-1',
+                groupId: 101,
+                sequence: 1,
+                category: 'GROUP',
+                source: 'INFRASTRUCTURE',
+                event: 'CREATED',
+                timestamp: 1710000000000,
+                origin: 'ASSESSMENT',
+                message: 'Incident group created'
+            },
+            {
+                id: 'ev-2',
+                groupId: 101,
+                sequence: 2,
+                category: 'INCIDENT',
+                source: 'VM',
+                event: 'DETECTED',
+                timestamp: 1710000000500, // 500ms since start
+                origin: 'ASSESSMENT',
+                entityId: 'inc-1',
+                severity: 'WARNING',
+                message: 'VM High CPU'
+            },
+            {
+                id: 'ev-3',
+                groupId: 101,
+                sequence: 3,
+                category: 'INCIDENT',
+                source: 'DOCKER',
+                event: 'DETECTED',
+                timestamp: 1710000000800, // 300ms since previous, 800ms since start
+                origin: 'ASSESSMENT',
+                entityId: 'inc-2',
+                severity: 'CRITICAL',
+                message: 'Docker down'
+            },
+            {
+                id: 'ev-4',
+                groupId: 101,
+                sequence: 4,
+                category: 'INCIDENT',
+                source: 'HEARTBEAT',
+                event: 'DETECTED',
+                timestamp: 1710000003000, // 2200ms since previous, 3000ms since start
+                origin: 'ASSESSMENT',
+                entityId: 'inc-3',
+                severity: 'MEDIUM',
+                message: 'Heartbeat silent'
+            },
+            {
+                id: 'ev-5',
+                groupId: 101,
+                sequence: 5,
+                category: 'INCIDENT',
+                source: 'VM',
+                event: 'RESOLVED',
+                timestamp: 1710000005000, // 2000ms since previous, 5000ms since start
+                origin: 'ASSESSMENT',
+                entityId: 'inc-1',
+                severity: 'WARNING',
+                message: 'VM CPU resolved'
+            },
+            {
+                id: 'ev-6',
+                groupId: 101,
+                sequence: 6,
+                category: 'GROUP',
+                source: 'INFRASTRUCTURE',
+                event: 'RESOLVED',
+                timestamp: 1710000006000, // 1000ms since previous, 6000ms since start
+                origin: 'ASSESSMENT',
+                message: 'Group resolved'
+            }
+        ] as any[];
+
+        const reconstructor = new TimelineReconstructor(1000); // 1000ms threshold
+        const timeline = reconstructor.reconstruct(101, mockEvidenceList);
+
+        // Core assertions
+        assert(timeline.groupId === 101, 'Timeline groupId should match.');
+        assert(timeline.startTime === 1710000000000, 'Timeline startTime should match first event.');
+        assert(timeline.endTime === 1710000006000, 'Timeline endTime should match last event.');
+        assert(timeline.durationMs === 6000, 'Timeline durationMs should be 6000ms.');
+        assert(timeline.events.length === 6, 'Timeline should contain 6 events.');
+
+        // Verify deltas
+        const ev2 = timeline.events[1];
+        assert(ev2.deltaFromStartMs === 500, 'ev-2 deltaFromStartMs should be 500ms.');
+        assert(ev2.deltaFromPreviousMs === 500, 'ev-2 deltaFromPreviousMs should be 500ms.');
+
+        const ev3 = timeline.events[2];
+        assert(ev3.deltaFromStartMs === 800, 'ev-3 deltaFromStartMs should be 800ms.');
+        assert(ev3.deltaFromPreviousMs === 300, 'ev-3 deltaFromPreviousMs should be 300ms.');
+
+        // Verify adjacency pointers
+        assert(ev3.previousEventId === 'ev-2', 'ev-3 previousEventId should point to ev-2.');
+        assert(ev3.nextEventId === 'ev-4', 'ev-3 nextEventId should point to ev-4.');
+        assert(ev3.previousSequence === 2, 'ev-3 previousSequence should be 2.');
+        assert(ev3.nextSequence === 4, 'ev-3 nextSequence should be 4.');
+
+        // Verify duration calculations in incidentLifecycles
+        const vmIncLifecycle = timeline.incidentLifecycles['inc-1'];
+        assert(vmIncLifecycle !== undefined, 'VM incident lifecycle should be recorded.');
+        assert(vmIncLifecycle.isResolved === true, 'VM incident lifecycle should be resolved.');
+        assert(vmIncLifecycle.durationMs === 4500, 'VM incident lifecycle duration should be 4500ms (5000 - 500).');
+        assert(vmIncLifecycle.initialSeverity === 'WARNING', 'VM incident initialSeverity should be WARNING.');
+        assert(vmIncLifecycle.peakSeverity === 'WARNING', 'VM incident peakSeverity should be WARNING.');
+
+        const dockerIncLifecycle = timeline.incidentLifecycles['inc-2'];
+        assert(dockerIncLifecycle !== undefined, 'Docker lifecycle should exist.');
+        assert(dockerIncLifecycle.isResolved === false, 'Docker lifecycle should remain active/unresolved.');
+
+        // Verify statistics
+        assert(timeline.statistics.incidentCount === 4, 'statistics: incidentCount should be 4.');
+        assert(timeline.statistics.infraCount === 3, 'statistics: infraCount (VM, DOCKER) should be 3.');
+        assert(timeline.statistics.opsCount === 1, 'statistics: opsCount (HEARTBEAT) should be 1.');
+        assert(timeline.statistics.resolvedCount === 1, 'statistics: resolvedCount should be 1.');
+        assert(timeline.statistics.activeCount === 2, 'statistics: activeCount should be 2.');
+        assert(timeline.statistics.firstIncidentAt === 1710000000500, 'statistics: firstIncidentAt matches first detected incident.');
+        assert(timeline.statistics.lastIncidentAt === 1710000003000, 'statistics: lastIncidentAt matches last detected incident.');
+        assert(timeline.statistics.peakSeverity === 'CRITICAL', 'statistics: peakSeverity should be CRITICAL.');
+
+        // Verify Concurrency Clustering (Compare to cluster start to prevent chaining)
+        // Cluster 1: GroupCreated (0), VM (500), DOCKER (800) are within 1000ms of clusterStart (0).
+        // HEARTBEAT (3000) is > 1000ms from clusterStart (0), so it splits.
+        // Cluster 2: VM Resolved (5000) and Group Resolved (6000) are within 1000ms of clusterStart (5000).
+        assert(timeline.concurrencyClusters.length === 2, 'Should find exactly 2 concurrent clusters.');
+        const cluster1 = timeline.concurrencyClusters[0];
+        assert(cluster1.length === 3, 'First cluster should contain 3 events.');
+        assert(cluster1[0].id === 'ev-1' && cluster1[1].id === 'ev-2' && cluster1[2].id === 'ev-3', 'First cluster elements should match.');
+        const cluster2 = timeline.concurrencyClusters[1];
+        assert(cluster2.length === 2, 'Second cluster should contain 2 events.');
+        assert(cluster2[0].id === 'ev-5' && cluster2[1].id === 'ev-6', 'Second cluster elements should match.');
+
+        assert(ev2.isConcurrent === true && ev3.isConcurrent === true, 'Clustered events should flag isConcurrent = true.');
+        assert(timeline.events[3].isConcurrent === false, 'Out-of-cluster event should flag isConcurrent = false.');
+
+        // Verify Record-based index maps (JSON-serializable)
+        assert(timeline.eventsBySource['VM'].length === 2, 'eventsBySource VM index should yield 2 events.');
+        assert(timeline.eventsByCategory['INCIDENT'].length === 4, 'eventsByCategory INCIDENT index should yield 4 events.');
+
+        console.log('✅ [PASS] Timeline reconstruction, temporal deltas, serialization records, statistical metrics, and non-chaining concurrency verified.');
+    } catch (e: any) {
+        console.error('❌ Timeline Reconstruction test crashed:', e.message || e);
     }
     console.log('');
 

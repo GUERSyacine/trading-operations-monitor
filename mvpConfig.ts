@@ -22,7 +22,8 @@ export const MVP_CONFIG = {
         FLASH_CRASH_VOL_MULT:    envNumber(process.env.FLASH_CRASH_VOL_MULT,    3.0),
         LIQUIDITY_SPREAD_MULT:   envNumber(process.env.LIQUIDITY_SPREAD_MULT,   5.0),
         SLIPPAGE_MULT:           envNumber(process.env.SLIPPAGE_MULT,           2.0),
-        GROUPING_WINDOW_MS:      envNumber(process.env.INCIDENT_GROUP_WINDOW_MS, 120 * SECOND)
+        GROUPING_WINDOW_MS:      envNumber(process.env.INCIDENT_GROUP_WINDOW_MS, 120 * SECOND),
+        CONCURRENCY_THRESHOLD_MS: envNumber(process.env.RCA_CONCURRENCY_THRESHOLD_MS, 1000)
     },
     INFRASTRUCTURE: {
         CPU_WARNING_THRESHOLD:      envNumber(process.env.INFRA_CPU_WARNING_THRESHOLD,      80.0),
