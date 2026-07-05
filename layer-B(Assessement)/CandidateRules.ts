@@ -1,4 +1,5 @@
 import { CandidateRule, CandidateMatch, TimelineQuery, EvaluationHint } from './CandidateGenerator';
+import { MVP_CONFIG } from '../mvpConfig';
 
 export interface RcaRuleConfig {
     dockerCascadeWindowMs: number;
@@ -174,11 +175,31 @@ export class VMRule implements CandidateRule {
 
         const supportingEvidence = events.map(e => e.id);
         const conditions = [`Resource constraints matched`];
+
+        // Determine resource overloads by checking event source & metadata values
+        const hasCpu = events.some(e => e.source === 'CPU' || (e.metadata && typeof e.metadata.cpuPct === 'number'));
+        const cpuOver = events.some(e => e.source === 'CPU' || (e.metadata && typeof e.metadata.cpuPct === 'number' && e.metadata.cpuPct >= MVP_CONFIG.INFRASTRUCTURE.CPU_WARNING_THRESHOLD));
+
+        const hasMem = events.some(e => e.source === 'MEMORY' || (e.metadata && typeof e.metadata.memoryPct === 'number'));
+        const memOver = events.some(e => e.source === 'MEMORY' || (e.metadata && typeof e.metadata.memoryPct === 'number' && e.metadata.memoryPct >= MVP_CONFIG.INFRASTRUCTURE.MEMORY_WARNING_THRESHOLD));
+
+        const hasDisk = events.some(e => e.source === 'DISK' || (e.metadata && typeof e.metadata.diskPct === 'number'));
+        const diskOver = events.some(e => e.source === 'DISK' || (e.metadata && typeof e.metadata.diskPct === 'number' && e.metadata.diskPct >= MVP_CONFIG.INFRASTRUCTURE.DISK_WARNING_THRESHOLD));
+
+        const overloadedList: string[] = [];
+        if (cpuOver) overloadedList.push('CPU');
+        if (memOver) overloadedList.push('MEMORY');
+        if (diskOver) overloadedList.push('DISK');
+        if (overloadedList.length === 0) {
+            const uniqueSources = Array.from(new Set(events.map(e => e.source)));
+            overloadedList.push(...uniqueSources);
+        }
+
         const hints: EvaluationHint[] = [
             {
                 id: 'VM_RESOURCE_OVERLOAD',
                 polarity: 'POSITIVE',
-                description: `Resource overload: ${events.map(e => e.source).join(', ')}`,
+                description: `Resource overload: ${overloadedList.join(', ')}`,
                 evidenceIds: supportingEvidence
             }
         ];
@@ -200,16 +221,30 @@ export class VMRule implements CandidateRule {
             }
         }
 
-        const failedSources = events.map(e => e.source);
-        for (const res of ['CPU', 'MEMORY', 'DISK']) {
-            if (!failedSources.includes(res)) {
-                hints.push({
-                    id: 'VM_RESOURCE_HEALTHY',
-                    polarity: 'NEGATIVE',
-                    description: `Resource remains healthy: ${res}`,
-                    evidenceIds: []
-                });
-            }
+        // Add healthy resource hints only when they are actively monitored and below threshold
+        if (hasCpu && !cpuOver) {
+            hints.push({
+                id: 'VM_RESOURCE_HEALTHY',
+                polarity: 'NEGATIVE',
+                description: 'Resource remains healthy: CPU',
+                evidenceIds: []
+            });
+        }
+        if (hasMem && !memOver) {
+            hints.push({
+                id: 'VM_RESOURCE_HEALTHY',
+                polarity: 'NEGATIVE',
+                description: 'Resource remains healthy: MEMORY',
+                evidenceIds: []
+            });
+        }
+        if (hasDisk && !diskOver) {
+            hints.push({
+                id: 'VM_RESOURCE_HEALTHY',
+                polarity: 'NEGATIVE',
+                description: 'Resource remains healthy: DISK',
+                evidenceIds: []
+            });
         }
 
         return [{

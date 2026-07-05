@@ -136,22 +136,42 @@ async function run() {
     console.log('\n--- SCENARIO 3: VM Resource Exhaustion (CPU & MEMORY high, DISK healthy) ---');
     const timeline3: any = {
         events: [
-            { id: 'ev-cpu', source: 'CPU', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 },
-            { id: 'ev-mem', source: 'MEMORY', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000500 }
+            { 
+                id: 'ev-vm-1', 
+                source: 'VM_HEALTH', 
+                event: 'OBSERVED', 
+                category: 'AUDIT', 
+                message: 'CPU usage 98% > 80%, Memory usage 85% > 80%',
+                timestamp: 1710000000000,
+                metadata: {
+                    cpuPct: 98,
+                    memoryPct: 85,
+                    diskPct: 20
+                }
+            },
+            { 
+                id: 'ev-vm-2', 
+                source: 'VM_HEALTH', 
+                event: 'OBSERVED', 
+                category: 'AUDIT', 
+                message: 'CPU usage 98% > 80%, Memory usage 85% > 80%',
+                timestamp: 1710000000500,
+                metadata: {
+                    cpuPct: 98,
+                    memoryPct: 85,
+                    diskPct: 20
+                }
+            }
         ]
     };
     timeline3.eventsBySource = {
-        'CPU': [timeline3.events[0]],
-        'MEMORY': [timeline3.events[1]]
+        'VM_HEALTH': [timeline3.events[0], timeline3.events[1]]
     };
     timeline3.eventsByCategory = {
-        'INCIDENT': [timeline3.events[0], timeline3.events[1]]
+        'AUDIT': [timeline3.events[0], timeline3.events[1]]
     };
     timeline3.concurrencyClusters = [timeline3.events];
-    timeline3.incidentLifecycles = {
-        'lifecycle-cpu': { incidentId: 'ev-cpu', isResolved: false },
-        'lifecycle-mem': { incidentId: 'ev-mem', isResolved: false }
-    };
+    timeline3.incidentLifecycles = {};
     timeline3.firstIncident = timeline3.events[0];
 
     const vmRule = new VMRule({
