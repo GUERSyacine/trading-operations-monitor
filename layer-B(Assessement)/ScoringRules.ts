@@ -14,6 +14,43 @@ export interface ScoreRule {
     evaluate(candidate: RootCauseCandidate, timeline: Timeline, query: TimelineQuery): ScoreContribution[];
 }
 
+function getScoringEvidenceKey(event: TimelineEvent): string {
+    const src = event.source.toUpperCase();
+    const categorySuffix = event.category === 'INCIDENT' ? 'INCIDENT' : 'OBSERVATION';
+
+    if (src.includes('DOCKER')) {
+        return `DOCKER_FAILURE:${categorySuffix}`;
+    }
+    if (src.includes('FREQTRADE') || src === 'FREQTRADE_API') {
+        return `API_FAILURE:${categorySuffix}`;
+    }
+    if (src.includes('HEARTBEAT')) {
+        return `HEARTBEAT_FAILURE:${categorySuffix}`;
+    }
+    if (src.includes('NETWORK')) {
+        return `NETWORK_FAILURE:${categorySuffix}`;
+    }
+    if (src.includes('DNS')) {
+        return `DNS_FAILURE:${categorySuffix}`;
+    }
+    if (src === 'CPU') {
+        return `VM_CPU:${categorySuffix}`;
+    }
+    if (src === 'MEMORY') {
+        return `VM_MEMORY:${categorySuffix}`;
+    }
+    if (src === 'DISK') {
+        return `VM_DISK:${categorySuffix}`;
+    }
+    if (src === 'VM_HEALTH') {
+        return `VM_HEALTH:${categorySuffix}`;
+    }
+    if (src.includes('EXCHANGE')) {
+        return `EXCHANGE_FAILURE:${categorySuffix}`;
+    }
+    return `${src}:${categorySuffix}`;
+}
+
 // 1. Supporting Evidence Rule
 export class SupportingEvidenceRule implements ScoreRule {
     public readonly ruleId = 'SCR_SUPPORTING';
@@ -21,14 +58,16 @@ export class SupportingEvidenceRule implements ScoreRule {
     constructor(private readonly config: any) {}
 
     public evaluate(candidate: RootCauseCandidate, timeline: Timeline, query: TimelineQuery): ScoreContribution[] {
-        const count = candidate.supportingEvidence.length;
+        const supportEvents = timeline.events.filter(e => candidate.supportingEvidence.includes(e.id));
+        const uniqueKeys = new Set(supportEvents.map(getScoringEvidenceKey));
+        const count = uniqueKeys.size;
         if (count === 0) return [];
         const score = count * this.config.supportingEvidenceWeight;
         return [{
             ruleId: this.ruleId,
             score,
             polarity: 'POSITIVE',
-            reason: `Found ${count} supporting evidence event(s)`,
+            reason: `Found ${count} supporting evidence event(s) (unique signals)`,
             evidenceIds: [...candidate.supportingEvidence]
         }];
     }
@@ -41,14 +80,16 @@ export class ContradictionRule implements ScoreRule {
     constructor(private readonly config: any) {}
 
     public evaluate(candidate: RootCauseCandidate, timeline: Timeline, query: TimelineQuery): ScoreContribution[] {
-        const count = candidate.contradictingEvidence.length;
+        const contraEvents = timeline.events.filter(e => candidate.contradictingEvidence.includes(e.id));
+        const uniqueKeys = new Set(contraEvents.map(getScoringEvidenceKey));
+        const count = uniqueKeys.size;
         if (count === 0) return [];
         const score = -count * this.config.contradictionPenalty;
         return [{
             ruleId: this.ruleId,
             score,
             polarity: 'NEGATIVE',
-            reason: `Found ${count} contradicting evidence event(s)`,
+            reason: `Found ${count} contradicting evidence event(s) (unique signals)`,
             evidenceIds: [...candidate.contradictingEvidence]
         }];
     }
@@ -114,33 +155,66 @@ export class CascadeSequenceRule implements ScoreRule {
         const apiEvents = query.findUnhealthyEvents(['FREQTRADE', 'FREQTRADE_API']);
         const hbEvents = query.findUnhealthyEvents(['HEARTBEAT']);
 
-        if (de && apiEvents.length > 0) {
-            const api = apiEvents[0];
-            const hasApiCascade = query.isBefore(de, api) && query.areWithinWindow(de, api, 120_000);
+        if (!de) return [];
+
+        const firstApi = apiEvents.length > 0 ? apiEvents[0] : null;
+        const firstHb = hbEvents.length > 0 ? hbEvents[0] : null;
+
+        // Check for out-of-order chronology (wrong sequence)
+        let isOutOfOrder = false;
+        let wrongSequenceReason = '';
+
+        if (firstApi && query.isBefore(firstApi, de)) {
+            isOutOfOrder = true;
+            wrongSequenceReason = 'Freqtrade API failed before Docker container failure';
+        } else if (firstHb && query.isBefore(firstHb, de)) {
+            isOutOfOrder = true;
+            wrongSequenceReason = 'Heartbeat failed before Docker container failure';
+        } else if (firstApi && firstHb && query.isBefore(firstHb, firstApi)) {
+            isOutOfOrder = true;
+            wrongSequenceReason = 'Heartbeat failed before Freqtrade API timeout';
+        }
+
+        if (isOutOfOrder) {
+            return [{
+                ruleId: this.ruleId,
+                score: -this.config.temporalBonus,
+                polarity: 'NEGATIVE',
+                reason: `Chronology incorrect: ${wrongSequenceReason}`,
+                evidenceIds: [de.id, ...(firstApi ? [firstApi.id] : []), ...(firstHb ? [firstHb.id] : [])]
+            }];
+        }
+
+        // Evaluate progressive cascade levels
+        if (firstApi) {
+            const hasApiCascade = query.isBefore(de, firstApi) && query.areWithinWindow(de, firstApi, 120_000);
             if (hasApiCascade) {
-                if (hbEvents.length > 0) {
-                    const hb = hbEvents[0];
-                    const hasFullCascade = query.isBefore(api, hb) && query.areWithinWindow(api, hb, 120_000);
+                if (firstHb) {
+                    const hasFullCascade = query.isBefore(firstApi, firstHb) && query.areWithinWindow(firstApi, firstHb, 120_000);
                     if (hasFullCascade) {
                         return [{
                             ruleId: this.ruleId,
                             score: this.config.temporalBonus,
                             polarity: 'POSITIVE',
-                            reason: 'Docker -> API -> Heartbeat cascade order matched',
-                            evidenceIds: [de.id, api.id, hb.id]
+                            reason: 'Docker -> API -> Heartbeat full cascade sequence matched',
+                            evidenceIds: [de.id, firstApi.id, firstHb.id]
                         }];
                     }
                 }
+
+                // Partial cascade: Docker -> API
+                return [{
+                    ruleId: this.ruleId,
+                    score: Math.round(this.config.temporalBonus / 2),
+                    polarity: 'POSITIVE',
+                    reason: 'Docker -> Freqtrade API partial cascade sequence matched (Heartbeat healthy/missing)',
+                    evidenceIds: [de.id, firstApi.id]
+                }];
             }
         }
 
-        return [{
-            ruleId: this.ruleId,
-            score: -this.config.temporalBonus,
-            polarity: 'NEGATIVE',
-            reason: 'Docker to API/Heartbeat cascade sequence was broken or out-of-order',
-            evidenceIds: []
-        }];
+        // Docker only: no cascade, but no out-of-order events
+        return [];
     }
 }
 

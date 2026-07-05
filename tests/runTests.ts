@@ -3225,7 +3225,7 @@ async function runTests() {
         // Standard timeline containing all events
         const mockTieEvents = Array.from({ length: 15 }, (_, i) => ({
             id: `ev-${i + 1}`,
-            source: 'CPU',
+            source: `CPU_${i}`,
             event: 'DETECTED',
             category: 'INCIDENT',
             timestamp: 1710000000000 + i * 1000
@@ -3233,9 +3233,10 @@ async function runTests() {
 
         const mockTieTimeline: any = {
             events: mockTieEvents,
-            eventsBySource: {
-                'CPU': mockTieEvents
-            },
+            eventsBySource: mockTieEvents.reduce((acc: any, ev) => {
+                acc[ev.source] = [ev];
+                return acc;
+            }, {}),
             eventsByCategory: {
                 'INCIDENT': mockTieEvents
             },
@@ -3243,7 +3244,7 @@ async function runTests() {
             incidentLifecycles: {
                 'ev-1-lifecycle': { incidentId: 'ev-1', isResolved: false }
             },
-            firstIncident: { id: 'ev-1', source: 'CPU', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 }
+            firstIncident: { id: 'ev-1', source: 'CPU_0', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 }
         };
 
         const sortedResult = scoringEngine.scoreCandidates([candidateLowRaw, candidateHighRaw], mockTieTimeline);
