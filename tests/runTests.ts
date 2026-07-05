@@ -2808,7 +2808,7 @@ async function runTests() {
         assert(vmCand !== undefined, 'VM Exhaustion hypothesis should be generated.');
         if (vmCand) {
             assert(vmCand.supportingEvidence.includes('ev-cpu') && vmCand.supportingEvidence.includes('ev-mem'), 'VM Exhaustion should list CPU and MEMORY as supporting evidence.');
-            assert(vmCand.missingEvidence.includes('DISK'), 'VM Exhaustion should note DISK is missing from the resource breaches.');
+            assert(vmCand.missingEvidence.length === 0, 'VM Exhaustion should not list healthy alternative channels in missingEvidence.');
             assert(vmCand.evaluationHints.some(h => h.id === 'VM_RESOURCE_OVERLOAD' && h.description === 'Concurrent resource threshold breach' && h.evidenceIds.includes('ev-cpu')), 'VM Exhaustion should include positive concurrency hint.');
         }
 

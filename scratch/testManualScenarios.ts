@@ -9,6 +9,7 @@ import {
 } from '../layer-B(Assessement)/ScoringRules';
 import { RootCauseScoringEngine } from '../layer-B(Assessement)/RootCauseScoringEngine';
 import { MVP_CONFIG } from '../mvpConfig';
+import { VMRule } from '../layer-B(Assessement)/CandidateRules';
 
 async function run() {
     console.log('🧪 Running Manual Scenarios Verification...\n');
@@ -128,6 +129,61 @@ async function run() {
     const scored2 = scoringEngine.scoreCandidates([candidate2], timeline2);
     console.log('Result for Candidate:');
     console.dir(scored2[0], { depth: null });
+
+    // =========================================================================
+    // SCENARIO 3: VM Resource Exhaustion (CPU & MEMORY high, DISK healthy)
+    // =========================================================================
+    console.log('\n--- SCENARIO 3: VM Resource Exhaustion (CPU & MEMORY high, DISK healthy) ---');
+    const timeline3: any = {
+        events: [
+            { id: 'ev-cpu', source: 'CPU', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000000 },
+            { id: 'ev-mem', source: 'MEMORY', event: 'DETECTED', category: 'INCIDENT', timestamp: 1710000000500 }
+        ]
+    };
+    timeline3.eventsBySource = {
+        'CPU': [timeline3.events[0]],
+        'MEMORY': [timeline3.events[1]]
+    };
+    timeline3.eventsByCategory = {
+        'INCIDENT': [timeline3.events[0], timeline3.events[1]]
+    };
+    timeline3.concurrencyClusters = [timeline3.events];
+    timeline3.incidentLifecycles = {
+        'lifecycle-cpu': { incidentId: 'ev-cpu', isResolved: false },
+        'lifecycle-mem': { incidentId: 'ev-mem', isResolved: false }
+    };
+    timeline3.firstIncident = timeline3.events[0];
+
+    const vmRule = new VMRule({
+        dockerCascadeWindowMs: 120_000,
+        telemetryWindowMs: 120_000,
+        vmExhaustionWindowMs: 120_000,
+        networkOutageWindowMs: 60_000
+    });
+
+    const query3 = new TimelineQuery(timeline3);
+    const matches3 = vmRule.evaluate(query3);
+
+    const candidate3: RootCauseCandidate = {
+        id: matches3[0].candidateId,
+        title: matches3[0].title,
+        description: matches3[0].description,
+        triggerSignal: matches3[0].triggerSignal,
+        hypothesisType: matches3[0].hypothesisType,
+        affectedLayer: matches3[0].affectedLayer,
+        evidenceIds: matches3[0].supportingEvidence,
+        supportingEvidence: matches3[0].supportingEvidence,
+        contradictingEvidence: matches3[0].contradictingEvidence,
+        missingEvidence: matches3[0].missingEvidence,
+        matchedSignals: matches3[0].matchedSignals,
+        matchedRules: [matches3[0].ruleName],
+        matchedConditions: matches3[0].matchedConditions,
+        evaluationHints: matches3[0].evaluationHints
+    };
+
+    const scored3 = scoringEngine.scoreCandidates([candidate3], timeline3);
+    console.log('Result for Candidate:');
+    console.dir(scored3[0], { depth: null });
 }
 
 run().catch(console.error);

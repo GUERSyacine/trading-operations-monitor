@@ -203,7 +203,6 @@ export class VMRule implements CandidateRule {
         const failedSources = events.map(e => e.source);
         for (const res of ['CPU', 'MEMORY', 'DISK']) {
             if (!failedSources.includes(res)) {
-                missing.push(res);
                 hints.push({
                     id: 'VM_RESOURCE_HEALTHY',
                     polarity: 'NEGATIVE',
