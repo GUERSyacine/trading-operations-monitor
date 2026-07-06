@@ -9,7 +9,7 @@ import {
 } from '../layer-B(Assessement)/ScoringRules';
 import { RootCauseScoringEngine } from '../layer-B(Assessement)/RootCauseScoringEngine';
 import { MVP_CONFIG } from '../mvpConfig';
-import { VMRule } from '../layer-B(Assessement)/CandidateRules';
+import { VMRule, NetworkRule, ExchangeRule } from '../layer-B(Assessement)/CandidateRules';
 
 async function run() {
     console.log('🧪 Running Manual Scenarios Verification...\n');
@@ -204,6 +204,145 @@ async function run() {
     const scored3 = scoringEngine.scoreCandidates([candidate3], timeline3);
     console.log('Result for Candidate:');
     console.dir(scored3[0], { depth: null });
+
+    // =========================================================================
+    // SCENARIO 4: Network Outage with Healthy DNS and VM CPU Warning (Compound case)
+    // =========================================================================
+    console.log('\n--- SCENARIO 4: Network Outage with Healthy DNS and VM CPU Warning (Compound) ---');
+    const timeline4: any = {
+        events: [
+            { 
+                id: 'ev-net-1', 
+                source: 'NETWORK', 
+                event: 'DETECTED', 
+                category: 'INCIDENT', 
+                timestamp: 1710000000000 
+            },
+            { 
+                id: 'ev-ex-1', 
+                source: 'EXCHANGE_REACHABILITY', 
+                event: 'DETECTED', 
+                category: 'INCIDENT', 
+                timestamp: 1710000001000 
+            },
+            { 
+                id: 'ev-vm-1', 
+                source: 'VM_HEALTH', 
+                event: 'OBSERVED', 
+                category: 'AUDIT', 
+                message: 'CPU usage 85.7% > 80%',
+                timestamp: 1710000002000,
+                metadata: {
+                    cpuPct: 85.7,
+                    memoryPct: 40,
+                    diskPct: 10
+                }
+            }
+        ]
+    };
+    timeline4.eventsBySource = {
+        'VM_HEALTH': [timeline4.events[2]],
+        'NETWORK': [timeline4.events[0]],
+        'EXCHANGE_REACHABILITY': [timeline4.events[1]]
+    };
+    timeline4.eventsByCategory = {
+        'AUDIT': [timeline4.events[2]],
+        'INCIDENT': [timeline4.events[0], timeline4.events[1]]
+    };
+    timeline4.concurrencyClusters = [timeline4.events];
+    timeline4.incidentLifecycles = {
+        'lifecycle-net': { incidentId: 'ev-net-1', isResolved: false },
+        'lifecycle-ex': { incidentId: 'ev-ex-1', isResolved: false }
+    };
+    timeline4.firstIncident = timeline4.events[0];
+
+    const vmRule4 = new VMRule({
+        dockerCascadeWindowMs: 120_000,
+        telemetryWindowMs: 120_000,
+        vmExhaustionWindowMs: 120_000,
+        networkOutageWindowMs: 60_000
+    });
+    const netRule4 = new NetworkRule({
+        dockerCascadeWindowMs: 120_000,
+        telemetryWindowMs: 120_000,
+        vmExhaustionWindowMs: 120_000,
+        networkOutageWindowMs: 60_000
+    });
+    const exRule4 = new ExchangeRule({
+        dockerCascadeWindowMs: 120_000,
+        telemetryWindowMs: 120_000,
+        vmExhaustionWindowMs: 120_000,
+        networkOutageWindowMs: 60_000
+    });
+
+    const query4 = new TimelineQuery(timeline4);
+    const matches4_vm = vmRule4.evaluate(query4);
+    const matches4_net = netRule4.evaluate(query4);
+    const matches4_ex = exRule4.evaluate(query4);
+
+    const candidates4: RootCauseCandidate[] = [];
+
+    if (matches4_vm.length > 0) {
+        candidates4.push({
+            id: matches4_vm[0].candidateId,
+            title: matches4_vm[0].title,
+            description: matches4_vm[0].description,
+            triggerSignal: matches4_vm[0].triggerSignal,
+            hypothesisType: matches4_vm[0].hypothesisType,
+            affectedLayer: matches4_vm[0].affectedLayer,
+            evidenceIds: matches4_vm[0].supportingEvidence,
+            supportingEvidence: matches4_vm[0].supportingEvidence,
+            contradictingEvidence: matches4_vm[0].contradictingEvidence,
+            missingEvidence: matches4_vm[0].missingEvidence,
+            matchedSignals: matches4_vm[0].matchedSignals,
+            matchedRules: [matches4_vm[0].ruleName],
+            matchedConditions: matches4_vm[0].matchedConditions,
+            evaluationHints: matches4_vm[0].evaluationHints
+        });
+    }
+
+    if (matches4_net.length > 0) {
+        candidates4.push({
+            id: matches4_net[0].candidateId,
+            title: matches4_net[0].title,
+            description: matches4_net[0].description,
+            triggerSignal: matches4_net[0].triggerSignal,
+            hypothesisType: matches4_net[0].hypothesisType,
+            affectedLayer: matches4_net[0].affectedLayer,
+            evidenceIds: matches4_net[0].supportingEvidence,
+            supportingEvidence: matches4_net[0].supportingEvidence,
+            contradictingEvidence: matches4_net[0].contradictingEvidence,
+            missingEvidence: matches4_net[0].missingEvidence,
+            matchedSignals: matches4_net[0].matchedSignals,
+            matchedRules: [matches4_net[0].ruleName],
+            matchedConditions: matches4_net[0].matchedConditions,
+            evaluationHints: matches4_net[0].evaluationHints
+        });
+    }
+
+    if (matches4_ex.length > 0) {
+        candidates4.push({
+            id: matches4_ex[0].candidateId,
+            title: matches4_ex[0].title,
+            description: matches4_ex[0].description,
+            triggerSignal: matches4_ex[0].triggerSignal,
+            hypothesisType: matches4_ex[0].hypothesisType,
+            affectedLayer: matches4_ex[0].affectedLayer,
+            evidenceIds: matches4_ex[0].supportingEvidence,
+            supportingEvidence: matches4_ex[0].supportingEvidence,
+            contradictingEvidence: matches4_ex[0].contradictingEvidence,
+            missingEvidence: matches4_ex[0].missingEvidence,
+            matchedSignals: matches4_ex[0].matchedSignals,
+            matchedRules: [matches4_ex[0].ruleName],
+            matchedConditions: matches4_ex[0].matchedConditions,
+            evaluationHints: matches4_ex[0].evaluationHints
+        });
+    }
+
+    const scored4 = scoringEngine.scoreCandidates(candidates4, timeline4);
+    scored4.sort((a, b) => b.rawScore - a.rawScore);
+    console.log('Result for Candidates (sorted descending):');
+    console.dir(scored4, { depth: null });
 }
 
 run().catch(console.error);

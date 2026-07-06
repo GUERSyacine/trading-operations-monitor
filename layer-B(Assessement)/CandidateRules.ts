@@ -306,7 +306,6 @@ export class NetworkRule implements CandidateRule {
             });
             matchedSignals.push('NETWORK:DETECTED');
         } else {
-            missing.push('NETWORK');
             hints.push({
                 id: 'NETWORK_HEALTHY',
                 polarity: 'NEGATIVE',
@@ -324,7 +323,6 @@ export class NetworkRule implements CandidateRule {
             });
             matchedSignals.push('DNS:DETECTED');
         } else {
-            missing.push('DNS');
             hints.push({
                 id: 'DNS_HEALTHY',
                 polarity: 'NEGATIVE',
