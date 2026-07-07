@@ -154,3 +154,18 @@ model User {
 
   @@map("User")
 }
+
+// 7. Incident Outbox Table (Queues outgoing incidents for cloud synchronization)
+model IncidentOutbox {
+  id          Int      @id @default(autoincrement())
+  payload     Json
+  status      String   @default("PENDING") @db.VarChar(50)
+  attempts    Int      @default(0)
+  nextRetryAt DateTime @default(now()) @map("next_retry_at")
+  lastError   String?  @map("last_error")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([status, nextRetryAt])
+  @@map("incident_outbox")
+}
