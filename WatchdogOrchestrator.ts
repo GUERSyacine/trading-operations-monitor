@@ -22,6 +22,9 @@ import { DeveloperConsoleController } from './layer-A(observation)/developer-con
 import { DeveloperConsoleServer } from './layer-A(observation)/developer-console/DeveloperConsoleServer';
 import { OperationsSimulationService } from './layer-A(observation)/developer-console/OperationsSimulationService';
 
+import { DefaultMachineInfoProvider } from './shared/contracts/DefaultMachineInfoProvider';
+import { OutboxIncidentPublisher } from './layer-B(Assessement)/OutboxIncidentPublisher';
+
 export class WatchdogOrchestrator {
     private alertingService: AlertingService;
     private incidentManager: IncidentManager;
@@ -64,7 +67,9 @@ export class WatchdogOrchestrator {
         const devConsoleGateway = new DeveloperConsoleGateway(eventBus);
 
         this.alertingService = new AlertingService(featureFlagService);
-        this.incidentManager = new IncidentManager(this.alertingService);
+        const machineProvider = new DefaultMachineInfoProvider();
+        const outboxPublisher = new OutboxIncidentPublisher(machineProvider);
+        this.incidentManager = new IncidentManager(this.alertingService, outboxPublisher);
         this.infraService = new InfrastructureWatchdogService(this.alertingService, failureService, featureFlagService);
 
         const ftUrl = process.env.FREQTRADE_API_URL || 'http://localhost:8080/api/v1';

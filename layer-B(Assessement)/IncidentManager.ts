@@ -4,6 +4,7 @@ import { AlertingService } from '../layer-D(notification)/alerting/AlertingServi
 import { IncidentSeverity as PrismaSeverity, IncidentTransitionType, IncidentActor, IncidentGroupType } from '@prisma/client';
 import { MVP_CONFIG } from '../mvpConfig';
 import { IncidentClassifier } from './IncidentClassifier';
+import { IncidentPublisher } from '../shared/contracts/types';
 
 /**
  * Incident Manager (Step 12)
@@ -20,8 +21,40 @@ export class IncidentManager {
         symbols: {}
     };
     private globalIncidents = new Map<string, { level: IncidentSeverity; reason: string; since: number }>();
+    private publisher?: IncidentPublisher;
 
-    constructor(private alertingService?: AlertingService) {}
+    constructor(private alertingService?: AlertingService, publisher?: IncidentPublisher) {
+        this.publisher = publisher;
+    }
+
+    /**
+     * Unified event publisher to record transition event in the Outbox.
+     * Guaranteed to never throw errors to avoid disrupting core watchdog processing.
+     */
+    private publishEvent(
+        event: 'CREATED' | 'STATE_CHANGED' | 'RESOLVED',
+        id: number,
+        level: string,
+        source: string,
+        reason: string,
+        detectedAt: number,
+        resolvedAt?: number | null
+    ): void {
+        if (!this.publisher) return;
+
+        // Best-effort non-blocking dispatch
+        this.publisher.publishTransition(event, {
+            incidentId: String(id),
+            source,
+            level,
+            reason,
+            detectedAt,
+            resolvedAt: resolvedAt ? Number(resolvedAt) : null,
+            rootCauseAnalysis: null
+        }).catch((err) => {
+            console.error(`[IncidentManager] Failed to publish outbox transition [${event}]:`, err?.message || err);
+        });
+    }
 
     /**
      * Helper to build a composite incident key to avoid key collisions on symbol-level.
@@ -249,6 +282,9 @@ export class IncidentManager {
             const actor = this.determineActor(symbol, source);
             const { groupType, correlationKey } = this.getGroupTypeAndCorrelationKey(symbol, source);
 
+            let incidentId: number | undefined;
+            let isUpdate = false;
+
             await prisma.$transaction(async (tx) => {
                 const existing = await tx.incident.findFirst({
                     where: {
@@ -257,8 +293,6 @@ export class IncidentManager {
                         resolvedAt: null
                     }
                 });
-
-                let incidentId: number;
 
                 if (existing) {
                     await tx.incident.update({
@@ -271,6 +305,7 @@ export class IncidentManager {
                     });
                     await this.logTransition(tx, existing.id, 'LEVEL_CHANGED', prismaLevel, reason, now, actor);
                     incidentId = existing.id;
+                    isUpdate = true;
                 } else {
                     const timeThreshold = BigInt(detectedAt - MVP_CONFIG.INCIDENTS.GROUPING_WINDOW_MS);
                     let group = null;
@@ -347,6 +382,7 @@ export class IncidentManager {
                     });
                     await this.logTransition(tx, newIncident.id, 'DETECTED', prismaLevel, reason, now, actor);
                     incidentId = newIncident.id;
+                    isUpdate = false;
                 }
 
                 const incidentRecord = await tx.incident.findUnique({
@@ -389,6 +425,12 @@ export class IncidentManager {
                     });
                 }
             });
+
+            // Publish transition event to Outbox after successful transaction commit
+            if (incidentId !== undefined) {
+                const eventType = isUpdate ? 'STATE_CHANGED' : 'CREATED';
+                this.publishEvent(eventType, incidentId, level, source, reason, detectedAt);
+            }
         } catch (error: any) {
             console.error('[IncidentManager] Failed to persist incident in Prisma/Neon:', error?.message || error);
         }
@@ -403,9 +445,12 @@ export class IncidentManager {
         now: number
     ) {
         try {
+            let resolvedIncidents: any[] = [];
+
             await prisma.$transaction(async (tx) => {
                 const active = await tx.incident.findMany({ where: whereClause });
                 if (active.length > 0) {
+                    resolvedIncidents = active;
                     const ids = active.map(i => i.id);
                     await tx.incident.updateMany({
                         where: { id: { in: ids } },
@@ -473,6 +518,13 @@ export class IncidentManager {
                     }
                 }
             });
+
+            // Publish resolved transition to Outbox after successful transaction commit
+            if (this.publisher && resolvedIncidents.length > 0) {
+                for (const incident of resolvedIncidents) {
+                    this.publishEvent('RESOLVED', incident.id, incident.level, incident.source, reason, Number(incident.detectedAt), now);
+                }
+            }
         } catch (error: any) {
             console.error('[IncidentManager] Failed to resolve and log incidents:', error?.message || error);
         }

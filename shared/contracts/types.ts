@@ -27,11 +27,18 @@ export interface IncidentPayload {
     } | null;
 }
 
+export interface MachineInfoProvider {
+    /**
+     * Retrieves static and dynamic details about the local running agent machine.
+     */
+    getMachineInfo(): MachineInfo;
+}
+
 export interface IncidentPublisher {
     /**
-     * Enqueues an incident payload to the local Outbox.
+     * Enqueues an incident lifecycle state transition to the local Outbox.
      */
-    enqueueIncident(incident: IncidentPayload, machine: MachineInfo): Promise<void>;
+    publishTransition(event: 'CREATED' | 'STATE_CHANGED' | 'RESOLVED', incident: IncidentPayload): Promise<void>;
 }
 
 export interface LicenseProvider {
