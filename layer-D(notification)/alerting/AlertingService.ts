@@ -16,7 +16,7 @@ export class AlertingService {
         flagsOrOptions?: FeatureFlagService | { flags?: FeatureFlagService; transport?: NotificationTransport },
         transport?: NotificationTransport
     ) {
-        if (flagsOrOptions && ('flags' in flagsOrOptions || 'transport' in flagsOrOptions)) {
+        if (flagsOrOptions && !(flagsOrOptions instanceof FeatureFlagService) && ('flags' in flagsOrOptions || 'transport' in flagsOrOptions)) {
             const opts = flagsOrOptions as { flags?: FeatureFlagService; transport?: NotificationTransport };
             this.flags = opts.flags;
             this.transport = opts.transport ?? new TelegramTransport();
