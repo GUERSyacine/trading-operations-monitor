@@ -1,23 +1,30 @@
 import { prisma } from '../../prisma';
 import { FeatureFlagService } from '../../layer-A(observation)/developer-console/FeatureFlagService';
 import { FeatureFlag } from '../../layer-A(observation)/developer-console/types';
-
-export type AlertLevel = 'INFO' | 'WARNING' | 'CRITICAL';
-
-interface AlertPayload {
-    level: AlertLevel;
-    title: string;
-    message: string;
-    entityId?: string;
-    dedupKey?: string; // If provided, used for de-duplication
-}
+import { AlertPayload, AlertLevel, NotificationTransport } from './types';
+import { TelegramTransport } from './TelegramTransport';
 
 export class AlertingService {
-    constructor(private flags?: FeatureFlagService) {}
+    private flags?: FeatureFlagService;
+    private transport: NotificationTransport;
 
     // De-duplication Cache (In-Memory for now, or could use DB)
     private recentAlerts: Map<string, number> = new Map();
     private readonly COOLDOWN_MS = 15 * 60 * 1000; // 15 Minutes
+
+    constructor(
+        flagsOrOptions?: FeatureFlagService | { flags?: FeatureFlagService; transport?: NotificationTransport },
+        transport?: NotificationTransport
+    ) {
+        if (flagsOrOptions && ('flags' in flagsOrOptions || 'transport' in flagsOrOptions)) {
+            const opts = flagsOrOptions as { flags?: FeatureFlagService; transport?: NotificationTransport };
+            this.flags = opts.flags;
+            this.transport = opts.transport ?? new TelegramTransport();
+        } else {
+            this.flags = flagsOrOptions as FeatureFlagService | undefined;
+            this.transport = transport ?? new TelegramTransport();
+        }
+    }
 
     /**
      * Dispatch an Alert
@@ -51,7 +58,11 @@ export class AlertingService {
 
         // 3. Channel Dispatch (Push/Telegram/Slack)
         if (alert.level === 'CRITICAL' || alert.level === 'WARNING') {
-            await this.dispatchTelegram(alert);
+            if (this.flags && !this.flags.isFeatureEnabled(FeatureFlag.ALERTING)) {
+                console.log(`[Alerting] Telegram notification suppressed by ALERTING feature flag: ${alert.title}`);
+                return;
+            }
+            await this.transport.send(alert);
         }
     }
 
@@ -74,52 +85,6 @@ export class AlertingService {
             }
         } catch (error: any) {
             console.error('[Alerting] Failed to run system health check queries:', error?.message || error);
-        }
-    }
-
-    private async dispatchTelegram(alert: AlertPayload): Promise<void> {
-        if (this.flags && !this.flags.isFeatureEnabled(FeatureFlag.ALERTING)) {
-            console.log(`[Alerting] Telegram notification suppressed by ALERTING feature flag: ${alert.title}`);
-            return;
-        }
-
-        const token = process.env.TELEGRAM_BOT_TOKEN;
-        const chatId = process.env.TELEGRAM_CHAT_ID;
-
-        if (!token || !chatId) {
-            console.warn('[Alerting] Telegram credentials (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID) are missing from environment variables. Suppression fallback.');
-            return;
-        }
-
-        const emojiMap: Record<AlertLevel, string> = {
-            CRITICAL: '🚨',
-            WARNING: '⚠️',
-            INFO: 'ℹ️'
-        };
-
-        const emoji = emojiMap[alert.level] || '🔔';
-        const formattedText = `${emoji} *[${alert.level}] ${alert.title}*\n\n${alert.message}\n\n_System Time: ${new Date().toISOString()}_`;
-
-        try {
-            const url = `https://api.telegram.org/bot${token}/sendMessage`;
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    chat_id: chatId,
-                    text: formattedText,
-                    parse_mode: 'Markdown'
-                })
-            });
-
-            if (!response.ok) {
-                const errorBody = await response.text();
-                console.error(`[Alerting] Telegram API error status ${response.status}:`, errorBody);
-            } else {
-                console.log(`[Alerting] Live Telegram notification successfully dispatched for: ${alert.title}`);
-            }
-        } catch (err: any) {
-            console.error('[Alerting] Failed to execute Telegram API network call:', err?.message || err);
         }
     }
 }
