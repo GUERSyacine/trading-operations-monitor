@@ -87,6 +87,14 @@ export const MVP_CONFIG = {
                 SCR_EVALUATION_HINT: 0.95
             }
         }
+    },
+    CLOUD_SYNC: {
+        GATEWAY_URL: process.env.CLOUD_GATEWAY_URL || 'http://127.0.0.1:3001/api/v1/cloud/incidents',
+        SYNC_INTERVAL_MS: envNumber(process.env.CLOUD_SYNC_INTERVAL_MS, 5_000),
+        MAX_ATTEMPTS: envNumber(process.env.CLOUD_SYNC_MAX_ATTEMPTS, 5),
+        BACKOFF_BASE_MS: envNumber(process.env.CLOUD_SYNC_BACKOFF_BASE_MS, 1_000),
+        BATCH_SIZE: envNumber(process.env.CLOUD_SYNC_BATCH_SIZE, 50),
+        TIMEOUT_MS: envNumber(process.env.CLOUD_SYNC_TIMEOUT_MS, 5_000)
     }
 };
 

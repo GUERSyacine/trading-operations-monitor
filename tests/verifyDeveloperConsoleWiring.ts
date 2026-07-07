@@ -46,7 +46,7 @@ async function testInterceptionWraps() {
     const bus = EventBus.getInstance();
     const failures = new FailureInjectionService(bus);
     const flags = new FeatureFlagService(bus);
-    const alerts = new AlertingService(flags);
+    const alerts = new AlertingService({ flags });
     const incidentManager = new IncidentManager(alerts);
 
     const infra = new InfrastructureWatchdogService(alerts, failures, flags);
@@ -104,7 +104,7 @@ async function testFlagSuppressions() {
     console.log(' - Testing Outbound Alert Notification Suppressions...');
     const bus = EventBus.getInstance();
     const flags = new FeatureFlagService(bus);
-    const alerts = new AlertingService(flags);
+    const alerts = new AlertingService({ flags });
 
     // Capture console.log to inspect suppression message
     const logs: string[] = [];

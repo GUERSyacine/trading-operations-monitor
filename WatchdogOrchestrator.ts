@@ -24,10 +24,12 @@ import { OperationsSimulationService } from './layer-A(observation)/developer-co
 
 import { DefaultMachineInfoProvider } from './shared/contracts/DefaultMachineInfoProvider';
 import { OutboxIncidentPublisher } from './layer-B(Assessement)/OutboxIncidentPublisher';
+import { OutboxSyncWorker } from './layer-B(Assessement)/OutboxSyncWorker';
 
 export class WatchdogOrchestrator {
     private alertingService: AlertingService;
     private incidentManager: IncidentManager;
+    private syncWorker: OutboxSyncWorker;
     private infraService: InfrastructureWatchdogService;
     private opsService: OperationsWatchdogService;
     private runtimeService: RuntimeMonitorService;
@@ -66,7 +68,7 @@ export class WatchdogOrchestrator {
         const featureFlagService = new FeatureFlagService(eventBus);
         const devConsoleGateway = new DeveloperConsoleGateway(eventBus);
 
-        this.alertingService = new AlertingService(featureFlagService);
+        this.alertingService = new AlertingService({ flags: featureFlagService });
         const machineProvider = new DefaultMachineInfoProvider();
         const outboxPublisher = new OutboxIncidentPublisher(machineProvider);
         this.incidentManager = new IncidentManager(this.alertingService, outboxPublisher);
@@ -125,6 +127,7 @@ export class WatchdogOrchestrator {
         );
 
         this.anomalyDetector = new LifecycleAnomalyDetector(this.incidentManager);
+        this.syncWorker = new OutboxSyncWorker();
     }
 
 
@@ -175,6 +178,9 @@ export class WatchdogOrchestrator {
         console.log('[Orchestrator] Starting Developer Control Console...');
         this.devConsoleServer.start();
 
+        console.log('[Orchestrator] Starting Outbox Sync Worker...');
+        this.syncWorker.start();
+
         console.log('[Orchestrator] Launching scheduler intervals...');
 
         // 1. Infrastructure checks (Default: 60s)
@@ -213,6 +219,9 @@ export class WatchdogOrchestrator {
 
         console.log('[Orchestrator] Stopping Developer Control Console...');
         await this.devConsoleServer.stop();
+
+        console.log('[Orchestrator] Stopping Outbox Sync Worker...');
+        this.syncWorker.stop();
         
         console.log('[Orchestrator] Stopping Freqtrade Ingestion Adapter...');
         this.freqtradeAdapter.stop();

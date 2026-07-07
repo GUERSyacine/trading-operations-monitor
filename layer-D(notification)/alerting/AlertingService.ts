@@ -12,18 +12,9 @@ export class AlertingService {
     private recentAlerts: Map<string, number> = new Map();
     private readonly COOLDOWN_MS = 15 * 60 * 1000; // 15 Minutes
 
-    constructor(
-        flagsOrOptions?: FeatureFlagService | { flags?: FeatureFlagService; transport?: NotificationTransport },
-        transport?: NotificationTransport
-    ) {
-        if (flagsOrOptions && !(flagsOrOptions instanceof FeatureFlagService) && ('flags' in flagsOrOptions || 'transport' in flagsOrOptions)) {
-            const opts = flagsOrOptions as { flags?: FeatureFlagService; transport?: NotificationTransport };
-            this.flags = opts.flags;
-            this.transport = opts.transport ?? new TelegramTransport();
-        } else {
-            this.flags = flagsOrOptions as FeatureFlagService | undefined;
-            this.transport = transport ?? new TelegramTransport();
-        }
+    constructor(options: { flags?: FeatureFlagService; transport?: NotificationTransport } = {}) {
+        this.flags = options.flags;
+        this.transport = options.transport ?? new TelegramTransport();
     }
 
     /**

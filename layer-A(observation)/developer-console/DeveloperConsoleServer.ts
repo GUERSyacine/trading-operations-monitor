@@ -251,6 +251,18 @@ export class DeveloperConsoleServer {
                 }
                 return;
             }
+
+            // Route 4.8: Mock Cloud Gateway Endpoint
+            if (url.startsWith('/api/v1/cloud/incidents')) {
+                if (url.includes('fail=true') || req.headers['x-mock-fail'] === 'true') {
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Mock cloud gateway internal failure' }));
+                    return;
+                }
+                res.writeHead(201, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ received: true }));
+                return;
+            }
         }
 
         if (method === 'GET') {
