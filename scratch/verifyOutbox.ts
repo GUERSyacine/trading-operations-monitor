@@ -1,5 +1,5 @@
 import { IncidentManager } from '../layer-B(Assessement)/IncidentManager';
-import { OutboxIncidentPublisher } from '../layer-B(Assessement)/OutboxIncidentPublisher';
+import { OutboxPublisher } from '../layer-B(Assessement)/OutboxPublisher';
 import { DefaultMachineInfoProvider } from '../shared/contracts/DefaultMachineInfoProvider';
 import { prisma } from '../prisma';
 
@@ -14,7 +14,7 @@ async function main() {
 
     // 2. Instantiate dependencies
     const machineProvider = new DefaultMachineInfoProvider();
-    const outboxPublisher = new OutboxIncidentPublisher(machineProvider);
+    const outboxPublisher = new OutboxPublisher(machineProvider);
     const incidentManager = new IncidentManager(undefined, outboxPublisher);
 
     // 3. Trigger CREATED transition

@@ -23,7 +23,7 @@ import { DeveloperConsoleServer } from './layer-A(observation)/developer-console
 import { OperationsSimulationService } from './layer-A(observation)/developer-console/OperationsSimulationService';
 
 import { DefaultMachineInfoProvider } from './shared/contracts/DefaultMachineInfoProvider';
-import { OutboxIncidentPublisher } from './layer-B(Assessement)/OutboxIncidentPublisher';
+import { OutboxPublisher } from './layer-B(Assessement)/OutboxPublisher';
 import { OutboxSyncWorker } from './layer-B(Assessement)/OutboxSyncWorker';
 
 export class WatchdogOrchestrator {
@@ -68,9 +68,9 @@ export class WatchdogOrchestrator {
         const featureFlagService = new FeatureFlagService(eventBus);
         const devConsoleGateway = new DeveloperConsoleGateway(eventBus);
 
-        this.alertingService = new AlertingService({ flags: featureFlagService });
         const machineProvider = new DefaultMachineInfoProvider();
-        const outboxPublisher = new OutboxIncidentPublisher(machineProvider);
+        const outboxPublisher = new OutboxPublisher(machineProvider);
+        this.alertingService = new AlertingService({ flags: featureFlagService, outboxPublisher });
         this.incidentManager = new IncidentManager(this.alertingService, outboxPublisher);
         this.infraService = new InfrastructureWatchdogService(this.alertingService, failureService, featureFlagService);
 
@@ -150,9 +150,9 @@ export class WatchdogOrchestrator {
         }
 
         if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) {
-            console.warn('[Orchestrator] WARNING: Telegram configuration env variables are missing. Notifications will fallback to local/DB logs only.');
+            console.warn('[Orchestrator] WARNING: Telegram credentials (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID) are missing. Central Mock Cloud Gateway will not forward notifications.');
         } else {
-            console.log('[Orchestrator] Telegram credentials verified.');
+            console.log('[Orchestrator] Central Mock Cloud Gateway Telegram credentials verified.');
         }
     }
 

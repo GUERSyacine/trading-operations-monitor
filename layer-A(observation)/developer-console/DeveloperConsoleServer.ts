@@ -259,6 +259,24 @@ export class DeveloperConsoleServer {
                     res.end(JSON.stringify({ error: 'Mock cloud gateway internal failure' }));
                     return;
                 }
+
+                const type = payload.type;
+                if (type !== 'INCIDENT' && type !== 'ALERT') {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: `Bad Request: Unsupported payload type "${type}"` }));
+                    return;
+                }
+
+                if (type === 'ALERT') {
+                    if (payload.alert) {
+                        this.dispatchTelegramAlert(payload.alert).catch(err => {
+                            console.error('[MockCloudGateway] Failed to dispatch Telegram alert:', err);
+                        });
+                    }
+                } else if (type === 'INCIDENT') {
+                    console.log(`[MockCloudGateway] Received INCIDENT transition [${payload.event}] for incident ${payload.incident?.incidentId}`);
+                }
+
                 res.writeHead(201, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ received: true }));
                 return;
@@ -345,5 +363,46 @@ export class DeveloperConsoleServer {
             req.on('data', chunk => { body += chunk.toString(); });
             req.on('end', () => resolve(body));
         });
+    }
+
+    private async dispatchTelegramAlert(alert: any): Promise<void> {
+        const token = process.env.TELEGRAM_BOT_TOKEN;
+        const chatId = process.env.TELEGRAM_CHAT_ID;
+
+        if (!token || !chatId) {
+            console.warn('[MockCloudGateway] Telegram credentials are missing on the central mock server. Suppressing message forwarding.');
+            return;
+        }
+
+        const emojiMap: Record<string, string> = {
+            CRITICAL: '🚨',
+            WARNING: '⚠️',
+            INFO: 'ℹ️'
+        };
+
+        const emoji = emojiMap[alert.level] || '🔔';
+        const formattedText = `☁️ *[Cloud Dispatch]* ${emoji} *[${alert.level}] ${alert.title}*\n\n${alert.message}\n\n_System Time: ${new Date().toISOString()}_`;
+
+        try {
+            const url = `https://api.telegram.org/bot${token}/sendMessage`;
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    chat_id: chatId,
+                    text: formattedText,
+                    parse_mode: 'Markdown'
+                })
+            });
+
+            if (!response.ok) {
+                const errorBody = await response.text();
+                console.error(`[MockCloudGateway] Telegram dispatch error: ${response.status}`, errorBody);
+            } else {
+                console.log(`[MockCloudGateway] Telegram alert successfully dispatched centrally for: ${alert.title}`);
+            }
+        } catch (err: any) {
+            console.error('[MockCloudGateway] Telegram network call failed:', err?.message || err);
+        }
     }
 }

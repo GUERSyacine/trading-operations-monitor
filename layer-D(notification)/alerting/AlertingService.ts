@@ -2,7 +2,10 @@ import { prisma } from '../../prisma';
 import { FeatureFlagService } from '../../layer-A(observation)/developer-console/FeatureFlagService';
 import { FeatureFlag } from '../../layer-A(observation)/developer-console/types';
 import { AlertPayload, AlertLevel, NotificationTransport } from './types';
-import { TelegramTransport } from './TelegramTransport';
+import { CloudTransport } from './CloudTransport';
+import { OutboxPublisher } from '../../layer-B(Assessement)/OutboxPublisher';
+import { DefaultMachineInfoProvider } from '../../shared/contracts/DefaultMachineInfoProvider';
+import { OutboxPublisherContract } from '../../shared/contracts/types';
 
 export class AlertingService {
     private flags?: FeatureFlagService;
@@ -12,9 +15,15 @@ export class AlertingService {
     private recentAlerts: Map<string, number> = new Map();
     private readonly COOLDOWN_MS = 15 * 60 * 1000; // 15 Minutes
 
-    constructor(options: { flags?: FeatureFlagService; transport?: NotificationTransport } = {}) {
+    constructor(options: { 
+        flags?: FeatureFlagService; 
+        transport?: NotificationTransport;
+        outboxPublisher?: OutboxPublisherContract;
+    } = {}) {
         this.flags = options.flags;
-        this.transport = options.transport ?? new TelegramTransport();
+        this.transport = options.transport ?? new CloudTransport(
+            options.outboxPublisher ?? new OutboxPublisher(new DefaultMachineInfoProvider())
+        );
     }
 
     /**

@@ -54,3 +54,17 @@ export interface ConfigProvider {
      */
     fetchRemoteConfig(): Promise<Record<string, any>>;
 }
+
+export interface OutboxAlertPayload {
+    level: string;
+    title: string;
+    message: string;
+    entityId?: string;
+    dedupKey?: string;
+}
+
+export interface OutboxPublisherContract extends IncidentPublisher {
+    publishTransition(event: 'CREATED' | 'STATE_CHANGED' | 'RESOLVED', incident: IncidentPayload): Promise<void>;
+    publishAlert(alert: OutboxAlertPayload): Promise<void>;
+}
+
