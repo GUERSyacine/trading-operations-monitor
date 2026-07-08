@@ -269,6 +269,7 @@ export class DeveloperConsoleServer {
 
                 if (type === 'ALERT') {
                     if (payload.alert) {
+                        console.log(`[MockCloudGateway] Received ALERT [${payload.alert.level}]: "${payload.alert.title}"`);
                         this.dispatchTelegramAlert(payload.alert).catch(err => {
                             console.error('[MockCloudGateway] Failed to dispatch Telegram alert:', err);
                         });
