@@ -263,6 +263,27 @@ export class DeveloperConsoleServer {
                 res.end(JSON.stringify({ received: true }));
                 return;
             }
+
+            // Route 4.9: Retry Failed Outbox Entries
+            if (url === '/api/v1/dev/outbox/retry-failed') {
+                try {
+                    const ids = payload.ids;
+                    if (ids !== undefined && (!Array.isArray(ids) || !ids.every(id => typeof id === 'number'))) {
+                        this.sendJson(res, 400, { success: false, message: 'Field "ids" must be an array of numbers.' });
+                        return;
+                    }
+
+                    const count = await this.controller.retryFailedOutbox(ids);
+                    this.sendJson(res, 200, {
+                        success: true,
+                        retried: count,
+                        status: 'QUEUED'
+                    });
+                } catch (err: any) {
+                    this.sendJson(res, 403, { success: false, message: err.message });
+                }
+                return;
+            }
         }
 
         if (method === 'GET') {

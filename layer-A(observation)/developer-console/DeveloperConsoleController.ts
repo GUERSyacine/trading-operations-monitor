@@ -124,6 +124,26 @@ export class DeveloperConsoleController {
         );
     }
 
+    public async retryFailedOutbox(ids?: number[]): Promise<number> {
+        this.assertWriteAllowed();
+        
+        const filter: any = { status: 'FAILED' };
+        if (ids && ids.length > 0) {
+            filter.id = { in: ids };
+        }
+
+        const result = await prisma.incidentOutbox.updateMany({
+            where: filter,
+            data: {
+                status: 'PENDING',
+                attempts: 0,
+                nextRetryAt: new Date(),
+                lastError: null
+            }
+        });
+        return result.count;
+    }
+
     public getReadOnlyStatus(): boolean {
         return process.env.DEV_CONSOLE_READ_ONLY === 'true';
     }

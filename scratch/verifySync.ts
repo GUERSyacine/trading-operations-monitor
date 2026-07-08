@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { DeveloperConsoleServer } from '../layer-A(observation)/developer-console/DeveloperConsoleServer';
 import { DeveloperConsoleController } from '../layer-A(observation)/developer-console/DeveloperConsoleController';
 import { DeveloperConsoleGateway } from '../layer-A(observation)/developer-console/DeveloperConsoleGateway';
@@ -206,6 +207,85 @@ async function main() {
             throw new Error(`Test 5 Failed: Expected 0 pending and ${stressCount} sent. Got ${afterPendingCount} and ${afterSentCount}`);
         }
         console.log('✅ TEST 5 PASSED: Stress Test and Batching Verified.\n');
+
+        // ==========================================
+        // TEST 6: Manual Retry of Failed Records
+        // ==========================================
+        console.log('--- TEST 6: Manual Retry of Failed Records ---');
+        await prisma.incidentOutbox.deleteMany({});
+
+        // 1. Create a permanently FAILED outbox record and another PENDING one
+        const failedRec = await prisma.incidentOutbox.create({
+            data: {
+                payload: { test: 'failed-rec' },
+                status: 'FAILED',
+                attempts: 5,
+                nextRetryAt: new Date(Date.now() - 1000),
+                lastError: 'HTTP 500: Internal Server Error'
+            }
+        });
+        const pendingRec = await prisma.incidentOutbox.create({
+            data: {
+                payload: { test: 'pending-rec' },
+                status: 'PENDING',
+                attempts: 2,
+                nextRetryAt: new Date(Date.now() - 1000)
+            }
+        });
+
+        // 2. Call the manual retry API endpoint for all failed records
+        const retryRes = await fetch('http://127.0.0.1:3005/api/v1/dev/outbox/retry-failed', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        if (!retryRes.ok) throw new Error(`Retry API failed: ${retryRes.status}`);
+        const retryJson = await retryRes.json() as any;
+        console.log('Retry API Response:', JSON.stringify(retryJson));
+        if (retryJson.retried !== 1 || retryJson.status !== 'QUEUED') {
+            throw new Error(`Test 6 Failed: Expected retried=1 and status=QUEUED, got ${JSON.stringify(retryJson)}`);
+        }
+
+        // 3. Verify database state
+        const checkFailed = await prisma.incidentOutbox.findUnique({ where: { id: failedRec.id } });
+        if (!checkFailed || checkFailed.status !== 'PENDING' || checkFailed.attempts !== 0 || checkFailed.lastError !== null) {
+            throw new Error(`Test 6 Failed: Failed record not reset correctly: ${JSON.stringify(checkFailed)}`);
+        }
+        const checkPending = await prisma.incidentOutbox.findUnique({ where: { id: pendingRec.id } });
+        if (!checkPending || checkPending.status !== 'PENDING' || checkPending.attempts !== 2) {
+            throw new Error(`Test 6 Failed: Unrelated pending record was modified: ${JSON.stringify(checkPending)}`);
+        }
+
+        // 4. Test selective ID retry
+        // Create two failed records
+        const failed1 = await prisma.incidentOutbox.create({
+            data: { payload: { test: 'f1' }, status: 'FAILED', attempts: 5 }
+        });
+        const failed2 = await prisma.incidentOutbox.create({
+            data: { payload: { test: 'f2' }, status: 'FAILED', attempts: 5 }
+        });
+
+        // Call selective retry for failed1 only
+        const selRes = await fetch('http://127.0.0.1:3005/api/v1/dev/outbox/retry-failed', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: [failed1.id] })
+        });
+        if (!selRes.ok) throw new Error(`Selective Retry API failed: ${selRes.status}`);
+        const selJson = await selRes.json() as any;
+        if (selJson.retried !== 1) {
+            throw new Error(`Test 6 Failed: Expected 1 retried, got ${selJson.retried}`);
+        }
+
+        const checkF1 = await prisma.incidentOutbox.findUnique({ where: { id: failed1.id } });
+        if (!checkF1 || checkF1.status !== 'PENDING') {
+            throw new Error('Test 6 Failed: failed1 did not reset to PENDING');
+        }
+        const checkF2 = await prisma.incidentOutbox.findUnique({ where: { id: failed2.id } });
+        if (!checkF2 || checkF2.status !== 'FAILED') {
+            throw new Error('Test 6 Failed: failed2 should remain FAILED');
+        }
+
+        console.log('✅ TEST 6 PASSED: Manual Outbox Retry & Selective Requeue Verified.\n');
 
         console.log('🎉 ALL STEP 5 INTEGRATION VERIFICATION TESTS PASSED SUCCESSFULLY!');
 
