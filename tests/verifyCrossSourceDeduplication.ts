@@ -4,7 +4,7 @@ dotenv.config();
 
 import { FreqtradeAdapter } from '../agent/adapters/freqtrade/FreqtradeAdapter';
 import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
-import { LifecycleEvent } from '../layer-A(observation)/types';
+import { LifecycleEvent } from '../agent/detectors/types';
 import { prisma } from '../prisma';
 import assert from 'assert';
 

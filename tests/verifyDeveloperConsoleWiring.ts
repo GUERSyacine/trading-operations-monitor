@@ -14,12 +14,12 @@ import { FailureInjectionService } from '../layer-A(observation)/developer-conso
 import { FeatureFlagService } from '../layer-A(observation)/developer-console/FeatureFlagService';
 import { AlertingService } from '../layer-D(notification)/alerting/AlertingService';
 import { IncidentManager } from '../layer-B(Assessement)/IncidentManager';
-import { InfrastructureWatchdogService } from '../layer-A(observation)/layer1(infrastructure_monitoring)/InfrastructureWatchdogService';
-import { OperationsWatchdogService } from '../layer-A(observation)/layer2(trading_operations_monitoring)/OperationsWatchdogService';
-import { FreqtradeWebSocketAdapter } from '../layer-A(observation)/layer1(infrastructure_monitoring)/FreqtradeWebSocketAdapter';
+import { InfrastructureWatchdogService } from '../agent/detectors/infrastructure/InfrastructureWatchdogService';
+import { OperationsWatchdogService } from '../agent/detectors/operations/OperationsWatchdogService';
+import { FreqtradeWebSocketAdapter } from '../agent/detectors/infrastructure/FreqtradeWebSocketAdapter';
 import { FreqtradeAdapter } from '../agent/adapters/freqtrade/FreqtradeAdapter';
 import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
-import { HealthCheckResult } from '../layer-A(observation)/types';
+import { HealthCheckResult } from '../agent/detectors/types';
 import { prisma } from '../prisma';
 
 async function testInterceptionWraps() {

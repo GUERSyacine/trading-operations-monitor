@@ -5,7 +5,7 @@ import { OperationsSimulationService } from './OperationsSimulationService';
 import { FailureType, FailureScope, FeatureFlag, SystemCommand, OperationScenario, EventCategory, WatchdogEventType } from './types';
 import { prisma } from '../../prisma';
 import { IncidentManager } from '../../layer-B(Assessement)/IncidentManager';
-import { OperationsWatchdogService } from '../layer2(trading_operations_monitoring)/OperationsWatchdogService';
+import { OperationsWatchdogService } from '../../agent/detectors/operations/OperationsWatchdogService';
 import { EventBus } from './EventBus';
 
 export class DeveloperConsoleController {

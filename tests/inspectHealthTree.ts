@@ -1,5 +1,5 @@
-import { InfrastructureWatchdogService } from '../layer-A(observation)/layer1(infrastructure_monitoring)/InfrastructureWatchdogService';
-import { OperationsWatchdogService } from '../layer-A(observation)/layer2(trading_operations_monitoring)/OperationsWatchdogService';
+import { InfrastructureWatchdogService } from '../agent/detectors/infrastructure/InfrastructureWatchdogService';
+import { OperationsWatchdogService } from '../agent/detectors/operations/OperationsWatchdogService';
 import { IncidentManager } from '../layer-B(Assessement)/IncidentManager';
 import { HealthTreeService } from '../layer-B(Assessement)/HealthTreeService';
 import { AlertingService } from '../layer-D(notification)/alerting/AlertingService';

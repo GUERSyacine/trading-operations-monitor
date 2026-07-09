@@ -2,7 +2,7 @@ import * as dotenv from 'dotenv';
 dotenv.config({ path: '../.env' });
 dotenv.config();
 
-import { FreqtradeWebSocketAdapter } from '../layer-A(observation)/layer1(infrastructure_monitoring)/FreqtradeWebSocketAdapter';
+import { FreqtradeWebSocketAdapter } from '../agent/detectors/infrastructure/FreqtradeWebSocketAdapter';
 import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
 import { prisma } from '../prisma';
 import assert from 'assert';

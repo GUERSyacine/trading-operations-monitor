@@ -1,13 +1,13 @@
 import { prisma } from './prisma';
 import { AlertingService } from './layer-D(notification)/alerting/AlertingService';
 import { IncidentManager } from './layer-B(Assessement)/IncidentManager';
-import { InfrastructureWatchdogService } from './layer-A(observation)/layer1(infrastructure_monitoring)/InfrastructureWatchdogService';
-import { OperationsWatchdogService } from './layer-A(observation)/layer2(trading_operations_monitoring)/OperationsWatchdogService';
-import { RuntimeMonitorService } from './runtime/RuntimeMonitorService';
+import { InfrastructureWatchdogService } from './agent/detectors/infrastructure/InfrastructureWatchdogService';
+import { OperationsWatchdogService } from './agent/detectors/operations/OperationsWatchdogService';
+import { RuntimeMonitorService } from './agent/detectors/operations/RuntimeMonitorService';
 import { EventPersistenceService } from './agent/adapters/base/EventPersistenceService';
 import { FreqtradeAdapter } from './agent/adapters/freqtrade/FreqtradeAdapter';
-import { FreqtradeWebhookReceiver } from './layer-A(observation)/layer1(infrastructure_monitoring)/FreqtradeWebhookReceiver';
-import { FreqtradeWebSocketAdapter } from './layer-A(observation)/layer1(infrastructure_monitoring)/FreqtradeWebSocketAdapter';
+import { FreqtradeWebhookReceiver } from './agent/detectors/infrastructure/FreqtradeWebhookReceiver';
+import { FreqtradeWebSocketAdapter } from './agent/detectors/infrastructure/FreqtradeWebSocketAdapter';
 import { LifecycleAnomalyDetector } from './layer-B(Assessement)/LifecycleAnomalyDetector';
 import { MVP_CONFIG } from './mvpConfig';
 

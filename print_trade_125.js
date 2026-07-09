@@ -1,6 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
-const { SOURCE_CAPABILITIES } = require('./dist/layer-A(observation)/types');
+const { SOURCE_CAPABILITIES } = require('./dist/agent/detectors/types');
 
 const canonicalOrder = [
     'SIGNAL',

@@ -1,4 +1,4 @@
-import { FreqtradeWebSocketAdapter } from '../layer-A(observation)/layer1(infrastructure_monitoring)/FreqtradeWebSocketAdapter';
+import { FreqtradeWebSocketAdapter } from '../agent/detectors/infrastructure/FreqtradeWebSocketAdapter';
 import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
 
 async function runTest() {

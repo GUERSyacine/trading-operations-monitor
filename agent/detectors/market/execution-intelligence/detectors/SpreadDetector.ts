@@ -1,5 +1,5 @@
 import { SymbolIncidentState } from '../types';
-import { MVP_CONFIG } from '../../../../mvpConfig';
+import { MVP_CONFIG } from '../../../../../mvpConfig';
 
 /**
  * Playbook 2: Liquidity Vacuum / Spread Explosion

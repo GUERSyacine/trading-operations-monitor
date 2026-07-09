@@ -1,4 +1,4 @@
-import { IncidentControllerState, IncidentSeverity, SymbolIncidentState } from '../layer-A(observation)/layer3(market-monitoring)/execution-intelligence/types';
+import { IncidentControllerState, IncidentSeverity, SymbolIncidentState } from '../agent/detectors/market/execution-intelligence/types';
 import { prisma } from '../prisma';
 import { AlertingService } from '../layer-D(notification)/alerting/AlertingService';
 import { IncidentSeverity as PrismaSeverity, IncidentTransitionType, IncidentActor, IncidentGroupType } from '@prisma/client';

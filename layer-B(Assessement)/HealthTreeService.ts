@@ -1,7 +1,7 @@
 import { IncidentManager } from './IncidentManager';
-import { HealthNode, HealthStatus, HealthCheckResult } from '../layer-A(observation)/types';
-import { InfrastructureWatchdogService } from '../layer-A(observation)/layer1(infrastructure_monitoring)/InfrastructureWatchdogService';
-import { OperationsWatchdogService } from '../layer-A(observation)/layer2(trading_operations_monitoring)/OperationsWatchdogService';
+import { HealthNode, HealthStatus, HealthCheckResult } from '../agent/detectors/types';
+import { InfrastructureWatchdogService } from '../agent/detectors/infrastructure/InfrastructureWatchdogService';
+import { OperationsWatchdogService } from '../agent/detectors/operations/OperationsWatchdogService';
 import { MVP_CONFIG } from '../mvpConfig';
 
 export class HealthTreeService {

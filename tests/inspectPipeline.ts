@@ -1,4 +1,4 @@
-import { OperationsWatchdogService } from '../layer-A(observation)/layer2(trading_operations_monitoring)/OperationsWatchdogService';
+import { OperationsWatchdogService } from '../agent/detectors/operations/OperationsWatchdogService';
 import { AlertingService } from '../layer-D(notification)/alerting/AlertingService';
 import { IncidentManager } from '../layer-B(Assessement)/IncidentManager';
 
