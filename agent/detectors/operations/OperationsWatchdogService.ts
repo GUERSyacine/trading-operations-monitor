@@ -6,9 +6,9 @@ import { IncidentManager } from '../../incident/manager/IncidentManager';
 import { TradingAdapter } from '../../adapters/base/TradingAdapter';
 import { VisibilityEvaluator } from '../VisibilityEvaluator';
 import { DecisionAudit } from '@prisma/client';
-import { FailureInjectionService } from '../../../layer-A(observation)/developer-console/FailureInjectionService';
-import { FeatureFlagService } from '../../../layer-A(observation)/developer-console/FeatureFlagService';
-import { FailureType, FeatureFlag } from '../../../layer-A(observation)/developer-console/types';
+import { FailureInjectionService } from '../../../cloud/FailureInjectionService';
+import { FeatureFlagService } from '../../../cloud/FeatureFlagService';
+import { FailureType, FeatureFlag } from '../../../cloud/types';
 
 export interface OrderTimeline {
     orderId: string;

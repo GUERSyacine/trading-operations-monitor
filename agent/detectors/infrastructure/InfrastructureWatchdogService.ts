@@ -7,9 +7,9 @@ import { MVP_CONFIG } from '../../../mvpConfig';
 
 import { HealthCheckResult, HealthNode, HealthStatus } from '../types';
 
-import { FailureInjectionService } from '../../../layer-A(observation)/developer-console/FailureInjectionService';
-import { FeatureFlagService } from '../../../layer-A(observation)/developer-console/FeatureFlagService';
-import { FailureType, FeatureFlag } from '../../../layer-A(observation)/developer-console/types';
+import { FailureInjectionService } from '../../../cloud/FailureInjectionService';
+import { FeatureFlagService } from '../../../cloud/FeatureFlagService';
+import { FailureType, FeatureFlag } from '../../../cloud/types';
 
 export class InfrastructureWatchdogService {
     constructor(

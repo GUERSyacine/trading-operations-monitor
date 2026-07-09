@@ -3,9 +3,9 @@ import { FeatureFlagService, FEATURE_FLAG_METADATA } from './FeatureFlagService'
 import { InfrastructureController } from './InfrastructureController';
 import { OperationsSimulationService } from './OperationsSimulationService';
 import { FailureType, FailureScope, FeatureFlag, SystemCommand, OperationScenario, EventCategory, WatchdogEventType } from './types';
-import { prisma } from '../../prisma';
-import { IncidentManager } from '../../agent/incident/manager/IncidentManager';
-import { OperationsWatchdogService } from '../../agent/detectors/operations/OperationsWatchdogService';
+import { prisma } from '../prisma';
+import { IncidentManager } from '../agent/incident/manager/IncidentManager';
+import { OperationsWatchdogService } from '../agent/detectors/operations/OperationsWatchdogService';
 import { EventBus } from './EventBus';
 
 export class DeveloperConsoleController {

@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { EventBus } from '../layer-A(observation)/developer-console/EventBus';
+import { EventBus } from '../cloud/EventBus';
 import {
     EventCategory,
     WatchdogEventType,
@@ -7,12 +7,12 @@ import {
     FailureType,
     FailureScope,
     FeatureFlag
-} from '../layer-A(observation)/developer-console/types';
-import { CommandRunner } from '../layer-A(observation)/developer-console/CommandRunner';
-import { InfrastructureController } from '../layer-A(observation)/developer-console/InfrastructureController';
-import { FailureInjectionService } from '../layer-A(observation)/developer-console/FailureInjectionService';
-import { FeatureFlagService } from '../layer-A(observation)/developer-console/FeatureFlagService';
-import { DeveloperConsoleGateway } from '../layer-A(observation)/developer-console/DeveloperConsoleGateway';
+} from '../cloud/types';
+import { CommandRunner } from '../cloud/CommandRunner';
+import { InfrastructureController } from '../cloud/InfrastructureController';
+import { FailureInjectionService } from '../cloud/FailureInjectionService';
+import { FeatureFlagService } from '../cloud/FeatureFlagService';
+import { DeveloperConsoleGateway } from '../cloud/DeveloperConsoleGateway';
 
 async function testEventBusAndRingBuffer() {
     console.log(' - Testing EventBus & RingBuffer...');

@@ -4,12 +4,12 @@ dotenv.config();
 
 import * as assert from 'assert';
 import { prisma } from '../prisma';
-import { DeveloperConsoleController } from '../layer-A(observation)/developer-console/DeveloperConsoleController';
-import { EventBus } from '../layer-A(observation)/developer-console/EventBus';
-import { FailureInjectionService } from '../layer-A(observation)/developer-console/FailureInjectionService';
-import { FeatureFlagService } from '../layer-A(observation)/developer-console/FeatureFlagService';
-import { InfrastructureController } from '../layer-A(observation)/developer-console/InfrastructureController';
-import { OperationsSimulationService } from '../layer-A(observation)/developer-console/OperationsSimulationService';
+import { DeveloperConsoleController } from '../cloud/DeveloperConsoleController';
+import { EventBus } from '../cloud/EventBus';
+import { FailureInjectionService } from '../cloud/FailureInjectionService';
+import { FeatureFlagService } from '../cloud/FeatureFlagService';
+import { InfrastructureController } from '../cloud/InfrastructureController';
+import { OperationsSimulationService } from '../cloud/OperationsSimulationService';
 import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
 
 class MockRunner {

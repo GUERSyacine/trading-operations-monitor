@@ -3,7 +3,7 @@ import { EventPersistenceService } from '../base/EventPersistenceService';
 import { TelemetryMapper } from '../../detectors/TelemetryMapper';
 import { LifecycleEventType, SourceCapabilities, LifecycleSource, SOURCE_CAPABILITIES } from '../../detectors/types';
 
-import { FeatureFlagService } from '../../../layer-A(observation)/developer-console/FeatureFlagService';
+import { FeatureFlagService } from '../../../cloud/FeatureFlagService';
 
 export class FreqtradeAdapter extends TradingAdapter {
     readonly capabilities: SourceCapabilities = SOURCE_CAPABILITIES.FREQTRADE;

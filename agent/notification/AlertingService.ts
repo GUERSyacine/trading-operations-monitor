@@ -1,6 +1,6 @@
 import { prisma } from '../../prisma';
-import { FeatureFlagService } from '../../layer-A(observation)/developer-console/FeatureFlagService';
-import { FeatureFlag } from '../../layer-A(observation)/developer-console/types';
+import { FeatureFlagService } from '../../cloud/FeatureFlagService';
+import { FeatureFlag } from '../../cloud/types';
 import { AlertPayload, AlertLevel, NotificationTransport } from './types';
 import { CloudTransport } from './CloudTransport';
 import { OutboxPublisher } from '../incident/outbox/OutboxPublisher';

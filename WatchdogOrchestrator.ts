@@ -12,15 +12,15 @@ import { LifecycleAnomalyDetector } from './agent/incident/manager/LifecycleAnom
 import { MVP_CONFIG } from './mvpConfig';
 
 // Developer Console Core Imports
-import { EventBus } from './layer-A(observation)/developer-console/EventBus';
-import { CommandRunner } from './layer-A(observation)/developer-console/CommandRunner';
-import { InfrastructureController } from './layer-A(observation)/developer-console/InfrastructureController';
-import { FailureInjectionService } from './layer-A(observation)/developer-console/FailureInjectionService';
-import { FeatureFlagService } from './layer-A(observation)/developer-console/FeatureFlagService';
-import { DeveloperConsoleGateway } from './layer-A(observation)/developer-console/DeveloperConsoleGateway';
-import { DeveloperConsoleController } from './layer-A(observation)/developer-console/DeveloperConsoleController';
-import { DeveloperConsoleServer } from './layer-A(observation)/developer-console/DeveloperConsoleServer';
-import { OperationsSimulationService } from './layer-A(observation)/developer-console/OperationsSimulationService';
+import { EventBus } from './cloud/EventBus';
+import { CommandRunner } from './cloud/CommandRunner';
+import { InfrastructureController } from './cloud/InfrastructureController';
+import { FailureInjectionService } from './cloud/FailureInjectionService';
+import { FeatureFlagService } from './cloud/FeatureFlagService';
+import { DeveloperConsoleGateway } from './cloud/DeveloperConsoleGateway';
+import { DeveloperConsoleController } from './cloud/DeveloperConsoleController';
+import { DeveloperConsoleServer } from './cloud/DeveloperConsoleServer';
+import { OperationsSimulationService } from './cloud/OperationsSimulationService';
 
 import { DefaultMachineInfoProvider } from './shared/contracts/DefaultMachineInfoProvider';
 import { OutboxPublisher } from './agent/incident/outbox/OutboxPublisher';

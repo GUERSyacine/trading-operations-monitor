@@ -2,16 +2,16 @@ import * as dotenv from 'dotenv';
 dotenv.config({ path: '../.env' });
 dotenv.config();
 import * as assert from 'assert';
-import { EventBus } from '../layer-A(observation)/developer-console/EventBus';
+import { EventBus } from '../cloud/EventBus';
 import {
     EventCategory,
     WatchdogEventType,
     FailureType,
     FailureScope,
     FeatureFlag
-} from '../layer-A(observation)/developer-console/types';
-import { FailureInjectionService } from '../layer-A(observation)/developer-console/FailureInjectionService';
-import { FeatureFlagService } from '../layer-A(observation)/developer-console/FeatureFlagService';
+} from '../cloud/types';
+import { FailureInjectionService } from '../cloud/FailureInjectionService';
+import { FeatureFlagService } from '../cloud/FeatureFlagService';
 import { AlertingService } from '../agent/notification/AlertingService';
 import { IncidentManager } from '../agent/incident/manager/IncidentManager';
 import { InfrastructureWatchdogService } from '../agent/detectors/infrastructure/InfrastructureWatchdogService';
@@ -41,6 +41,7 @@ async function testInterceptionWraps() {
     (prisma.incidentGroup as any).updateMany = async () => ({});
     (prisma.incidentTransition as any).create = async () => ({});
     (prisma.alertLog as any).create = async () => ({});
+    (prisma.incidentOutbox as any).create = async () => ({});
     (prisma as any).$transaction = async (callback: any) => callback(prisma);
 
     const bus = EventBus.getInstance();
