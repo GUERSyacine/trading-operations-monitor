@@ -1,5 +1,5 @@
 import { CandidateRule, CandidateMatch, TimelineQuery, EvaluationHint } from './CandidateGenerator';
-import { MVP_CONFIG } from '../mvpConfig';
+import { MVP_CONFIG } from '../../../mvpConfig';
 
 export interface RcaRuleConfig {
     dockerCascadeWindowMs: number;

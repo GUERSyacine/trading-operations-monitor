@@ -2,8 +2,8 @@ import * as dotenv from 'dotenv';
 dotenv.config({ path: '../.env' });
 dotenv.config();
 
-import { IncidentManager } from '../layer-B(Assessement)/IncidentManager';
-import { LifecycleAnomalyDetector } from '../layer-B(Assessement)/LifecycleAnomalyDetector';
+import { IncidentManager } from '../agent/incident/manager/IncidentManager';
+import { LifecycleAnomalyDetector } from '../agent/incident/manager/LifecycleAnomalyDetector';
 import { AlertingService } from '../layer-D(notification)/alerting/AlertingService';
 import { prisma } from '../prisma';
 import assert from 'assert';

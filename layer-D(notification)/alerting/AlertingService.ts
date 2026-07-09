@@ -3,7 +3,7 @@ import { FeatureFlagService } from '../../layer-A(observation)/developer-console
 import { FeatureFlag } from '../../layer-A(observation)/developer-console/types';
 import { AlertPayload, AlertLevel, NotificationTransport } from './types';
 import { CloudTransport } from './CloudTransport';
-import { OutboxPublisher } from '../../layer-B(Assessement)/OutboxPublisher';
+import { OutboxPublisher } from '../../agent/incident/outbox/OutboxPublisher';
 import { DefaultMachineInfoProvider } from '../../shared/contracts/DefaultMachineInfoProvider';
 import { OutboxPublisherContract } from '../../shared/contracts/types';
 

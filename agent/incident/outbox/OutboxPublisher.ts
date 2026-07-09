@@ -1,5 +1,5 @@
-import { IncidentPayload, MachineInfoProvider, OutboxAlertPayload, OutboxPublisherContract } from '../shared/contracts/types';
-import { prisma } from '../prisma';
+import { IncidentPayload, MachineInfoProvider, OutboxAlertPayload, OutboxPublisherContract } from '../../../shared/contracts/types';
+import { prisma } from '../../../prisma';
 
 export class OutboxPublisher implements OutboxPublisherContract {
     constructor(private machineProvider: MachineInfoProvider) {}

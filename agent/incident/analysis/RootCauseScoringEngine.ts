@@ -1,6 +1,6 @@
 import { Timeline } from './TimelineReconstructor';
-import { RootCauseCandidate, TimelineQuery } from './CandidateGenerator';
-import { ScoreRule, ScoreContribution } from './ScoringRules';
+import { RootCauseCandidate, TimelineQuery } from '../rules/CandidateGenerator';
+import { ScoreRule, ScoreContribution } from '../rules/ScoringRules';
 
 export interface ScoreMetadata {
     readonly candidateId: string;

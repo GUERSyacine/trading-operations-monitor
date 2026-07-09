@@ -1,5 +1,5 @@
-import { IncidentManager } from '../layer-B(Assessement)/IncidentManager';
-import { OutboxPublisher } from '../layer-B(Assessement)/OutboxPublisher';
+import { IncidentManager } from '../agent/incident/manager/IncidentManager';
+import { OutboxPublisher } from '../agent/incident/outbox/OutboxPublisher';
 import { DefaultMachineInfoProvider } from '../shared/contracts/DefaultMachineInfoProvider';
 import { prisma } from '../prisma';
 

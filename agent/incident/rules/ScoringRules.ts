@@ -1,4 +1,4 @@
-import { Timeline, TimelineEvent } from './TimelineReconstructor';
+import { Timeline, TimelineEvent } from '../analysis/TimelineReconstructor';
 import { RootCauseCandidate, TimelineQuery } from './CandidateGenerator';
 
 export interface ScoreContribution {

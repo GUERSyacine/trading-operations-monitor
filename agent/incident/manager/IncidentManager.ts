@@ -1,10 +1,10 @@
-import { IncidentControllerState, IncidentSeverity, SymbolIncidentState } from '../agent/detectors/market/execution-intelligence/types';
-import { prisma } from '../prisma';
-import { AlertingService } from '../layer-D(notification)/alerting/AlertingService';
+import { IncidentControllerState, IncidentSeverity, SymbolIncidentState } from '../../detectors/market/execution-intelligence/types';
+import { prisma } from '../../../prisma';
+import { AlertingService } from '../../../layer-D(notification)/alerting/AlertingService';
 import { IncidentSeverity as PrismaSeverity, IncidentTransitionType, IncidentActor, IncidentGroupType } from '@prisma/client';
-import { MVP_CONFIG } from '../mvpConfig';
-import { IncidentClassifier } from './IncidentClassifier';
-import { IncidentPublisher } from '../shared/contracts/types';
+import { MVP_CONFIG } from '../../../mvpConfig';
+import { IncidentClassifier } from '../analysis/IncidentClassifier';
+import { IncidentPublisher } from '../../../shared/contracts/types';
 
 /**
  * Incident Manager (Step 12)

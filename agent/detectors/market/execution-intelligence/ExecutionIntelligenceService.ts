@@ -1,5 +1,5 @@
 import { SymbolIncidentState } from './types';
-import { IncidentManager } from '../../../../layer-B(Assessement)/IncidentManager';
+import { IncidentManager } from '../../../incident/manager/IncidentManager';
 import { flashCrashDetector } from './detectors/FlashCrashDetector';
 import { spreadAnomalyDetector } from './detectors/SpreadDetector';
 import { slippageIncident } from './detectors/SlippageDetector';

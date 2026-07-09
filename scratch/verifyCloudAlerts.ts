@@ -9,8 +9,8 @@ import { FailureInjectionService } from '../layer-A(observation)/developer-conso
 import { FeatureFlagService } from '../layer-A(observation)/developer-console/FeatureFlagService';
 import { OperationsSimulationService } from '../layer-A(observation)/developer-console/OperationsSimulationService';
 import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
-import { OutboxSyncWorker } from '../layer-B(Assessement)/OutboxSyncWorker';
-import { OutboxPublisher } from '../layer-B(Assessement)/OutboxPublisher';
+import { OutboxSyncWorker } from '../agent/incident/outbox/OutboxSyncWorker';
+import { OutboxPublisher } from '../agent/incident/outbox/OutboxPublisher';
 import { AlertingService } from '../layer-D(notification)/alerting/AlertingService';
 import { DefaultMachineInfoProvider } from '../shared/contracts/DefaultMachineInfoProvider';
 import { prisma } from '../prisma';

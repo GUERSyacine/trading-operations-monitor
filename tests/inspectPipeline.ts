@@ -1,6 +1,6 @@
 import { OperationsWatchdogService } from '../agent/detectors/operations/OperationsWatchdogService';
 import { AlertingService } from '../layer-D(notification)/alerting/AlertingService';
-import { IncidentManager } from '../layer-B(Assessement)/IncidentManager';
+import { IncidentManager } from '../agent/incident/manager/IncidentManager';
 
 async function main() {
     const mockAlerting = {

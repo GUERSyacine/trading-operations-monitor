@@ -1,8 +1,8 @@
-import { Evidence } from '../layer-B(Assessement)/EvidenceCollector';
-import { TimelineReconstructor } from '../layer-B(Assessement)/TimelineReconstructor';
-import { CandidateGenerator } from '../layer-B(Assessement)/CandidateGenerator';
-import { DockerRule } from '../layer-B(Assessement)/CandidateRules';
-import { RootCauseScoringEngine } from '../layer-B(Assessement)/RootCauseScoringEngine';
+import { Evidence } from '../agent/incident/analysis/EvidenceCollector';
+import { TimelineReconstructor } from '../agent/incident/analysis/TimelineReconstructor';
+import { CandidateGenerator } from '../agent/incident/rules/CandidateGenerator';
+import { DockerRule } from '../agent/incident/rules/CandidateRules';
+import { RootCauseScoringEngine } from '../agent/incident/analysis/RootCauseScoringEngine';
 import {
     SupportingEvidenceRule,
     ContradictionRule,
@@ -12,7 +12,7 @@ import {
     FirstOccurrenceRule,
     LifecycleDurationRule,
     EvaluationHintRule
-} from '../layer-B(Assessement)/ScoringRules';
+} from '../agent/incident/rules/ScoringRules';
 import { MVP_CONFIG } from '../mvpConfig';
 
 function runPipelineForEvidence(title: string, mockEvidence: Evidence[]) {

@@ -1,6 +1,6 @@
 import { prisma } from './prisma';
 import { AlertingService } from './layer-D(notification)/alerting/AlertingService';
-import { IncidentManager } from './layer-B(Assessement)/IncidentManager';
+import { IncidentManager } from './agent/incident/manager/IncidentManager';
 import { InfrastructureWatchdogService } from './agent/detectors/infrastructure/InfrastructureWatchdogService';
 import { OperationsWatchdogService } from './agent/detectors/operations/OperationsWatchdogService';
 import { RuntimeMonitorService } from './agent/detectors/operations/RuntimeMonitorService';
@@ -8,7 +8,7 @@ import { EventPersistenceService } from './agent/adapters/base/EventPersistenceS
 import { FreqtradeAdapter } from './agent/adapters/freqtrade/FreqtradeAdapter';
 import { FreqtradeWebhookReceiver } from './agent/detectors/infrastructure/FreqtradeWebhookReceiver';
 import { FreqtradeWebSocketAdapter } from './agent/detectors/infrastructure/FreqtradeWebSocketAdapter';
-import { LifecycleAnomalyDetector } from './layer-B(Assessement)/LifecycleAnomalyDetector';
+import { LifecycleAnomalyDetector } from './agent/incident/manager/LifecycleAnomalyDetector';
 import { MVP_CONFIG } from './mvpConfig';
 
 // Developer Console Core Imports
@@ -23,8 +23,8 @@ import { DeveloperConsoleServer } from './layer-A(observation)/developer-console
 import { OperationsSimulationService } from './layer-A(observation)/developer-console/OperationsSimulationService';
 
 import { DefaultMachineInfoProvider } from './shared/contracts/DefaultMachineInfoProvider';
-import { OutboxPublisher } from './layer-B(Assessement)/OutboxPublisher';
-import { OutboxSyncWorker } from './layer-B(Assessement)/OutboxSyncWorker';
+import { OutboxPublisher } from './agent/incident/outbox/OutboxPublisher';
+import { OutboxSyncWorker } from './agent/incident/outbox/OutboxSyncWorker';
 
 export class WatchdogOrchestrator {
     private alertingService: AlertingService;

@@ -5,20 +5,20 @@ import { OperationsWatchdogService, RiskViolationType } from '../agent/detectors
 import { InfrastructureWatchdogService } from '../agent/detectors/infrastructure/InfrastructureWatchdogService';
 import { HealthCheckResult } from '../agent/detectors/types';
 import { ExecutionIntelligenceService } from '../agent/detectors/market/execution-intelligence/ExecutionIntelligenceService';
-import { IncidentManager } from '../layer-B(Assessement)/IncidentManager';
+import { IncidentManager } from '../agent/incident/manager/IncidentManager';
 import { ReportingService } from '../layer-C(reporting)/ReportingService';
 import { AlertingService } from '../layer-D(notification)/alerting/AlertingService';
-import { HealthTreeService } from '../layer-B(Assessement)/HealthTreeService';
+import { HealthTreeService } from '../agent/incident/analysis/HealthTreeService';
 import { prisma } from '../prisma';
 import { FreqtradeWebhookReceiver } from '../agent/detectors/infrastructure/FreqtradeWebhookReceiver';
 import { WatchdogOrchestrator } from '../WatchdogOrchestrator';
 import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
 import { MVP_CONFIG } from '../mvpConfig';
-import { EvidenceCollector } from '../layer-B(Assessement)/EvidenceCollector';
-import { TimelineReconstructor } from '../layer-B(Assessement)/TimelineReconstructor';
-import { CandidateGenerator, RootCauseCandidate } from '../layer-B(Assessement)/CandidateGenerator';
-import { DockerRule, TelemetryRule, VMRule, NetworkRule, ExchangeRule, LifecycleRule } from '../layer-B(Assessement)/CandidateRules';
-import { RootCauseScoringEngine } from '../layer-B(Assessement)/RootCauseScoringEngine';
+import { EvidenceCollector } from '../agent/incident/analysis/EvidenceCollector';
+import { TimelineReconstructor } from '../agent/incident/analysis/TimelineReconstructor';
+import { CandidateGenerator, RootCauseCandidate } from '../agent/incident/rules/CandidateGenerator';
+import { DockerRule, TelemetryRule, VMRule, NetworkRule, ExchangeRule, LifecycleRule } from '../agent/incident/rules/CandidateRules';
+import { RootCauseScoringEngine } from '../agent/incident/analysis/RootCauseScoringEngine';
 import {
     SupportingEvidenceRule,
     ContradictionRule,
@@ -28,7 +28,7 @@ import {
     FirstOccurrenceRule,
     LifecycleDurationRule,
     EvaluationHintRule
-} from '../layer-B(Assessement)/ScoringRules';
+} from '../agent/incident/rules/ScoringRules';
 
 async function runTests() {
     console.log('====================================================');

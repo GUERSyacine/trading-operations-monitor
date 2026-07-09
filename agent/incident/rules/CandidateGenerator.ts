@@ -1,5 +1,5 @@
-import { Timeline, TimelineEvent } from './TimelineReconstructor';
-import { IncidentClassifier } from './IncidentClassifier';
+import { Timeline, TimelineEvent } from '../analysis/TimelineReconstructor';
+import { IncidentClassifier } from '../analysis/IncidentClassifier';
 
 export type EvaluationHintId =
     | 'DOCKER_FAILED_FIRST'

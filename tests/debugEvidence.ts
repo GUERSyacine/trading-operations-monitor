@@ -1,4 +1,4 @@
-import { EvidenceCollector } from '../layer-B(Assessement)/EvidenceCollector';
+import { EvidenceCollector } from '../agent/incident/analysis/EvidenceCollector';
 import { prisma } from '../prisma';
 
 async function run() {

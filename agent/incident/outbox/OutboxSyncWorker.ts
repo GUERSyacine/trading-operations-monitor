@@ -1,5 +1,5 @@
-import { prisma } from '../prisma';
-import { MVP_CONFIG } from '../mvpConfig';
+import { prisma } from '../../../prisma';
+import { MVP_CONFIG } from '../../../mvpConfig';
 
 export class OutboxSyncWorker {
     private nextTimeout?: NodeJS.Timeout;

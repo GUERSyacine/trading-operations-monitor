@@ -1,15 +1,15 @@
-import { TimelineQuery, RootCauseCandidate } from '../layer-B(Assessement)/CandidateGenerator';
-import { Timeline } from '../layer-B(Assessement)/TimelineReconstructor';
+import { TimelineQuery, RootCauseCandidate } from '../agent/incident/rules/CandidateGenerator';
+import { Timeline } from '../agent/incident/analysis/TimelineReconstructor';
 import {
     SupportingEvidenceRule,
     ContradictionRule,
     CascadeSequenceRule,
     FirstOccurrenceRule,
     EvaluationHintRule
-} from '../layer-B(Assessement)/ScoringRules';
-import { RootCauseScoringEngine } from '../layer-B(Assessement)/RootCauseScoringEngine';
+} from '../agent/incident/rules/ScoringRules';
+import { RootCauseScoringEngine } from '../agent/incident/analysis/RootCauseScoringEngine';
 import { MVP_CONFIG } from '../mvpConfig';
-import { VMRule, NetworkRule, ExchangeRule } from '../layer-B(Assessement)/CandidateRules';
+import { VMRule, NetworkRule, ExchangeRule } from '../agent/incident/rules/CandidateRules';
 
 async function run() {
     console.log('🧪 Running Manual Scenarios Verification...\n');

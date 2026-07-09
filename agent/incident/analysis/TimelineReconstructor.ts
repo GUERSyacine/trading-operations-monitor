@@ -1,6 +1,6 @@
 import { Evidence } from './EvidenceCollector';
 import { IncidentClassifier } from './IncidentClassifier';
-import { MVP_CONFIG } from '../mvpConfig';
+import { MVP_CONFIG } from '../../../mvpConfig';
 
 export interface TimelineEvent {
     id: string;
