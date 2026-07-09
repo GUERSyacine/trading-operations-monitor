@@ -1,5 +1,5 @@
 import { prisma } from '../../../prisma';
-import { AlertingService } from '../../../layer-D(notification)/alerting/AlertingService';
+import { AlertingService } from '../../notification/AlertingService';
 
 export interface TradeMetrics {
     pnl: number;

@@ -4,7 +4,7 @@ dotenv.config();
 
 import { IncidentManager } from '../agent/incident/manager/IncidentManager';
 import { LifecycleAnomalyDetector } from '../agent/incident/manager/LifecycleAnomalyDetector';
-import { AlertingService } from '../layer-D(notification)/alerting/AlertingService';
+import { AlertingService } from '../agent/notification/AlertingService';
 import { prisma } from '../prisma';
 import assert from 'assert';
 

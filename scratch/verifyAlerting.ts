@@ -1,4 +1,4 @@
-import { AlertingService } from '../layer-D(notification)/alerting/AlertingService';
+import { AlertingService } from '../agent/notification/AlertingService';
 import { prisma } from '../prisma';
 
 async function main() {

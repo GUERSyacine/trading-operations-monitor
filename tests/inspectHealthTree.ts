@@ -2,7 +2,7 @@ import { InfrastructureWatchdogService } from '../agent/detectors/infrastructure
 import { OperationsWatchdogService } from '../agent/detectors/operations/OperationsWatchdogService';
 import { IncidentManager } from '../agent/incident/manager/IncidentManager';
 import { HealthTreeService } from '../agent/incident/analysis/HealthTreeService';
-import { AlertingService } from '../layer-D(notification)/alerting/AlertingService';
+import { AlertingService } from '../agent/notification/AlertingService';
 
 async function main() {
     console.log('🔄 Initializing Live VM Health Tree Compilation...\n');

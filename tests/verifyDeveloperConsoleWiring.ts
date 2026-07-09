@@ -12,7 +12,7 @@ import {
 } from '../layer-A(observation)/developer-console/types';
 import { FailureInjectionService } from '../layer-A(observation)/developer-console/FailureInjectionService';
 import { FeatureFlagService } from '../layer-A(observation)/developer-console/FeatureFlagService';
-import { AlertingService } from '../layer-D(notification)/alerting/AlertingService';
+import { AlertingService } from '../agent/notification/AlertingService';
 import { IncidentManager } from '../agent/incident/manager/IncidentManager';
 import { InfrastructureWatchdogService } from '../agent/detectors/infrastructure/InfrastructureWatchdogService';
 import { OperationsWatchdogService } from '../agent/detectors/operations/OperationsWatchdogService';

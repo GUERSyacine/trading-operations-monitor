@@ -1,6 +1,6 @@
 import { IncidentControllerState, IncidentSeverity, SymbolIncidentState } from '../../detectors/market/execution-intelligence/types';
 import { prisma } from '../../../prisma';
-import { AlertingService } from '../../../layer-D(notification)/alerting/AlertingService';
+import { AlertingService } from '../../notification/AlertingService';
 import { IncidentSeverity as PrismaSeverity, IncidentTransitionType, IncidentActor, IncidentGroupType } from '@prisma/client';
 import { MVP_CONFIG } from '../../../mvpConfig';
 import { IncidentClassifier } from '../analysis/IncidentClassifier';

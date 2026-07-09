@@ -1,5 +1,5 @@
 import { prisma } from '../../../prisma';
-import { AlertingService } from '../../../layer-D(notification)/alerting/AlertingService';
+import { AlertingService } from '../../notification/AlertingService';
 import { HealthCheckResult, HealthNode, HealthStatus, SOURCE_CAPABILITIES, LifecycleSource, LifecycleEventType } from '../types';
 import { MVP_CONFIG } from '../../../mvpConfig';
 import { IncidentManager } from '../../incident/manager/IncidentManager';

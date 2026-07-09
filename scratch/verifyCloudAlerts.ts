@@ -11,7 +11,7 @@ import { OperationsSimulationService } from '../layer-A(observation)/developer-c
 import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
 import { OutboxSyncWorker } from '../agent/incident/outbox/OutboxSyncWorker';
 import { OutboxPublisher } from '../agent/incident/outbox/OutboxPublisher';
-import { AlertingService } from '../layer-D(notification)/alerting/AlertingService';
+import { AlertingService } from '../agent/notification/AlertingService';
 import { DefaultMachineInfoProvider } from '../shared/contracts/DefaultMachineInfoProvider';
 import { prisma } from '../prisma';
 

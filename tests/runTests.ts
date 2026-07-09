@@ -7,7 +7,7 @@ import { HealthCheckResult } from '../agent/detectors/types';
 import { ExecutionIntelligenceService } from '../agent/detectors/market/execution-intelligence/ExecutionIntelligenceService';
 import { IncidentManager } from '../agent/incident/manager/IncidentManager';
 import { ReportingService } from '../agent/reporting/ReportingService';
-import { AlertingService } from '../layer-D(notification)/alerting/AlertingService';
+import { AlertingService } from '../agent/notification/AlertingService';
 import { HealthTreeService } from '../agent/incident/analysis/HealthTreeService';
 import { prisma } from '../prisma';
 import { FreqtradeWebhookReceiver } from '../agent/detectors/infrastructure/FreqtradeWebhookReceiver';

@@ -2,7 +2,7 @@ import * as os from 'os';
 import { exec, execFile } from 'child_process';
 import * as dns from 'dns';
 import { prisma } from '../../../prisma';
-import { AlertingService } from '../../../layer-D(notification)/alerting/AlertingService';
+import { AlertingService } from '../../notification/AlertingService';
 import { MVP_CONFIG } from '../../../mvpConfig';
 
 import { HealthCheckResult, HealthNode, HealthStatus } from '../types';

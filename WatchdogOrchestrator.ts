@@ -1,5 +1,5 @@
 import { prisma } from './prisma';
-import { AlertingService } from './layer-D(notification)/alerting/AlertingService';
+import { AlertingService } from './agent/notification/AlertingService';
 import { IncidentManager } from './agent/incident/manager/IncidentManager';
 import { InfrastructureWatchdogService } from './agent/detectors/infrastructure/InfrastructureWatchdogService';
 import { OperationsWatchdogService } from './agent/detectors/operations/OperationsWatchdogService';
