@@ -1,5 +1,5 @@
 import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
-import { prisma } from '../prisma';
+import { prisma } from '../shared/prisma';
 import assert from 'assert';
 
 async function runAudit() {

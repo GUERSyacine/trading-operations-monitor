@@ -4,7 +4,7 @@ dotenv.config();
 
 import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
 import { FreqtradeAdapter } from '../agent/adapters/freqtrade/FreqtradeAdapter';
-import { prisma } from '../prisma';
+import { prisma } from '../shared/prisma';
 
 async function main() {
     console.log('📡 Starting real Freqtrade polling test...');

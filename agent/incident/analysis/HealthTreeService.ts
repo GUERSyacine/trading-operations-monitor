@@ -2,7 +2,7 @@ import { IncidentManager } from '../manager/IncidentManager';
 import { HealthNode, HealthStatus, HealthCheckResult } from '../../detectors/types';
 import { InfrastructureWatchdogService } from '../../detectors/infrastructure/InfrastructureWatchdogService';
 import { OperationsWatchdogService } from '../../detectors/operations/OperationsWatchdogService';
-import { MVP_CONFIG } from '../../../mvpConfig';
+import { MVP_CONFIG } from '../../../shared/mvpConfig';
 
 export class HealthTreeService {
     constructor(

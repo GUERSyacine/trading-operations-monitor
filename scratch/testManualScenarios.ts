@@ -8,7 +8,7 @@ import {
     EvaluationHintRule
 } from '../agent/incident/rules/ScoringRules';
 import { RootCauseScoringEngine } from '../agent/incident/analysis/RootCauseScoringEngine';
-import { MVP_CONFIG } from '../mvpConfig';
+import { MVP_CONFIG } from '../shared/mvpConfig';
 import { VMRule, NetworkRule, ExchangeRule } from '../agent/incident/rules/CandidateRules';
 
 async function run() {

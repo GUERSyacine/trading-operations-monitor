@@ -1,5 +1,5 @@
 import { OperationsWatchdogService } from '../agent/detectors/operations/OperationsWatchdogService';
-import { prisma } from '../prisma';
+import { prisma } from '../shared/prisma';
 import assert from 'assert';
 
 async function runTests() {

@@ -13,7 +13,7 @@ import {
     LifecycleDurationRule,
     EvaluationHintRule
 } from '../agent/incident/rules/ScoringRules';
-import { MVP_CONFIG } from '../mvpConfig';
+import { MVP_CONFIG } from '../shared/mvpConfig';
 
 function runPipelineForEvidence(title: string, mockEvidence: Evidence[]) {
     console.log(`\n\n--- 🧪 SIMULATION: ${title} ---`);

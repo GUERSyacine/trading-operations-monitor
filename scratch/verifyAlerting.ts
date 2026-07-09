@@ -1,5 +1,5 @@
 import { AlertingService } from '../agent/notification/AlertingService';
-import { prisma } from '../prisma';
+import { prisma } from '../shared/prisma';
 
 async function main() {
     console.log("Starting Alerting verification...");

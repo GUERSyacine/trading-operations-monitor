@@ -1,4 +1,4 @@
-import { prisma } from '../../../prisma';
+import { prisma } from '../../../shared/prisma';
 import { LifecycleEvent, LifecycleEventType } from '../../detectors/types';
 
 

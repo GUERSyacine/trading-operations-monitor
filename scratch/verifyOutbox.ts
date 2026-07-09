@@ -1,7 +1,7 @@
 import { IncidentManager } from '../agent/incident/manager/IncidentManager';
 import { OutboxPublisher } from '../agent/incident/outbox/OutboxPublisher';
 import { DefaultMachineInfoProvider } from '../shared/contracts/DefaultMachineInfoProvider';
-import { prisma } from '../prisma';
+import { prisma } from '../shared/prisma';
 
 async function main() {
     console.log('--- Outbox Lifecycle Verification Script ---');
@@ -60,7 +60,7 @@ async function main() {
         throw new Error(`Expected exactly 3 outbox entries, found ${outboxRecords.length}`);
     }
 
-    const events = outboxRecords.map(r => (r.payload as any).event);
+    const events = outboxRecords.map((r: any) => (r.payload as any).event);
     if (events[0] !== 'CREATED' || events[1] !== 'STATE_CHANGED' || events[2] !== 'RESOLVED') {
         throw new Error(`Unexpected event sequence: ${JSON.stringify(events)}`);
     }

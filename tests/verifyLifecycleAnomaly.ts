@@ -5,7 +5,7 @@ dotenv.config();
 import { IncidentManager } from '../agent/incident/manager/IncidentManager';
 import { LifecycleAnomalyDetector } from '../agent/incident/manager/LifecycleAnomalyDetector';
 import { AlertingService } from '../agent/notification/AlertingService';
-import { prisma } from '../prisma';
+import { prisma } from '../shared/prisma';
 import assert from 'assert';
 
 async function runTest() {
@@ -30,6 +30,14 @@ async function runTest() {
             metadata: {
                 path: ['lifecycleEvent', 'tradeId'],
                 equals: mockTradeId
+            }
+        }
+    });
+
+    await prisma.incidentTransition.deleteMany({
+        where: {
+            incident: {
+                source: sourceKey
             }
         }
     });
@@ -172,6 +180,14 @@ async function runTest() {
             metadata: {
                 path: ['lifecycleEvent', 'tradeId'],
                 equals: mockTradeId
+            }
+        }
+    });
+
+    await prisma.incidentTransition.deleteMany({
+        where: {
+            incident: {
+                source: sourceKey
             }
         }
     });

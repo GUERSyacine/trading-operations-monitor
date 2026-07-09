@@ -1,5 +1,5 @@
 import { IncidentManager } from './IncidentManager';
-import { prisma } from '../../../prisma';
+import { prisma } from '../../../shared/prisma';
 
 export class LifecycleAnomalyDetector {
     constructor(private incidentManager: IncidentManager) {}

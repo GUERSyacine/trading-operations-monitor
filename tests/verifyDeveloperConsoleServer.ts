@@ -1,16 +1,16 @@
 import * as assert from 'assert';
 import * as http from 'http';
-import { EventBus } from '../cloud/EventBus';
-import { CommandRunner } from '../cloud/CommandRunner';
-import { InfrastructureController } from '../cloud/InfrastructureController';
-import { FailureInjectionService } from '../cloud/FailureInjectionService';
-import { FeatureFlagService } from '../cloud/FeatureFlagService';
-import { DeveloperConsoleGateway } from '../cloud/DeveloperConsoleGateway';
-import { DeveloperConsoleController } from '../cloud/DeveloperConsoleController';
-import { DeveloperConsoleServer } from '../cloud/DeveloperConsoleServer';
-import { FailureType, FailureScope, FeatureFlag, SystemCommand, OperationScenario } from '../cloud/types';
+import { EventBus } from '../shared/services/EventBus';
+import { CommandRunner } from '../cloud/developer/CommandRunner';
+import { InfrastructureController } from '../cloud/developer/InfrastructureController';
+import { FailureInjectionService } from '../shared/services/FailureInjectionService';
+import { FeatureFlagService } from '../shared/services/FeatureFlagService';
+import { DeveloperConsoleGateway } from '../cloud/developer/DeveloperConsoleGateway';
+import { DeveloperConsoleController } from '../cloud/developer/DeveloperConsoleController';
+import { DeveloperConsoleServer } from '../cloud/developer/DeveloperConsoleServer';
+import { FailureType, FailureScope, FeatureFlag, SystemCommand, OperationScenario } from '../shared/types/developer';
 import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
-import { OperationsSimulationService } from '../cloud/OperationsSimulationService';
+import { OperationsSimulationService } from '../cloud/developer/OperationsSimulationService';
 
 // Helper to make local HTTP requests
 function httpRequest(options: http.RequestOptions, body?: any): Promise<{ statusCode: number; data: string }> {
@@ -28,7 +28,7 @@ function httpRequest(options: http.RequestOptions, body?: any): Promise<{ status
     });
 }
 
-import { prisma } from '../prisma';
+import { prisma } from '../shared/prisma';
 
 async function runTests() {
     console.log('🧪 Starting DeveloperConsoleServer Integration Tests...');

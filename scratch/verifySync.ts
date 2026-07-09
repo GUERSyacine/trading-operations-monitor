@@ -1,16 +1,16 @@
 import 'dotenv/config';
-import { DeveloperConsoleServer } from '../cloud/DeveloperConsoleServer';
-import { DeveloperConsoleController } from '../cloud/DeveloperConsoleController';
-import { DeveloperConsoleGateway } from '../cloud/DeveloperConsoleGateway';
-import { EventBus } from '../cloud/EventBus';
-import { CommandRunner } from '../cloud/CommandRunner';
-import { InfrastructureController } from '../cloud/InfrastructureController';
-import { FailureInjectionService } from '../cloud/FailureInjectionService';
-import { FeatureFlagService } from '../cloud/FeatureFlagService';
-import { OperationsSimulationService } from '../cloud/OperationsSimulationService';
+import { DeveloperConsoleServer } from '../cloud/developer/DeveloperConsoleServer';
+import { DeveloperConsoleController } from '../cloud/developer/DeveloperConsoleController';
+import { DeveloperConsoleGateway } from '../cloud/developer/DeveloperConsoleGateway';
+import { EventBus } from '../shared/services/EventBus';
+import { CommandRunner } from '../cloud/developer/CommandRunner';
+import { InfrastructureController } from '../cloud/developer/InfrastructureController';
+import { FailureInjectionService } from '../shared/services/FailureInjectionService';
+import { FeatureFlagService } from '../shared/services/FeatureFlagService';
+import { OperationsSimulationService } from '../cloud/developer/OperationsSimulationService';
 import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
 import { OutboxSyncWorker } from '../agent/incident/outbox/OutboxSyncWorker';
-import { prisma } from '../prisma';
+import { prisma } from '../shared/prisma';
 
 async function main() {
     console.log('=== STARTING SYNC WORKER INTEGRATION VERIFICATION ===\n');

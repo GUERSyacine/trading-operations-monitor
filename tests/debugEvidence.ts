@@ -1,5 +1,5 @@
 import { EvidenceCollector } from '../agent/incident/analysis/EvidenceCollector';
-import { prisma } from '../prisma';
+import { prisma } from '../shared/prisma';
 
 async function run() {
     try {

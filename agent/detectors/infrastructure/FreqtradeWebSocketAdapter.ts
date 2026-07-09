@@ -1,9 +1,9 @@
 import WebSocket from 'ws';
 import { EventPersistenceService } from '../../adapters/base/EventPersistenceService';
 import { TelemetryMapper } from '../TelemetryMapper';
-import { FeatureFlagService } from '../../../cloud/FeatureFlagService';
-import { EventBus } from '../../../cloud/EventBus';
-import { FeatureFlag, WatchdogEventType, EventCategory } from '../../../cloud/types';
+import { FeatureFlagService } from '../../../shared/services/FeatureFlagService';
+import { EventBus } from '../../../shared/services/EventBus';
+import { FeatureFlag, WatchdogEventType, EventCategory } from '../../../shared/types/developer';
 
 export interface FreqtradeWebSocketAdapterConfig {
     baseUrl: string; // e.g. http://localhost:8080/api/v1

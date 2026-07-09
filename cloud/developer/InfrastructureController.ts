@@ -1,6 +1,6 @@
 import { CommandRunner } from './CommandRunner';
-import { SystemCommand, WatchdogEventType, EventCategory } from './types';
-import { EventBus } from './EventBus';
+import { SystemCommand, WatchdogEventType, EventCategory } from '../../shared/types/developer';
+import { EventBus } from '../../shared/services/EventBus';
 
 export class InfrastructureController {
     constructor(

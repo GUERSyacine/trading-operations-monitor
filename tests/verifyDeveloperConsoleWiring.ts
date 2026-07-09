@@ -2,16 +2,16 @@ import * as dotenv from 'dotenv';
 dotenv.config({ path: '../.env' });
 dotenv.config();
 import * as assert from 'assert';
-import { EventBus } from '../cloud/EventBus';
+import { EventBus } from '../shared/services/EventBus';
 import {
     EventCategory,
     WatchdogEventType,
     FailureType,
     FailureScope,
     FeatureFlag
-} from '../cloud/types';
-import { FailureInjectionService } from '../cloud/FailureInjectionService';
-import { FeatureFlagService } from '../cloud/FeatureFlagService';
+} from '../shared/types/developer';
+import { FailureInjectionService } from '../shared/services/FailureInjectionService';
+import { FeatureFlagService } from '../shared/services/FeatureFlagService';
 import { AlertingService } from '../agent/notification/AlertingService';
 import { IncidentManager } from '../agent/incident/manager/IncidentManager';
 import { InfrastructureWatchdogService } from '../agent/detectors/infrastructure/InfrastructureWatchdogService';
@@ -20,7 +20,7 @@ import { FreqtradeWebSocketAdapter } from '../agent/detectors/infrastructure/Fre
 import { FreqtradeAdapter } from '../agent/adapters/freqtrade/FreqtradeAdapter';
 import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
 import { HealthCheckResult } from '../agent/detectors/types';
-import { prisma } from '../prisma';
+import { prisma } from '../shared/prisma';
 
 async function testInterceptionWraps() {
     console.log(' - Testing Interception Wraps...');

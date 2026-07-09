@@ -1,7 +1,7 @@
 import { SourceCapabilities, LifecycleSource } from '../../detectors/types';
-import { FeatureFlagService } from '../../../cloud/FeatureFlagService';
-import { FeatureFlag, EventCategory, WatchdogEventType } from '../../../cloud/types';
-import { EventBus } from '../../../cloud/EventBus';
+import { FeatureFlagService } from '../../../shared/services/FeatureFlagService';
+import { FeatureFlag, EventCategory, WatchdogEventType } from '../../../shared/types/developer';
+import { EventBus } from '../../../shared/services/EventBus';
 
 export interface AdapterConfig {
     baseUrl: string;

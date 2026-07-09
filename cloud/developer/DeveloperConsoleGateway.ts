@@ -1,5 +1,5 @@
-import { EventBus } from './EventBus';
-import { WatchdogEvent, WatchdogEventType } from './types';
+import { EventBus } from '../../shared/services/EventBus';
+import { WatchdogEvent, WatchdogEventType } from '../../shared/types/developer';
 
 export interface UiMessage {
     id: string;

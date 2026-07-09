@@ -5,7 +5,7 @@ dotenv.config();
 import { FreqtradeAdapter } from '../agent/adapters/freqtrade/FreqtradeAdapter';
 import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
 import { LifecycleEvent } from '../agent/detectors/types';
-import { prisma } from '../prisma';
+import { prisma } from '../shared/prisma';
 import assert from 'assert';
 
 // Mock global fetch for API response stubbing

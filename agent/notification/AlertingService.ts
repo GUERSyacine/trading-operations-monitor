@@ -1,6 +1,6 @@
-import { prisma } from '../../prisma';
-import { FeatureFlagService } from '../../cloud/FeatureFlagService';
-import { FeatureFlag } from '../../cloud/types';
+import { prisma } from '../../shared/prisma';
+import { FeatureFlagService } from '../../shared/services/FeatureFlagService';
+import { FeatureFlag } from '../../shared/types/developer';
 import { AlertPayload, AlertLevel, NotificationTransport } from './types';
 import { CloudTransport } from './CloudTransport';
 import { OutboxPublisher } from '../incident/outbox/OutboxPublisher';

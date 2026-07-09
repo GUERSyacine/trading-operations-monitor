@@ -1,4 +1,4 @@
-import { prisma } from '../prisma';
+import { prisma } from '../shared/prisma';
 import { EvidenceCollector } from '../agent/incident/analysis/EvidenceCollector';
 import { TimelineReconstructor } from '../agent/incident/analysis/TimelineReconstructor';
 import { CandidateGenerator } from '../agent/incident/rules/CandidateGenerator';
@@ -14,7 +14,7 @@ import {
     LifecycleDurationRule,
     EvaluationHintRule
 } from '../agent/incident/rules/ScoringRules';
-import { MVP_CONFIG } from '../mvpConfig';
+import { MVP_CONFIG } from '../shared/mvpConfig';
 
 async function run() {
     try {

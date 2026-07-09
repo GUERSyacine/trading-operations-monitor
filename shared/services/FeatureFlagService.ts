@@ -1,4 +1,4 @@
-import { FeatureFlag, WatchdogEventType, EventCategory } from './types';
+import { FeatureFlag, WatchdogEventType, EventCategory } from '../types/developer';
 import { EventBus } from './EventBus';
 
 export interface FeatureFlagMetadata {

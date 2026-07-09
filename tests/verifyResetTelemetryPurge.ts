@@ -3,13 +3,13 @@ dotenv.config({ path: '../.env' });
 dotenv.config();
 
 import * as assert from 'assert';
-import { prisma } from '../prisma';
-import { DeveloperConsoleController } from '../cloud/DeveloperConsoleController';
-import { EventBus } from '../cloud/EventBus';
-import { FailureInjectionService } from '../cloud/FailureInjectionService';
-import { FeatureFlagService } from '../cloud/FeatureFlagService';
-import { InfrastructureController } from '../cloud/InfrastructureController';
-import { OperationsSimulationService } from '../cloud/OperationsSimulationService';
+import { prisma } from '../shared/prisma';
+import { DeveloperConsoleController } from '../cloud/developer/DeveloperConsoleController';
+import { EventBus } from '../shared/services/EventBus';
+import { FailureInjectionService } from '../shared/services/FailureInjectionService';
+import { FeatureFlagService } from '../shared/services/FeatureFlagService';
+import { InfrastructureController } from '../cloud/developer/InfrastructureController';
+import { OperationsSimulationService } from '../cloud/developer/OperationsSimulationService';
 import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
 
 class MockRunner {

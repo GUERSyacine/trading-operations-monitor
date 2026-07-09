@@ -2,7 +2,7 @@ import * as http from 'http';
 import { DeveloperConsoleController } from './DeveloperConsoleController';
 import { DeveloperConsoleGateway } from './DeveloperConsoleGateway';
 import { DASHBOARD_HTML } from './dashboardHtml';
-import { FailureType, FailureScope, FeatureFlag, SystemCommand, OperationScenario } from './types';
+import { FailureType, FailureScope, FeatureFlag, SystemCommand, OperationScenario } from '../../shared/types/developer';
 
 export class DeveloperConsoleServer {
     private server?: http.Server;

@@ -1,5 +1,5 @@
 import { exec } from 'child_process';
-import { SystemCommand } from './types';
+import { SystemCommand } from '../../shared/types/developer';
 
 export class CommandRunner {
     private commandMap: Record<SystemCommand, string> = {

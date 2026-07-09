@@ -6,7 +6,7 @@ dotenv.config(); // fallback to current dir
 import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
 import { FreqtradeWebhookReceiver } from '../agent/detectors/infrastructure/FreqtradeWebhookReceiver';
 import { FreqtradeAdapter } from '../agent/adapters/freqtrade/FreqtradeAdapter';
-import { prisma } from '../prisma';
+import { prisma } from '../shared/prisma';
 
 
 async function runVerification() {

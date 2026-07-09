@@ -1,4 +1,4 @@
-import { prisma } from '../../../prisma';
+import { prisma } from '../../../shared/prisma';
 import { Incident, IncidentGroup, DecisionAudit } from '@prisma/client';
 
 export interface Evidence {

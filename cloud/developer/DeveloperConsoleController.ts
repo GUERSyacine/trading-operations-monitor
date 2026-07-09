@@ -1,12 +1,12 @@
-import { FailureInjectionService } from './FailureInjectionService';
-import { FeatureFlagService, FEATURE_FLAG_METADATA } from './FeatureFlagService';
+import { FailureInjectionService } from '../../shared/services/FailureInjectionService';
+import { FeatureFlagService, FEATURE_FLAG_METADATA } from '../../shared/services/FeatureFlagService';
 import { InfrastructureController } from './InfrastructureController';
 import { OperationsSimulationService } from './OperationsSimulationService';
-import { FailureType, FailureScope, FeatureFlag, SystemCommand, OperationScenario, EventCategory, WatchdogEventType } from './types';
-import { prisma } from '../prisma';
-import { IncidentManager } from '../agent/incident/manager/IncidentManager';
-import { OperationsWatchdogService } from '../agent/detectors/operations/OperationsWatchdogService';
-import { EventBus } from './EventBus';
+import { FailureType, FailureScope, FeatureFlag, SystemCommand, OperationScenario, EventCategory, WatchdogEventType } from '../../shared/types/developer';
+import { prisma } from '../../shared/prisma';
+import { IncidentManager } from '../../agent/incident/manager/IncidentManager';
+import { OperationsWatchdogService } from '../../agent/detectors/operations/OperationsWatchdogService';
+import { EventBus } from '../../shared/services/EventBus';
 
 export class DeveloperConsoleController {
     constructor(

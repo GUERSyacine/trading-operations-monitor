@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import * as crypto from 'crypto';
-import { WatchdogEvent, WatchdogEventType, EventCategory } from './types';
+import { WatchdogEvent, WatchdogEventType, EventCategory } from '../types/developer';
 
 export class EventBus {
     private static instance: EventBus;

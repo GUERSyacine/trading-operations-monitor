@@ -1,4 +1,4 @@
-import { prisma } from '../../../prisma';
+import { prisma } from '../../../shared/prisma';
 import * as dotenv from 'dotenv';
 
 dotenv.config();

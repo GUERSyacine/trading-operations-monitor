@@ -1,15 +1,15 @@
 import * as os from 'os';
 import { exec, execFile } from 'child_process';
 import * as dns from 'dns';
-import { prisma } from '../../../prisma';
+import { prisma } from '../../../shared/prisma';
 import { AlertingService } from '../../notification/AlertingService';
-import { MVP_CONFIG } from '../../../mvpConfig';
+import { MVP_CONFIG } from '../../../shared/mvpConfig';
 
 import { HealthCheckResult, HealthNode, HealthStatus } from '../types';
 
-import { FailureInjectionService } from '../../../cloud/FailureInjectionService';
-import { FeatureFlagService } from '../../../cloud/FeatureFlagService';
-import { FailureType, FeatureFlag } from '../../../cloud/types';
+import { FailureInjectionService } from '../../../shared/services/FailureInjectionService';
+import { FeatureFlagService } from '../../../shared/services/FeatureFlagService';
+import { FailureType, FeatureFlag } from '../../../shared/types/developer';
 
 export class InfrastructureWatchdogService {
     constructor(

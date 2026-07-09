@@ -1,4 +1,4 @@
-import { FailureType, FailureScope, WatchdogEventType, EventCategory } from './types';
+import { FailureType, FailureScope, WatchdogEventType, EventCategory } from '../types/developer';
 import { EventBus } from './EventBus';
 
 export interface InjectedFailure {
