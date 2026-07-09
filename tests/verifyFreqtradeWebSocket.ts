@@ -1,5 +1,5 @@
 import { FreqtradeWebSocketAdapter } from '../layer-A(observation)/layer1(infrastructure_monitoring)/FreqtradeWebSocketAdapter';
-import { EventPersistenceService } from '../adapters/base/EventPersistenceService';
+import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
 
 async function runTest() {
     console.log('🧪 Starting Level 1 Freqtrade WebSocket PoC Verification...');

@@ -1,4 +1,4 @@
-import { EventPersistenceService } from '../../adapters/base/EventPersistenceService';
+import { EventPersistenceService } from '../../agent/adapters/base/EventPersistenceService';
 import { OperationScenario, WatchdogEventType, EventCategory } from './types';
 import { EventBus } from './EventBus';
 import { LifecycleEvent, LifecycleEventType, TradeDirection } from '../types';

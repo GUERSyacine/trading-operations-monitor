@@ -1,5 +1,5 @@
-import { prisma } from '../../prisma';
-import { LifecycleEvent, LifecycleEventType } from '../../layer-A(observation)/types';
+import { prisma } from '../../../prisma';
+import { LifecycleEvent, LifecycleEventType } from '../../../layer-A(observation)/types';
 
 
 export interface NormalizedEvent {

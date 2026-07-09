@@ -1,7 +1,7 @@
-import { SourceCapabilities, LifecycleSource } from '../../layer-A(observation)/types';
-import { FeatureFlagService } from '../../layer-A(observation)/developer-console/FeatureFlagService';
-import { FeatureFlag, EventCategory, WatchdogEventType } from '../../layer-A(observation)/developer-console/types';
-import { EventBus } from '../../layer-A(observation)/developer-console/EventBus';
+import { SourceCapabilities, LifecycleSource } from '../../../layer-A(observation)/types';
+import { FeatureFlagService } from '../../../layer-A(observation)/developer-console/FeatureFlagService';
+import { FeatureFlag, EventCategory, WatchdogEventType } from '../../../layer-A(observation)/developer-console/types';
+import { EventBus } from '../../../layer-A(observation)/developer-console/EventBus';
 
 export interface AdapterConfig {
     baseUrl: string;

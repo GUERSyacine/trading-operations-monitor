@@ -1,4 +1,4 @@
-import { EventPersistenceService } from '../adapters/base/EventPersistenceService';
+import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
 import { prisma } from '../prisma';
 import assert from 'assert';
 

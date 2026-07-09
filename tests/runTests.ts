@@ -12,7 +12,7 @@ import { HealthTreeService } from '../layer-B(Assessement)/HealthTreeService';
 import { prisma } from '../prisma';
 import { FreqtradeWebhookReceiver } from '../layer-A(observation)/layer1(infrastructure_monitoring)/FreqtradeWebhookReceiver';
 import { WatchdogOrchestrator } from '../WatchdogOrchestrator';
-import { EventPersistenceService } from '../adapters/base/EventPersistenceService';
+import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
 import { MVP_CONFIG } from '../mvpConfig';
 import { EvidenceCollector } from '../layer-B(Assessement)/EvidenceCollector';
 import { TimelineReconstructor } from '../layer-B(Assessement)/TimelineReconstructor';

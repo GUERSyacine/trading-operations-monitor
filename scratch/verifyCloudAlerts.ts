@@ -8,7 +8,7 @@ import { InfrastructureController } from '../layer-A(observation)/developer-cons
 import { FailureInjectionService } from '../layer-A(observation)/developer-console/FailureInjectionService';
 import { FeatureFlagService } from '../layer-A(observation)/developer-console/FeatureFlagService';
 import { OperationsSimulationService } from '../layer-A(observation)/developer-console/OperationsSimulationService';
-import { EventPersistenceService } from '../adapters/base/EventPersistenceService';
+import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
 import { OutboxSyncWorker } from '../layer-B(Assessement)/OutboxSyncWorker';
 import { OutboxPublisher } from '../layer-B(Assessement)/OutboxPublisher';
 import { AlertingService } from '../layer-D(notification)/alerting/AlertingService';

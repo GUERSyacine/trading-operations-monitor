@@ -1,5 +1,5 @@
 import WebSocket from 'ws';
-import { EventPersistenceService } from '../../adapters/base/EventPersistenceService';
+import { EventPersistenceService } from '../../agent/adapters/base/EventPersistenceService';
 import { TelemetryMapper } from '../TelemetryMapper';
 import { FeatureFlagService } from '../developer-console/FeatureFlagService';
 import { EventBus } from '../developer-console/EventBus';

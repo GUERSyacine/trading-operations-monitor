@@ -9,7 +9,7 @@ import { DeveloperConsoleGateway } from '../layer-A(observation)/developer-conso
 import { DeveloperConsoleController } from '../layer-A(observation)/developer-console/DeveloperConsoleController';
 import { DeveloperConsoleServer } from '../layer-A(observation)/developer-console/DeveloperConsoleServer';
 import { FailureType, FailureScope, FeatureFlag, SystemCommand, OperationScenario } from '../layer-A(observation)/developer-console/types';
-import { EventPersistenceService } from '../adapters/base/EventPersistenceService';
+import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
 import { OperationsSimulationService } from '../layer-A(observation)/developer-console/OperationsSimulationService';
 
 // Helper to make local HTTP requests

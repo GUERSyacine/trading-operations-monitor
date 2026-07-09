@@ -17,8 +17,8 @@ import { IncidentManager } from '../layer-B(Assessement)/IncidentManager';
 import { InfrastructureWatchdogService } from '../layer-A(observation)/layer1(infrastructure_monitoring)/InfrastructureWatchdogService';
 import { OperationsWatchdogService } from '../layer-A(observation)/layer2(trading_operations_monitoring)/OperationsWatchdogService';
 import { FreqtradeWebSocketAdapter } from '../layer-A(observation)/layer1(infrastructure_monitoring)/FreqtradeWebSocketAdapter';
-import { FreqtradeAdapter } from '../adapters/freqtrade/FreqtradeAdapter';
-import { EventPersistenceService } from '../adapters/base/EventPersistenceService';
+import { FreqtradeAdapter } from '../agent/adapters/freqtrade/FreqtradeAdapter';
+import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
 import { HealthCheckResult } from '../layer-A(observation)/types';
 import { prisma } from '../prisma';
 

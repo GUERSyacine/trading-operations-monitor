@@ -3,9 +3,9 @@ dotenv.config({ path: '../.env' });
 dotenv.config(); // fallback to current dir
 
 
-import { EventPersistenceService } from '../adapters/base/EventPersistenceService';
+import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
 import { FreqtradeWebhookReceiver } from '../layer-A(observation)/layer1(infrastructure_monitoring)/FreqtradeWebhookReceiver';
-import { FreqtradeAdapter } from '../adapters/freqtrade/FreqtradeAdapter';
+import { FreqtradeAdapter } from '../agent/adapters/freqtrade/FreqtradeAdapter';
 import { prisma } from '../prisma';
 
 

@@ -10,7 +10,7 @@ import { FailureInjectionService } from '../layer-A(observation)/developer-conso
 import { FeatureFlagService } from '../layer-A(observation)/developer-console/FeatureFlagService';
 import { InfrastructureController } from '../layer-A(observation)/developer-console/InfrastructureController';
 import { OperationsSimulationService } from '../layer-A(observation)/developer-console/OperationsSimulationService';
-import { EventPersistenceService } from '../adapters/base/EventPersistenceService';
+import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
 
 class MockRunner {
     async run() { return { stdout: '', stderr: '' }; }

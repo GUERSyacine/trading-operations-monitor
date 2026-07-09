@@ -3,7 +3,7 @@ import { AlertingService } from '../../layer-D(notification)/alerting/AlertingSe
 import { HealthCheckResult, HealthNode, HealthStatus, SOURCE_CAPABILITIES, LifecycleSource, LifecycleEventType } from '../types';
 import { MVP_CONFIG } from '../../mvpConfig';
 import { IncidentManager } from '../../layer-B(Assessement)/IncidentManager';
-import { TradingAdapter } from '../../adapters/base/TradingAdapter';
+import { TradingAdapter } from '../../agent/adapters/base/TradingAdapter';
 import { VisibilityEvaluator } from '../VisibilityEvaluator';
 import { DecisionAudit } from '@prisma/client';
 import { FailureInjectionService } from '../developer-console/FailureInjectionService';

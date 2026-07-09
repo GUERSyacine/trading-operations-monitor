@@ -1,9 +1,9 @@
 import { TradingAdapter, AdapterConfig } from '../base/TradingAdapter';
 import { EventPersistenceService } from '../base/EventPersistenceService';
-import { TelemetryMapper } from '../../layer-A(observation)/TelemetryMapper';
-import { LifecycleEventType, SourceCapabilities, LifecycleSource, SOURCE_CAPABILITIES } from '../../layer-A(observation)/types';
+import { TelemetryMapper } from '../../../layer-A(observation)/TelemetryMapper';
+import { LifecycleEventType, SourceCapabilities, LifecycleSource, SOURCE_CAPABILITIES } from '../../../layer-A(observation)/types';
 
-import { FeatureFlagService } from '../../layer-A(observation)/developer-console/FeatureFlagService';
+import { FeatureFlagService } from '../../../layer-A(observation)/developer-console/FeatureFlagService';
 
 export class FreqtradeAdapter extends TradingAdapter {
     readonly capabilities: SourceCapabilities = SOURCE_CAPABILITIES.FREQTRADE;
