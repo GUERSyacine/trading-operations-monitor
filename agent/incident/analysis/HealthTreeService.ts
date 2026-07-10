@@ -1,5 +1,5 @@
 import { IncidentManager } from '../manager/IncidentManager';
-import { HealthNode, HealthStatus, HealthCheckResult } from '../../detectors/types';
+import { HealthNode, HealthStatus, HealthCheckResult } from '../../../shared/types/telemetry';
 import { InfrastructureWatchdogService } from '../../detectors/infrastructure/InfrastructureWatchdogService';
 import { OperationsWatchdogService } from '../../detectors/operations/OperationsWatchdogService';
 import { MVP_CONFIG } from '../../../shared/mvpConfig';

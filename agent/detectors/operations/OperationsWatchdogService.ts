@@ -1,6 +1,6 @@
 import { prisma } from '../../../shared/prisma';
 import { AlertingService } from '../../notification/AlertingService';
-import { HealthCheckResult, HealthNode, HealthStatus, SOURCE_CAPABILITIES, LifecycleSource, LifecycleEventType } from '../types';
+import { HealthCheckResult, HealthNode, HealthStatus, SOURCE_CAPABILITIES, LifecycleSource, LifecycleEventType } from '../../../shared/types/telemetry';
 import { MVP_CONFIG } from '../../../shared/mvpConfig';
 import { IncidentManager } from '../../incident/manager/IncidentManager';
 import { TradingAdapter } from '../../adapters/base/TradingAdapter';
@@ -8,7 +8,8 @@ import { VisibilityEvaluator } from '../VisibilityEvaluator';
 import { DecisionAudit } from '@prisma/client';
 import { FailureInjectionService } from '../../../shared/services/FailureInjectionService';
 import { FeatureFlagService } from '../../../shared/services/FeatureFlagService';
-import { FailureType, FeatureFlag } from '../../../shared/types/developer';
+import { FailureType, FeatureFlag, WatchdogEventType } from '../../../shared/types/developer';
+import { EventBus } from '../../../shared/services/EventBus';
 
 export interface OrderTimeline {
     orderId: string;
@@ -110,7 +111,14 @@ export class OperationsWatchdogService {
         protected allowedInactivityMs: number = MVP_CONFIG.OPERATIONS.HEARTBEAT_TIMEOUT_MS,
         protected failures?: FailureInjectionService,
         protected flags?: FeatureFlagService
-    ) {}
+    ) {
+        // Register to listen to the LAB_RESET event to clear detector state
+        EventBus.getInstance().subscribe((event) => {
+            if (event.type === WatchdogEventType.LAB_RESET) {
+                this.clearDetectorState();
+            }
+        });
+    }
 
     protected heartbeatFailures = 0;
     protected brokerFailures = 0;

@@ -1,30 +1,30 @@
-import { prisma } from './shared/prisma';
-import { AlertingService } from './agent/notification/AlertingService';
-import { IncidentManager } from './agent/incident/manager/IncidentManager';
-import { InfrastructureWatchdogService } from './agent/detectors/infrastructure/InfrastructureWatchdogService';
-import { OperationsWatchdogService } from './agent/detectors/operations/OperationsWatchdogService';
-import { RuntimeMonitorService } from './agent/detectors/operations/RuntimeMonitorService';
-import { EventPersistenceService } from './agent/adapters/base/EventPersistenceService';
-import { FreqtradeAdapter } from './agent/adapters/freqtrade/FreqtradeAdapter';
-import { FreqtradeWebhookReceiver } from './agent/detectors/infrastructure/FreqtradeWebhookReceiver';
-import { FreqtradeWebSocketAdapter } from './agent/detectors/infrastructure/FreqtradeWebSocketAdapter';
-import { LifecycleAnomalyDetector } from './agent/incident/manager/LifecycleAnomalyDetector';
-import { MVP_CONFIG } from './shared/mvpConfig';
+import { prisma } from '../shared/prisma';
+import { AlertingService } from './notification/AlertingService';
+import { IncidentManager } from './incident/manager/IncidentManager';
+import { InfrastructureWatchdogService } from './detectors/infrastructure/InfrastructureWatchdogService';
+import { OperationsWatchdogService } from './detectors/operations/OperationsWatchdogService';
+import { RuntimeMonitorService } from './detectors/operations/RuntimeMonitorService';
+import { EventPersistenceService } from '../shared/services/EventPersistenceService';
+import { FreqtradeAdapter } from './adapters/freqtrade/FreqtradeAdapter';
+import { FreqtradeWebhookReceiver } from './detectors/infrastructure/FreqtradeWebhookReceiver';
+import { FreqtradeWebSocketAdapter } from './detectors/infrastructure/FreqtradeWebSocketAdapter';
+import { LifecycleAnomalyDetector } from './incident/manager/LifecycleAnomalyDetector';
+import { MVP_CONFIG } from '../shared/mvpConfig';
 
 // Developer Console Core Imports
-import { EventBus } from './shared/services/EventBus';
-import { CommandRunner } from './cloud/developer/CommandRunner';
-import { InfrastructureController } from './cloud/developer/InfrastructureController';
-import { FailureInjectionService } from './shared/services/FailureInjectionService';
-import { FeatureFlagService } from './shared/services/FeatureFlagService';
-import { DeveloperConsoleGateway } from './cloud/developer/DeveloperConsoleGateway';
-import { DeveloperConsoleController } from './cloud/developer/DeveloperConsoleController';
-import { DeveloperConsoleServer } from './cloud/developer/DeveloperConsoleServer';
-import { OperationsSimulationService } from './cloud/developer/OperationsSimulationService';
+import { EventBus } from '../shared/services/EventBus';
+import { CommandRunner } from '../cloud/developer/CommandRunner';
+import { InfrastructureController } from '../cloud/developer/InfrastructureController';
+import { FailureInjectionService } from '../shared/services/FailureInjectionService';
+import { FeatureFlagService } from '../shared/services/FeatureFlagService';
+import { DeveloperConsoleGateway } from '../cloud/developer/DeveloperConsoleGateway';
+import { DeveloperConsoleController } from '../cloud/developer/DeveloperConsoleController';
+import { DeveloperConsoleServer } from '../cloud/developer/DeveloperConsoleServer';
+import { OperationsSimulationService } from '../cloud/developer/OperationsSimulationService';
 
-import { DefaultMachineInfoProvider } from './shared/contracts/DefaultMachineInfoProvider';
-import { OutboxPublisher } from './agent/incident/outbox/OutboxPublisher';
-import { OutboxSyncWorker } from './agent/incident/outbox/OutboxSyncWorker';
+import { DefaultMachineInfoProvider } from '../shared/contracts/DefaultMachineInfoProvider';
+import { OutboxPublisher } from './incident/outbox/OutboxPublisher';
+import { OutboxSyncWorker } from './incident/outbox/OutboxSyncWorker';
 
 export class WatchdogOrchestrator {
     private alertingService: AlertingService;
@@ -103,9 +103,7 @@ export class WatchdogOrchestrator {
             failureService,
             featureFlagService,
             infraController,
-            operationsSimulationService,
-            this.incidentManager,
-            this.opsService
+            operationsSimulationService
         );
         this.devConsoleServer = new DeveloperConsoleServer(
             devConsoleController,

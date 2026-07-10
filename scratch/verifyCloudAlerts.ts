@@ -8,7 +8,7 @@ import { InfrastructureController } from '../cloud/developer/InfrastructureContr
 import { FailureInjectionService } from '../shared/services/FailureInjectionService';
 import { FeatureFlagService } from '../shared/services/FeatureFlagService';
 import { OperationsSimulationService } from '../cloud/developer/OperationsSimulationService';
-import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
+import { EventPersistenceService } from '../shared/services/EventPersistenceService';
 import { OutboxSyncWorker } from '../agent/incident/outbox/OutboxSyncWorker';
 import { OutboxPublisher } from '../agent/incident/outbox/OutboxPublisher';
 import { AlertingService } from '../agent/notification/AlertingService';
@@ -32,9 +32,7 @@ async function main() {
         failureService,
         featureFlagService,
         infraController,
-        operationsSimulationService,
-        undefined as any,
-        undefined as any
+        operationsSimulationService
     );
     const server = new DeveloperConsoleServer(devConsoleController, devConsoleGateway, 3005, '127.0.0.1');
     server.start();

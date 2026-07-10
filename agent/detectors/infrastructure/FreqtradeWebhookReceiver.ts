@@ -1,5 +1,5 @@
 import * as http from 'http';
-import { EventPersistenceService } from '../../adapters/base/EventPersistenceService';
+import { EventPersistenceService } from '../../../shared/services/EventPersistenceService';
 import { TelemetryMapper } from '../TelemetryMapper';
 
 export class FreqtradeWebhookReceiver {

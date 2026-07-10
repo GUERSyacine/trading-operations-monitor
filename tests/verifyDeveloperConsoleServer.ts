@@ -9,7 +9,7 @@ import { DeveloperConsoleGateway } from '../cloud/developer/DeveloperConsoleGate
 import { DeveloperConsoleController } from '../cloud/developer/DeveloperConsoleController';
 import { DeveloperConsoleServer } from '../cloud/developer/DeveloperConsoleServer';
 import { FailureType, FailureScope, FeatureFlag, SystemCommand, OperationScenario } from '../shared/types/developer';
-import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
+import { EventPersistenceService } from '../shared/services/EventPersistenceService';
 import { OperationsSimulationService } from '../cloud/developer/OperationsSimulationService';
 
 // Helper to make local HTTP requests
@@ -61,19 +61,11 @@ async function runTests() {
     (prisma.decisionAudit as any).deleteMany = async () => ({ count: 0 });
     (prisma.alertLog as any).deleteMany = async () => ({ count: 0 });
 
-    const mockIncidentManager = {
-        clearSimulationIncidents: async () => {}
-    } as any;
-    const mockOpsService = {
-        clearDetectorState: () => {}
-    } as any;
     const controller = new DeveloperConsoleController(
         failures,
         flags,
         infra,
-        operationsSim,
-        mockIncidentManager,
-        mockOpsService
+        operationsSim
     );
 
     const testPort = 3999;

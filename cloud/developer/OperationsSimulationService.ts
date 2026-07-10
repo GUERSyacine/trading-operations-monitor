@@ -1,7 +1,7 @@
-import { EventPersistenceService } from '../../agent/adapters/base/EventPersistenceService';
+import { EventPersistenceService } from '../../shared/services/EventPersistenceService';
 import { OperationScenario, WatchdogEventType, EventCategory } from '../../shared/types/developer';
 import { EventBus } from '../../shared/services/EventBus';
-import { LifecycleEvent, LifecycleEventType, TradeDirection } from '../../agent/detectors/types';
+import { LifecycleEvent, LifecycleEventType, TradeDirection } from '../../shared/types/telemetry';
 
 /**
  * OperationsSimulationService

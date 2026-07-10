@@ -5,6 +5,8 @@ import { IncidentSeverity as PrismaSeverity, IncidentTransitionType, IncidentAct
 import { MVP_CONFIG } from '../../../shared/mvpConfig';
 import { IncidentClassifier } from '../analysis/IncidentClassifier';
 import { IncidentPublisher } from '../../../shared/contracts/types';
+import { EventBus } from '../../../shared/services/EventBus';
+import { WatchdogEventType } from '../../../shared/types/developer';
 
 /**
  * Incident Manager (Step 12)
@@ -25,6 +27,15 @@ export class IncidentManager {
 
     constructor(private alertingService?: AlertingService, publisher?: IncidentPublisher) {
         this.publisher = publisher;
+
+        // Register to listen to the LAB_RESET event to clear simulation state asynchronously
+        EventBus.getInstance().subscribe((event) => {
+            if (event.type === WatchdogEventType.LAB_RESET) {
+                this.clearSimulationIncidents().catch((err) => {
+                    console.error('[IncidentManager] Failed to clear simulation incidents on LAB_RESET:', err?.message || err);
+                });
+            }
+        });
     }
 
     /**

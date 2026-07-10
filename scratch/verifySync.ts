@@ -8,7 +8,7 @@ import { InfrastructureController } from '../cloud/developer/InfrastructureContr
 import { FailureInjectionService } from '../shared/services/FailureInjectionService';
 import { FeatureFlagService } from '../shared/services/FeatureFlagService';
 import { OperationsSimulationService } from '../cloud/developer/OperationsSimulationService';
-import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
+import { EventPersistenceService } from '../shared/services/EventPersistenceService';
 import { OutboxSyncWorker } from '../agent/incident/outbox/OutboxSyncWorker';
 import { prisma } from '../shared/prisma';
 
@@ -29,9 +29,7 @@ async function main() {
         failureService,
         featureFlagService,
         infraController,
-        operationsSimulationService,
-        undefined as any,
-        undefined as any
+        operationsSimulationService
     );
     const server = new DeveloperConsoleServer(devConsoleController, devConsoleGateway, 3005, '127.0.0.1');
     server.start();
@@ -49,7 +47,7 @@ async function main() {
         console.log('--- TEST 1: Success Path ---');
         const rec1 = await prisma.incidentOutbox.create({
             data: {
-                payload: { test: 'success-payload' },
+                payload: { type: 'INCIDENT', incident: { incidentId: '1' }, event: 'CREATED', test: 'success-payload' },
                 status: 'PENDING',
                 attempts: 0,
                 nextRetryAt: new Date(Date.now() - 1000) // ready to retry
@@ -80,7 +78,7 @@ async function main() {
         console.log('--- TEST 2: Failure & Backoff Path ---');
         const rec2 = await prisma.incidentOutbox.create({
             data: {
-                payload: { test: 'failure-payload' },
+                payload: { type: 'INCIDENT', incident: { incidentId: '2' }, event: 'CREATED', test: 'failure-payload' },
                 status: 'PENDING',
                 attempts: 0,
                 nextRetryAt: new Date(Date.now() - 1000)
@@ -113,7 +111,7 @@ async function main() {
         console.log('--- TEST 3: Cloud Offline Path ---');
         const rec3 = await prisma.incidentOutbox.create({
             data: {
-                payload: { test: 'offline-payload' },
+                payload: { type: 'INCIDENT', incident: { incidentId: '3' }, event: 'CREATED', test: 'offline-payload' },
                 status: 'PENDING',
                 attempts: 0,
                 nextRetryAt: new Date(Date.now() - 1000)
@@ -147,6 +145,7 @@ async function main() {
         await prisma.incidentOutbox.deleteMany({});
         
         const testPayload = {
+            type: 'INCIDENT',
             schemaVersion: 1,
             event: 'CREATED',
             machine: { machineId: 'vps-test-1', licenseKey: 'lic-abc' },
@@ -183,7 +182,7 @@ async function main() {
             promises.push(
                 prisma.incidentOutbox.create({
                     data: {
-                        payload: { index: i, desc: `Stress incident ${i}` },
+                        payload: { type: 'INCIDENT', incident: { incidentId: String(i) }, event: 'CREATED', index: i, desc: `Stress incident ${i}` },
                         status: 'PENDING',
                         attempts: 0,
                         nextRetryAt: new Date(Date.now() - 1000)
@@ -217,7 +216,7 @@ async function main() {
         // 1. Create a permanently FAILED outbox record and another PENDING one
         const failedRec = await prisma.incidentOutbox.create({
             data: {
-                payload: { test: 'failed-rec' },
+                payload: { type: 'INCIDENT', incident: { incidentId: 'failed' }, event: 'CREATED', test: 'failed-rec' },
                 status: 'FAILED',
                 attempts: 5,
                 nextRetryAt: new Date(Date.now() - 1000),
@@ -226,7 +225,7 @@ async function main() {
         });
         const pendingRec = await prisma.incidentOutbox.create({
             data: {
-                payload: { test: 'pending-rec' },
+                payload: { type: 'INCIDENT', incident: { incidentId: 'pending' }, event: 'CREATED', test: 'pending-rec' },
                 status: 'PENDING',
                 attempts: 2,
                 nextRetryAt: new Date(Date.now() - 1000)

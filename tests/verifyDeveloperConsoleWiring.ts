@@ -18,8 +18,8 @@ import { InfrastructureWatchdogService } from '../agent/detectors/infrastructure
 import { OperationsWatchdogService } from '../agent/detectors/operations/OperationsWatchdogService';
 import { FreqtradeWebSocketAdapter } from '../agent/detectors/infrastructure/FreqtradeWebSocketAdapter';
 import { FreqtradeAdapter } from '../agent/adapters/freqtrade/FreqtradeAdapter';
-import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
-import { HealthCheckResult } from '../agent/detectors/types';
+import { EventPersistenceService } from '../shared/services/EventPersistenceService';
+import { HealthCheckResult } from '../shared/types/telemetry';
 import { prisma } from '../shared/prisma';
 
 async function testInterceptionWraps() {

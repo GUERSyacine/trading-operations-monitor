@@ -1,5 +1,5 @@
 import { FreqtradeWebSocketAdapter } from '../agent/detectors/infrastructure/FreqtradeWebSocketAdapter';
-import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
+import { EventPersistenceService } from '../shared/services/EventPersistenceService';
 
 async function runTest() {
     console.log('🧪 Starting Level 1 Freqtrade WebSocket PoC Verification...');

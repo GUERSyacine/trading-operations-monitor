@@ -1,4 +1,4 @@
-import { SourceCapabilities, LifecycleSource } from '../../detectors/types';
+import { SourceCapabilities, LifecycleSource } from '../../../shared/types/telemetry';
 import { FeatureFlagService } from '../../../shared/services/FeatureFlagService';
 import { FeatureFlag, EventCategory, WatchdogEventType } from '../../../shared/types/developer';
 import { EventBus } from '../../../shared/services/EventBus';

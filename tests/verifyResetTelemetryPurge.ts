@@ -10,7 +10,7 @@ import { FailureInjectionService } from '../shared/services/FailureInjectionServ
 import { FeatureFlagService } from '../shared/services/FeatureFlagService';
 import { InfrastructureController } from '../cloud/developer/InfrastructureController';
 import { OperationsSimulationService } from '../cloud/developer/OperationsSimulationService';
-import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
+import { EventPersistenceService } from '../shared/services/EventPersistenceService';
 
 class MockRunner {
     async run() { return { stdout: '', stderr: '' }; }
@@ -26,21 +26,11 @@ async function runTelemetryPurgeVerification() {
     const persistence = new EventPersistenceService();
     const operationsSim = new OperationsSimulationService(persistence);
 
-    const mockIncidentManager = {
-        clearSimulationIncidents: async () => {}
-    } as any;
-
-    const mockOpsService = {
-        clearDetectorState: () => {}
-    } as any;
-
     const controller = new DeveloperConsoleController(
         failures,
         flags,
         infra,
-        operationsSim,
-        mockIncidentManager,
-        mockOpsService
+        operationsSim
     );
 
     // 1. Clean up any existing test records first

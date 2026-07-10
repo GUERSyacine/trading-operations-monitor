@@ -1,4 +1,4 @@
-import { SourceCapabilities, LifecycleEventType, PipelineVisibilityLevel, LIFECYCLE_EVENT_PHASES } from './types';
+import { SourceCapabilities, LifecycleEventType, PipelineVisibilityLevel, LIFECYCLE_EVENT_PHASES } from '../../shared/types/telemetry';
 
 export interface VisibilityEvaluationContext {
     capabilities: SourceCapabilities;

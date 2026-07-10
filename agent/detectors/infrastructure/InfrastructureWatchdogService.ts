@@ -5,7 +5,7 @@ import { prisma } from '../../../shared/prisma';
 import { AlertingService } from '../../notification/AlertingService';
 import { MVP_CONFIG } from '../../../shared/mvpConfig';
 
-import { HealthCheckResult, HealthNode, HealthStatus } from '../types';
+import { HealthCheckResult, HealthNode, HealthStatus } from '../../../shared/types/telemetry';
 
 import { FailureInjectionService } from '../../../shared/services/FailureInjectionService';
 import { FeatureFlagService } from '../../../shared/services/FeatureFlagService';

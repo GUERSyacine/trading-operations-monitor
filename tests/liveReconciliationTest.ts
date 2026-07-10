@@ -4,7 +4,7 @@ dotenv.config();
 
 import { FreqtradeWebSocketAdapter } from '../agent/detectors/infrastructure/FreqtradeWebSocketAdapter';
 import { FreqtradeAdapter } from '../agent/adapters/freqtrade/FreqtradeAdapter';
-import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
+import { EventPersistenceService } from '../shared/services/EventPersistenceService';
 import { prisma } from '../shared/prisma';
 import assert from 'assert';
 

@@ -4,8 +4,6 @@ import { InfrastructureController } from './InfrastructureController';
 import { OperationsSimulationService } from './OperationsSimulationService';
 import { FailureType, FailureScope, FeatureFlag, SystemCommand, OperationScenario, EventCategory, WatchdogEventType } from '../../shared/types/developer';
 import { prisma } from '../../shared/prisma';
-import { IncidentManager } from '../../agent/incident/manager/IncidentManager';
-import { OperationsWatchdogService } from '../../agent/detectors/operations/OperationsWatchdogService';
 import { EventBus } from '../../shared/services/EventBus';
 
 export class DeveloperConsoleController {
@@ -13,9 +11,7 @@ export class DeveloperConsoleController {
         private failures: FailureInjectionService,
         private flags: FeatureFlagService,
         private infra: InfrastructureController,
-        private operationsSim: OperationsSimulationService,
-        private incidentManager: IncidentManager,
-        private opsService: OperationsWatchdogService
+        private operationsSim: OperationsSimulationService
     ) {}
 
     public injectFailure(type: FailureType, scope: FailureScope, ttlSeconds?: number, correlationId?: string): void {
@@ -105,16 +101,11 @@ export class DeveloperConsoleController {
             }
         });
 
-        // 2. Reset IncidentManager memory & DB state
-        await this.incidentManager.clearSimulationIncidents();
-
-        // 3. Reset OperationsWatchdogService memory state
-        this.opsService.clearDetectorState();
-
-        // 4. Clear EventBus ringbuffer
+        // 1. Clear EventBus ringbuffer
         EventBus.getInstance().clearBuffer();
 
-        // 5. Emit LAB_RESET system event
+        // 2. Emit LAB_RESET system event. This event will trigger subscribers in the agent context
+        // (IncidentManager and OperationsWatchdogService) to clear their simulation states.
         EventBus.getInstance().emit(
             EventCategory.SYSTEM,
             WatchdogEventType.LAB_RESET,

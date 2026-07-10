@@ -4,7 +4,7 @@ import {
     LifecycleSource,
     PipelineVisibilityLevel,
     SOURCE_CAPABILITIES
-} from '../agent/detectors/types';
+} from '../shared/types/telemetry';
 
 function runValidationSuite() {
     console.log('🧪 Starting Schema Validation Suite (Phase A)...');

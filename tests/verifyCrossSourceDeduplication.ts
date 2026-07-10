@@ -3,8 +3,8 @@ dotenv.config({ path: '../.env' });
 dotenv.config();
 
 import { FreqtradeAdapter } from '../agent/adapters/freqtrade/FreqtradeAdapter';
-import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
-import { LifecycleEvent } from '../agent/detectors/types';
+import { EventPersistenceService } from '../shared/services/EventPersistenceService';
+import { LifecycleEvent } from '../shared/types/telemetry';
 import { prisma } from '../shared/prisma';
 import assert from 'assert';
 

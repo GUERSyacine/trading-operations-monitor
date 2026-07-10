@@ -2,7 +2,7 @@ import * as dotenv from 'dotenv';
 dotenv.config({ path: '../.env' });
 dotenv.config();
 
-import { EventPersistenceService } from '../agent/adapters/base/EventPersistenceService';
+import { EventPersistenceService } from '../shared/services/EventPersistenceService';
 import { FreqtradeAdapter } from '../agent/adapters/freqtrade/FreqtradeAdapter';
 import { prisma } from '../shared/prisma';
 

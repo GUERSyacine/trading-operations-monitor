@@ -1,7 +1,7 @@
 import { TradingAdapter, AdapterConfig } from '../base/TradingAdapter';
-import { EventPersistenceService } from '../base/EventPersistenceService';
+import { EventPersistenceService } from '../../../shared/services/EventPersistenceService';
 import { TelemetryMapper } from '../../detectors/TelemetryMapper';
-import { LifecycleEventType, SourceCapabilities, LifecycleSource, SOURCE_CAPABILITIES } from '../../detectors/types';
+import { LifecycleEventType, SourceCapabilities, LifecycleSource, SOURCE_CAPABILITIES } from '../../../shared/types/telemetry';
 
 import { FeatureFlagService } from '../../../shared/services/FeatureFlagService';
 

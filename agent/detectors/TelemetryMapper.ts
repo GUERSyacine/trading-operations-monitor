@@ -1,4 +1,4 @@
-import { LifecycleEvent, LifecycleEventType, TradeDirection } from './types';
+import { LifecycleEvent, LifecycleEventType, TradeDirection } from '../../shared/types/telemetry';
 
 export class TelemetryMapper {
     /**

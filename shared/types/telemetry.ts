@@ -160,4 +160,3 @@ export const SOURCE_CAPABILITIES: Record<LifecycleSource, SourceCapabilities> = 
         ]
     }
 };
-

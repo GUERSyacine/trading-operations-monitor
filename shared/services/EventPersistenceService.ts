@@ -1,6 +1,5 @@
-import { prisma } from '../../../shared/prisma';
-import { LifecycleEvent, LifecycleEventType } from '../../detectors/types';
-
+import { prisma } from '../prisma';
+import { LifecycleEvent, LifecycleEventType } from '../types/telemetry';
 
 export interface NormalizedEvent {
     classification:
