@@ -31,8 +31,12 @@ export class AgentIdentityService {
         console.log(`[AgentIdentityService] Identity cache status: ${loadResult.status}. Triggering registration flow...`);
 
         if (loadResult.status === 'CORRUPTED' || loadResult.status === 'INVALID_SCHEMA') {
-            console.warn('[AgentIdentityService] Local identity file is invalid/corrupted. Backing up file and resetting credentials.');
-            await this.store.backupCorruptedFile();
+            console.warn('[AgentIdentityService] Local identity file is invalid/corrupted. Attempting backup and resetting credentials.');
+            try {
+                await this.store.backupCorruptedFile();
+            } catch (err: any) {
+                console.error('[AgentIdentityService] Failed to backup corrupted identity file:', err?.message || err);
+            }
             this.activeMachineId = this.store.generatePersistentMachineId();
         } else {
             // Preserve loaded machineId if present, otherwise generate a fresh one
