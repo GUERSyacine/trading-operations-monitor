@@ -1,3 +1,5 @@
+export type AgentApiStatus = 'SUCCESS' | 'NETWORK_ERROR' | 'SERVER_ERROR' | 'UNAUTHORIZED' | 'INVALID_TOKEN' | 'TIMEOUT';
+
 export interface AgentRegisterRequest {
     licenseToken: string;
     machineId: string;
@@ -8,6 +10,7 @@ export interface AgentRegisterRequest {
 
 export interface AgentRegisterResponse {
     success: boolean;
+    status: AgentApiStatus;
     agentId?: string;
     agentSecret?: string;
     message?: string;
@@ -34,7 +37,7 @@ export interface AgentHeartbeatRequest {
 
 export interface AgentHeartbeatResponse {
     success: boolean;
-    status: string;
+    status: AgentApiStatus;
     configOverrides?: Record<string, any>;
     message?: string;
 }

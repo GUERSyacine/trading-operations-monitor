@@ -101,6 +101,7 @@ export const MVP_CONFIG = {
         LICENSE_TOKEN: process.env.WATCHDOG_LICENSE_TOKEN || 'DEFAULT-TOKEN-XYZ'
     },
     CLOUD: {
+        BASE_URL: process.env.CLOUD_BASE_URL || 'http://127.0.0.1:3001',
         OFFLINE_TIMEOUT_MS: envNumber(process.env.WATCHDOG_OFFLINE_TIMEOUT_MS, 90_000)
     }
 };

@@ -8,6 +8,14 @@ export interface AgentIdentity {
     agentSecret: string;
 }
 
+export type IdentityLoadStatus = 'NOT_FOUND' | 'CORRUPTED' | 'INVALID_SCHEMA' | 'SUCCESS';
+
+export interface IdentityLoadResult {
+    status: IdentityLoadStatus;
+    identity: AgentIdentity | null;
+    error?: string;
+}
+
 export class IdentityStore {
     private readonly filePath: string;
 
@@ -29,26 +37,51 @@ export class IdentityStore {
     }
 
     /**
-     * Load the identity from local storage.
+     * Load the identity from local storage with detailed status output.
      */
-    public async load(): Promise<AgentIdentity | null> {
+    public async load(): Promise<IdentityLoadResult> {
         try {
             if (!(await this.exists())) {
-                return null;
-            }
-            const content = await fs.readFile(this.filePath, 'utf-8');
-            const data = JSON.parse(content);
-            if (data && data.machineId && data.agentId && data.agentSecret) {
                 return {
-                    machineId: data.machineId,
-                    agentId: data.agentId,
-                    agentSecret: data.agentSecret
+                    status: 'NOT_FOUND',
+                    identity: null
                 };
             }
-            return null;
+            const content = await fs.readFile(this.filePath, 'utf-8');
+            let data: any;
+            try {
+                data = JSON.parse(content);
+            } catch (err: any) {
+                return {
+                    status: 'CORRUPTED',
+                    identity: null,
+                    error: `JSON parse error: ${err?.message || err}`
+                };
+            }
+
+            if (data && typeof data === 'object' && 'machineId' in data && 'agentId' in data && 'agentSecret' in data) {
+                return {
+                    status: 'SUCCESS',
+                    identity: {
+                        machineId: data.machineId,
+                        agentId: data.agentId,
+                        agentSecret: data.agentSecret
+                    }
+                };
+            }
+
+            return {
+                status: 'INVALID_SCHEMA',
+                identity: null,
+                error: 'Identity file exists but is missing required fields (machineId, agentId, agentSecret).'
+            };
         } catch (error: any) {
             console.error('[IdentityStore] Error loading identity file:', error?.message || error);
-            return null;
+            return {
+                status: 'CORRUPTED',
+                identity: null,
+                error: error?.message || String(error)
+            };
         }
     }
 
@@ -88,7 +121,7 @@ export class IdentityStore {
     /**
      * Generates a unique, persistent machine ID.
      */
-    public generateMachineId(): string {
+    public generatePersistentMachineId(): string {
         return `mac-${randomUUID()}`;
     }
 }
