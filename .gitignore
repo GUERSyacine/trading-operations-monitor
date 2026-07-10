@@ -18,3 +18,7 @@ yarn-error.log*
 # System files
 .DS_Store
 Thumbs.db
+
+# Agent Identity Cache
+.agent-identity.json
+
