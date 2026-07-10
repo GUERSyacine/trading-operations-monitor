@@ -3,6 +3,7 @@ import * as path from 'path';
 import { randomUUID } from 'crypto';
 
 export interface AgentIdentity {
+    version: number;
     machineId: string;
     agentId: string;
     agentSecret: string;
@@ -63,6 +64,7 @@ export class IdentityStore {
                 return {
                     status: 'SUCCESS',
                     identity: {
+                        version: typeof data.version === 'number' ? data.version : 1,
                         machineId: data.machineId,
                         agentId: data.agentId,
                         agentSecret: data.agentSecret
@@ -91,6 +93,7 @@ export class IdentityStore {
     public async save(identity: AgentIdentity): Promise<void> {
         try {
             const data = {
+                version: identity.version || 1,
                 machineId: identity.machineId,
                 agentId: identity.agentId,
                 agentSecret: identity.agentSecret
@@ -122,6 +125,6 @@ export class IdentityStore {
      * Generates a unique, persistent machine ID.
      */
     public generatePersistentMachineId(): string {
-        return `mac-${randomUUID()}`;
+        return `inst-${randomUUID()}`;
     }
 }
