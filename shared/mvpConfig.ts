@@ -95,6 +95,13 @@ export const MVP_CONFIG = {
         BACKOFF_BASE_MS: envNumber(process.env.CLOUD_SYNC_BACKOFF_BASE_MS, 1_000),
         BATCH_SIZE: envNumber(process.env.CLOUD_SYNC_BATCH_SIZE, 50),
         TIMEOUT_MS: envNumber(process.env.CLOUD_SYNC_TIMEOUT_MS, 5_000)
+    },
+    AGENT: {
+        HEARTBEAT_INTERVAL_MS: envNumber(process.env.WATCHDOG_HEARTBEAT_INTERVAL_MS, 30_000),
+        LICENSE_TOKEN: process.env.WATCHDOG_LICENSE_TOKEN || 'DEFAULT-TOKEN-XYZ'
+    },
+    CLOUD: {
+        OFFLINE_TIMEOUT_MS: envNumber(process.env.WATCHDOG_OFFLINE_TIMEOUT_MS, 90_000)
     }
 };
 
