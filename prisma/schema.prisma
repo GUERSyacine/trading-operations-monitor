@@ -169,3 +169,58 @@ model IncidentOutbox {
   @@index([status, nextRetryAt])
   @@map("incident_outbox")
 }
+
+model Agent {
+  id                  String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  machineId           String            @unique @map("machine_id") @db.VarChar(100)
+  hostname            String            @db.VarChar(100)
+  displayName         String?           @map("display_name") @db.VarChar(100)
+  version             String            @db.VarChar(50)
+  status              String            @default("OFFLINE") @db.VarChar(50)
+  capabilities        Json              @map("capabilities")
+  agentSecret         String            @map("agent_secret") @db.VarChar(100)
+  lastHeartbeatAt     DateTime?         @map("last_heartbeat_at")
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
+
+  // Multi-tenant scaffolding
+  organizationId      String?           @map("organization_id") @db.Uuid
+  tenantId            String?           @map("tenant_id") @db.VarChar(50)
+
+  // Relations
+  registrationTokenId String            @map("registration_token_id") @db.VarChar(100)
+  registrationToken   RegistrationToken @relation(fields: [registrationTokenId], references: [token])
+  heartbeats          AgentHeartbeat[]
+
+  @@map("agents")
+}
+
+model AgentHeartbeat {
+  id               String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  agentId          String   @map("agent_id") @db.Uuid
+  agent            Agent    @relation(fields: [agentId], references: [id])
+  agentVersion     String   @map("agent_version") @db.VarChar(50)
+  cpuPct           Decimal  @map("cpu_pct") @db.Decimal(5, 2)
+  memoryPct        Decimal  @map("memory_pct") @db.Decimal(5, 2)
+  diskPct          Decimal  @map("disk_pct") @db.Decimal(5, 2)
+  status           String   @db.VarChar(50)
+  uptime           BigInt   @map("uptime")
+  outboxPending    Int      @map("outbox_pending")
+  databaseHealthy  Boolean  @map("database_healthy")
+  freqtradeHealthy Boolean  @map("freqtrade_healthy")
+  timestamp        DateTime @default(now())
+
+  @@index([agentId, timestamp])
+  @@map("agent_heartbeats")
+}
+
+model RegistrationToken {
+  token     String    @id @db.VarChar(100)
+  maxAgents Int       @default(1) @map("max_agents")
+  status    String    @default("ACTIVE") @db.VarChar(50)
+  expiresAt DateTime? @map("expires_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  agents    Agent[]
+
+  @@map("registration_tokens")
+}
