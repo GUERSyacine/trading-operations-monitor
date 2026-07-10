@@ -122,6 +122,21 @@ export class IdentityStore {
     }
 
     /**
+     * Rename a corrupted/invalid identity file to a .bak file to allow recovery and debugging.
+     */
+    public async backupCorruptedFile(): Promise<void> {
+        try {
+            if (await this.exists()) {
+                const bakPath = `${this.filePath}.bak`;
+                await fs.rename(this.filePath, bakPath);
+                console.warn(`[IdentityStore] Corrupted identity file backed up to ${bakPath}`);
+            }
+        } catch (error: any) {
+            console.error('[IdentityStore] Error backing up corrupted file:', error?.message || error);
+        }
+    }
+
+    /**
      * Generates a unique, persistent machine ID.
      */
     public generatePersistentMachineId(): string {

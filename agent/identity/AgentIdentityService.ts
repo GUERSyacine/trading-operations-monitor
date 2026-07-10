@@ -28,13 +28,19 @@ export class AgentIdentityService {
             return true;
         }
 
-        console.log(`[AgentIdentityService] No valid identity cache found (${loadResult.status}). Triggering background registration...`);
-        
-        // Preserve loaded machineId if present, otherwise generate a fresh one
-        if (loadResult.identity?.machineId) {
-            this.activeMachineId = loadResult.identity.machineId;
-        } else {
+        console.log(`[AgentIdentityService] Identity cache status: ${loadResult.status}. Triggering registration flow...`);
+
+        if (loadResult.status === 'CORRUPTED' || loadResult.status === 'INVALID_SCHEMA') {
+            console.warn('[AgentIdentityService] Local identity file is invalid/corrupted. Backing up file and resetting credentials.');
+            await this.store.backupCorruptedFile();
             this.activeMachineId = this.store.generatePersistentMachineId();
+        } else {
+            // Preserve loaded machineId if present, otherwise generate a fresh one
+            if (loadResult.identity?.machineId) {
+                this.activeMachineId = loadResult.identity.machineId;
+            } else {
+                this.activeMachineId = this.store.generatePersistentMachineId();
+            }
         }
 
         // Kick off registration in the background without blocking orchestrator boot
@@ -96,6 +102,12 @@ export class AgentIdentityService {
         const delay = Math.min(2000 * Math.pow(2, attempt), 60000);
 
         const attemptRegistration = async () => {
+            // Guard: ensure we haven't already registered since the timer was scheduled
+            if (this.identity) {
+                this.isRegistering = false;
+                return;
+            }
+
             try {
                 const machineId = this.activeMachineId || this.store.generatePersistentMachineId();
                 this.activeMachineId = machineId;
@@ -111,6 +123,12 @@ export class AgentIdentityService {
                 console.log(`[AgentIdentityService] Register attempt ${attempt + 1} with machineId ${machineId}...`);
                 const response = await this.client.register(req);
 
+                // Cancel the active retry timer if one was scheduled concurrently
+                if (this.retryTimeoutId) {
+                    clearTimeout(this.retryTimeoutId);
+                    this.retryTimeoutId = undefined;
+                }
+
                 this.isRegistering = false;
 
                 if (response.success && response.agentId && response.agentSecret) {
@@ -121,8 +139,9 @@ export class AgentIdentityService {
                         agentSecret: response.agentSecret
                     };
 
-                    this.identity = newIdentity;
+                    // Save local persistence before triggering subscribers
                     await this.store.save(newIdentity);
+                    this.identity = newIdentity;
                     console.log(`[AgentIdentityService] Registration successful! Agent ID: ${newIdentity.agentId}`);
 
                     // Trigger listeners
