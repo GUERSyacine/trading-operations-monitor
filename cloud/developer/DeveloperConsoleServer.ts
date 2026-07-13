@@ -3,12 +3,36 @@ import { DeveloperConsoleController } from './DeveloperConsoleController';
 import { DeveloperConsoleGateway } from './DeveloperConsoleGateway';
 import { DASHBOARD_HTML } from './dashboardHtml';
 import { FailureType, FailureScope, FeatureFlag, SystemCommand, OperationScenario } from '../../shared/types/developer';
+import { AgentStatusService } from './AgentStatusService';
+
+import { EventPersistenceService } from '../../shared/services/EventPersistenceService';
+import { OperationsSimulationService } from './OperationsSimulationService';
+import { EventBus } from '../../shared/services/EventBus';
+import { CommandRunner } from './CommandRunner';
+import { InfrastructureController } from './InfrastructureController';
+import { FailureInjectionService } from '../../shared/services/FailureInjectionService';
+import { FeatureFlagService } from '../../shared/services/FeatureFlagService';
 
 export class DeveloperConsoleServer {
     private server?: http.Server;
     private sseClients = new Set<http.ServerResponse>();
     private heartbeatTimer?: NodeJS.Timeout;
     private readonly startedAt = Date.now();
+    private statusService = new AgentStatusService();
+
+    public static bootstrap(port?: number, host?: string): DeveloperConsoleServer {
+        const persistence = new EventPersistenceService();
+        const opsSim = new OperationsSimulationService(persistence);
+        const eventBus = EventBus.getInstance();
+        const cmdRunner = new CommandRunner();
+        const infraCtrl = new InfrastructureController(cmdRunner, eventBus);
+        const failures = new FailureInjectionService(eventBus);
+        const flags = new FeatureFlagService(eventBus);
+        const gateway = new DeveloperConsoleGateway(eventBus);
+        const controller = new DeveloperConsoleController(failures, flags, infraCtrl, opsSim);
+
+        return new DeveloperConsoleServer(controller, gateway, port, host);
+    }
 
     constructor(
         private controller: DeveloperConsoleController,
@@ -79,9 +103,13 @@ export class DeveloperConsoleServer {
         this.heartbeatTimer = setInterval(() => {
             this.broadcastSseHeartbeat();
         }, 20000);
+
+        // Start offline agent scanner daemon
+        this.statusService.start();
     }
 
     public async stop(): Promise<void> {
+        this.statusService.stop();
         if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
         
         // Terminate active client streams
@@ -157,6 +185,29 @@ export class DeveloperConsoleServer {
                 payload = JSON.parse(body || '{}');
             } catch (e) {
                 this.sendJson(res, 400, { success: false, message: 'Invalid JSON payload' });
+                return;
+            }
+
+            // Agent Registration Route
+            if (url === '/api/v1/agents/register') {
+                try {
+                    const result = await this.controller.registerAgent(payload);
+                    this.sendJson(res, result.success ? 200 : (result.status === 'INVALID_TOKEN' ? 403 : 400), result);
+                } catch (err: any) {
+                    this.sendJson(res, 500, { success: false, message: err.message || 'Internal registration error' });
+                }
+                return;
+            }
+
+            // Agent Heartbeat Route
+            if (url === '/api/v1/agents/heartbeat') {
+                const headerSecret = req.headers['x-agent-secret'] as string | undefined;
+                try {
+                    const result = await this.controller.receiveHeartbeat(payload, headerSecret);
+                    this.sendJson(res, result.success ? 200 : (result.status === 'UNAUTHORIZED' ? 401 : (result.status === 'INVALID_TOKEN' ? 403 : 400)), result);
+                } catch (err: any) {
+                    this.sendJson(res, 500, { success: false, message: err.message || 'Internal heartbeat error' });
+                }
                 return;
             }
 

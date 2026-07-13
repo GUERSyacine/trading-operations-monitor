@@ -26,6 +26,12 @@ import { DefaultMachineInfoProvider } from '../shared/contracts/DefaultMachineIn
 import { OutboxPublisher } from './incident/outbox/OutboxPublisher';
 import { OutboxSyncWorker } from './incident/outbox/OutboxSyncWorker';
 
+// Agent Identity & Telemetry Imports
+import { IdentityStore } from './identity/IdentityStore';
+import { CloudAgentClient } from './identity/CloudAgentClient';
+import { AgentIdentityService } from './identity/AgentIdentityService';
+import { AgentHeartbeatScheduler } from './identity/AgentHeartbeatScheduler';
+
 export class WatchdogOrchestrator {
     private alertingService: AlertingService;
     private incidentManager: IncidentManager;
@@ -41,6 +47,10 @@ export class WatchdogOrchestrator {
 
     // Developer Console Server
     private devConsoleServer: DeveloperConsoleServer;
+
+    // Agent Identity & Heartbeat Services
+    private identityService: AgentIdentityService;
+    private heartbeatScheduler: AgentHeartbeatScheduler;
 
     // Concurrency flags
     private infraRunning = false;
@@ -110,6 +120,20 @@ export class WatchdogOrchestrator {
             devConsoleGateway
         );
 
+        // Instantiate Agent Identity & Heartbeat
+        const identityStore = new IdentityStore();
+        const cloudAgentClient = new CloudAgentClient();
+        this.identityService = new AgentIdentityService(
+            identityStore,
+            cloudAgentClient,
+            MVP_CONFIG.AGENT.LICENSE_TOKEN
+        );
+        this.heartbeatScheduler = new AgentHeartbeatScheduler(
+            this.identityService,
+            cloudAgentClient,
+            MVP_CONFIG.AGENT.HEARTBEAT_INTERVAL_MS
+        );
+
         this.runtimeService = new RuntimeMonitorService(this.alertingService);
         this.webhookReceiver = new FreqtradeWebhookReceiver(persistence);
 
@@ -173,11 +197,24 @@ export class WatchdogOrchestrator {
         console.log('[Orchestrator] Starting Freqtrade WebSocket Ingestion Adapter...');
         this.freqtradeWsAdapter.connect();
 
-        console.log('[Orchestrator] Starting Developer Control Console...');
-        this.devConsoleServer.start();
+        const startConsole = process.env.WATCHDOG_START_DEV_CONSOLE !== 'false';
+        if (startConsole) {
+            console.log('[Orchestrator] Starting Developer Control Console...');
+            this.devConsoleServer.start();
+        } else {
+            console.log('[Orchestrator] Standing alone: Skipping Developer Control Console local start.');
+        }
 
         console.log('[Orchestrator] Starting Outbox Sync Worker...');
         this.syncWorker.start();
+
+        console.log('[Orchestrator] Initializing Agent Identity Service...');
+        this.identityService.initialize().catch((err) => {
+            console.error('[Orchestrator] Failed to initialize Agent Identity Service:', err?.message || err);
+        });
+
+        console.log('[Orchestrator] Starting Agent Heartbeat Scheduler...');
+        this.heartbeatScheduler.start();
 
         console.log('[Orchestrator] Launching scheduler intervals...');
 
@@ -215,8 +252,17 @@ export class WatchdogOrchestrator {
     async stop(): Promise<void> {
         console.log('[Orchestrator] Initiating graceful shutdown...');
 
-        console.log('[Orchestrator] Stopping Developer Control Console...');
-        await this.devConsoleServer.stop();
+        console.log('[Orchestrator] Stopping Agent Heartbeat Scheduler...');
+        this.heartbeatScheduler.stop();
+
+        console.log('[Orchestrator] Stopping Agent Identity Service...');
+        this.identityService.stop();
+
+        const startConsole = process.env.WATCHDOG_START_DEV_CONSOLE !== 'false';
+        if (startConsole) {
+            console.log('[Orchestrator] Stopping Developer Control Console...');
+            await this.devConsoleServer.stop();
+        }
 
         console.log('[Orchestrator] Stopping Outbox Sync Worker...');
         this.syncWorker.stop();

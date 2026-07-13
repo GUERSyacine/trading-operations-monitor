@@ -135,6 +135,189 @@ export class DeveloperConsoleController {
         return result.count;
     }
 
+    public async registerAgent(payload: {
+        licenseToken: string;
+        machineId: string;
+        hostname: string;
+        version: string;
+        capabilities: string[];
+    }): Promise<{
+        success: boolean;
+        status: string;
+        agentId?: string;
+        agentSecret?: string;
+        message?: string;
+    }> {
+        // 1. Verify token exists and is active
+        const token = await prisma.registrationToken.findUnique({
+            where: { token: payload.licenseToken }
+        });
+
+        if (!token) {
+            return {
+                success: false,
+                status: 'INVALID_TOKEN',
+                message: 'Registration token not found.'
+            };
+        }
+
+        if (token.status !== 'ACTIVE') {
+            return {
+                success: false,
+                status: 'INVALID_TOKEN',
+                message: 'Registration token is not active.'
+            };
+        }
+
+        if (token.expiresAt && token.expiresAt < new Date()) {
+            return {
+                success: false,
+                status: 'INVALID_TOKEN',
+                message: 'Registration token has expired.'
+            };
+        }
+
+        // 2. Check for existing agent with same machineId (idempotency)
+        let agent = await prisma.agent.findUnique({
+            where: { machineId: payload.machineId }
+        });
+
+        if (agent) {
+            // Already registered - return existing credentials
+            return {
+                success: true,
+                status: 'SUCCESS',
+                agentId: agent.id,
+                agentSecret: agent.agentSecret
+            };
+        }
+
+        // 3. Enforce maxAgents limit
+        const activeAgentsCount = await prisma.agent.count({
+            where: { registrationTokenId: token.token }
+        });
+
+        if (activeAgentsCount >= token.maxAgents) {
+            return {
+                success: false,
+                status: 'LIMIT_EXCEEDED',
+                message: 'Registration limit reached for this token.'
+            };
+        }
+
+        // 4. Generate new secret
+        const agentSecret = 'sec_' + Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+
+        // 5. Create Agent record
+        agent = await prisma.agent.create({
+            data: {
+                machineId: payload.machineId,
+                hostname: payload.hostname,
+                version: payload.version,
+                status: 'ONLINE',
+                capabilities: payload.capabilities,
+                agentSecret,
+                registrationTokenId: token.token,
+                lastHeartbeatAt: new Date()
+            }
+        });
+
+        return {
+            success: true,
+            status: 'SUCCESS',
+            agentId: agent.id,
+            agentSecret
+        };
+    }
+
+    public async receiveHeartbeat(
+        payload: {
+            agentId: string;
+            agentSecret: string;
+            hostname: string;
+            version: string;
+            status: string;
+            uptime: number;
+            metrics: {
+                cpuPct: number;
+                memoryPct: number;
+                diskPct: number;
+            };
+            health: {
+                outboxPendingCount: number;
+                databaseHealthy: boolean;
+                freqtradeHealthy: boolean;
+            };
+        },
+        headerSecret?: string
+    ): Promise<{
+        success: boolean;
+        status: string;
+        configOverrides?: Record<string, any>;
+        message?: string;
+    }> {
+        // 1. Look up agent by body agentId
+        const agent = await prisma.agent.findUnique({
+            where: { id: payload.agentId }
+        });
+
+        if (!agent) {
+            return {
+                success: false,
+                status: 'INVALID_TOKEN',
+                message: 'Agent not found.'
+            };
+        }
+
+        // 2. Compare stored secret vs headerSecret
+        if (!headerSecret || agent.agentSecret !== headerSecret) {
+            return {
+                success: false,
+                status: 'UNAUTHORIZED',
+                message: 'Authentication secret mismatch.'
+            };
+        }
+
+        // 3. Update agent status & lastHeartbeatAt
+        await prisma.agent.update({
+            where: { id: agent.id },
+            data: {
+                status: 'ONLINE',
+                lastHeartbeatAt: new Date(),
+                hostname: payload.hostname,
+                version: payload.version
+            }
+        });
+
+        // 4. Create AgentHeartbeat record
+        await prisma.agentHeartbeat.create({
+            data: {
+                agentId: agent.id,
+                agentVersion: payload.version,
+                cpuPct: payload.metrics.cpuPct,
+                memoryPct: payload.metrics.memoryPct,
+                diskPct: payload.metrics.diskPct,
+                status: payload.status,
+                uptime: payload.uptime,
+                outboxPending: payload.health.outboxPendingCount,
+                databaseHealthy: payload.health.databaseHealthy,
+                freqtradeHealthy: payload.health.freqtradeHealthy,
+                timestamp: new Date()
+            }
+        });
+
+        // 5. Get configuration overrides if configured
+        const configOverrides = process.env.MOCK_CONFIG_OVERRIDES 
+            ? JSON.parse(process.env.MOCK_CONFIG_OVERRIDES)
+            : undefined;
+
+        return {
+            success: true,
+            status: 'SUCCESS',
+            configOverrides
+        };
+    }
+
     public getReadOnlyStatus(): boolean {
         return process.env.DEV_CONSOLE_READ_ONLY === 'true';
     }
