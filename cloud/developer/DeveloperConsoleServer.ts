@@ -320,13 +320,23 @@ export class DeveloperConsoleServer {
 
                 if (type === 'ALERT') {
                     if (payload.alert) {
-                        console.log(`[MockCloudGateway] Received ALERT [${payload.alert.level}]: "${payload.alert.title}"`);
+                        console.log(`Received ALERT
+  Hostname: ${payload.machine?.hostname || 'unknown'}
+  Machine:  ${payload.machine?.machineId || 'unknown'}
+  Title:    ${payload.alert.title || 'unknown'}
+  Severity: ${payload.alert.level || 'unknown'}`);
                         this.dispatchTelegramAlert(payload.alert).catch(err => {
                             console.error('[MockCloudGateway] Failed to dispatch Telegram alert:', err);
                         });
                     }
                 } else if (type === 'INCIDENT') {
-                    console.log(`[MockCloudGateway] Received INCIDENT transition [${payload.event}] for incident ${payload.incident?.incidentId}`);
+                    console.log(`Received INCIDENT
+  Hostname:   ${payload.machine?.hostname || 'unknown'}
+  Machine:    ${payload.machine?.machineId || 'unknown'}
+  Agent:      ${payload.machine?.agentId || 'unknown'}
+  Incident:   ${payload.incident?.incidentId || 'unknown'}
+  Severity:   ${payload.incident?.level || 'unknown'}
+  Transition: ${payload.event || 'unknown'}`);
                 }
 
                 res.writeHead(201, { 'Content-Type': 'application/json' });

@@ -148,12 +148,18 @@ export class DeveloperConsoleController {
         agentSecret?: string;
         message?: string;
     }> {
+        console.log(`[Registration] Registration request received
+  Hostname:           ${payload.hostname}
+  Machine ID:         ${payload.machineId}
+  License Token:      ${payload.licenseToken ? payload.licenseToken.substring(0, 8) + '...' : 'None'}`);
+
         // 1. Verify token exists and is active
         const token = await prisma.registrationToken.findUnique({
             where: { token: payload.licenseToken }
         });
 
         if (!token) {
+            console.warn(`[Registration] Registration rejected: INVALID_TOKEN (token not found). Machine ID: ${payload.machineId}`);
             return {
                 success: false,
                 status: 'INVALID_TOKEN',
@@ -162,6 +168,7 @@ export class DeveloperConsoleController {
         }
 
         if (token.status !== 'ACTIVE') {
+            console.warn(`[Registration] Registration rejected: INVALID_TOKEN (token inactive: ${token.status}). Machine ID: ${payload.machineId}`);
             return {
                 success: false,
                 status: 'INVALID_TOKEN',
@@ -170,6 +177,7 @@ export class DeveloperConsoleController {
         }
 
         if (token.expiresAt && token.expiresAt < new Date()) {
+            console.warn(`[Registration] Registration rejected: INVALID_TOKEN (token expired: ${token.expiresAt.toISOString()}). Machine ID: ${payload.machineId}`);
             return {
                 success: false,
                 status: 'INVALID_TOKEN',
@@ -183,6 +191,11 @@ export class DeveloperConsoleController {
         });
 
         if (agent) {
+            console.log(`[Registration] Agent already registered. Reusing credentials.
+  Agent ID:           ${agent.id}
+  Hostname:           ${agent.hostname}
+  Machine ID:         ${payload.machineId}
+  Capabilities:       ${JSON.stringify(agent.capabilities)}`);
             // Already registered - return existing credentials
             return {
                 success: true,
@@ -198,6 +211,7 @@ export class DeveloperConsoleController {
         });
 
         if (activeAgentsCount >= token.maxAgents) {
+            console.warn(`[Registration] Registration rejected: LIMIT_EXCEEDED (active: ${activeAgentsCount}, max: ${token.maxAgents}). Machine ID: ${payload.machineId}`);
             return {
                 success: false,
                 status: 'LIMIT_EXCEEDED',
@@ -221,6 +235,14 @@ export class DeveloperConsoleController {
                 lastHeartbeatAt: new Date()
             }
         });
+
+        console.log(`[Registration] Agent registered successfully
+  Agent ID:           ${agent.id}
+  Hostname:           ${agent.hostname}
+  Machine ID:         ${agent.machineId}
+  Capabilities:       ${payload.capabilities.join(', ')}
+  Heartbeat Interval: 30s
+  Agent secret generated successfully.`);
 
         return {
             success: true,
@@ -256,12 +278,21 @@ export class DeveloperConsoleController {
         configOverrides?: Record<string, any>;
         message?: string;
     }> {
+        console.log(`[Heartbeat] Heartbeat accepted
+  Hostname:   ${payload.hostname}
+  CPU:        ${payload.metrics.cpuPct}%
+  RAM:        ${payload.metrics.memoryPct}%
+  Disk:       ${payload.metrics.diskPct}%
+  DB:         ${payload.health.databaseHealthy ? 'Healthy' : 'Unhealthy'}
+  Freqtrade:  ${payload.health.freqtradeHealthy ? 'Healthy' : 'Unhealthy'}`);
+
         // 1. Look up agent by body agentId
         const agent = await prisma.agent.findUnique({
             where: { id: payload.agentId }
         });
 
         if (!agent) {
+            console.warn(`[Heartbeat] Heartbeat rejected: INVALID_TOKEN (agent not found). Agent ID: ${payload.agentId}`);
             return {
                 success: false,
                 status: 'INVALID_TOKEN',
@@ -271,6 +302,7 @@ export class DeveloperConsoleController {
 
         // 2. Compare stored secret vs headerSecret
         if (!headerSecret || agent.agentSecret !== headerSecret) {
+            console.warn(`[Heartbeat] Heartbeat rejected: UNAUTHORIZED (secret mismatch). Agent ID: ${agent.id}, Hostname: ${agent.hostname}`);
             return {
                 success: false,
                 status: 'UNAUTHORIZED',
@@ -279,15 +311,49 @@ export class DeveloperConsoleController {
         }
 
         // 3. Update agent status & lastHeartbeatAt
-        await prisma.agent.update({
+        const prevStatus = agent.status;
+        const prevHeartbeat = agent.lastHeartbeatAt;
+        const now = new Date();
+
+        const updatedAgent = await prisma.agent.update({
             where: { id: agent.id },
             data: {
                 status: 'ONLINE',
-                lastHeartbeatAt: new Date(),
+                lastHeartbeatAt: now,
                 hostname: payload.hostname,
                 version: payload.version
             }
         });
+
+        console.log(`[Heartbeat] Heartbeat received
+  Agent ID:                  ${agent.id}
+  Machine ID:                ${agent.machineId}
+  Previous status:           ${prevStatus}
+  New status:                ${updatedAgent.status}
+  Previous heartbeat timestamp: ${prevHeartbeat ? prevHeartbeat.toISOString() : 'None'}
+  New heartbeat timestamp:   ${now.toISOString()}`);
+
+        if (prevStatus !== 'ONLINE') {
+            console.log(`[Heartbeat] Agent transitioned ${prevStatus} -> ONLINE`);
+        }
+
+        let dbUpdatedRows = 0;
+        if (updatedAgent) {
+            dbUpdatedRows = 1;
+            console.log(`[Heartbeat] Persisted to database successfully. Rows updated: ${dbUpdatedRows}`);
+        } else {
+            console.error(`[Heartbeat] Error: Database write returned null/undefined for update on agent ${agent.id}`);
+        }
+
+        if (updatedAgent.status !== 'ONLINE') {
+            console.error(`[Heartbeat] Diagnostic Context (Status Mismatch):
+  Heartbeat was accepted, but the persisted status is not ONLINE!
+  Persisted status before update:  ${prevStatus}
+  Persisted status after update:   ${updatedAgent.status}
+  Last heartbeat before update:    ${prevHeartbeat ? prevHeartbeat.toISOString() : 'None'}
+  Last heartbeat after update:     ${updatedAgent.lastHeartbeatAt ? updatedAgent.lastHeartbeatAt.toISOString() : 'None'}
+  Reason:                          Persisted status remained ${updatedAgent.status} post-update.`);
+        }
 
         // 4. Create AgentHeartbeat record
         await prisma.agentHeartbeat.create({

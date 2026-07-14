@@ -49,6 +49,10 @@ export class AgentStatusService {
         }
         this.isScanning = true;
 
+        console.log(`[AgentStatusService] Running offline scan...
+  Current UTC: ${new Date().toISOString()}
+  Timeout:     ${this.offlineTimeoutMs / 1000} seconds`);
+
         try {
             const cutoffTime = new Date(Date.now() - this.offlineTimeoutMs);
 
@@ -62,18 +66,32 @@ export class AgentStatusService {
                         { lastHeartbeatAt: null, createdAt: { lt: cutoffTime } }
                     ]
                 },
-                select: { id: true, hostname: true }
+                select: {
+                    id: true,
+                    hostname: true,
+                    lastHeartbeatAt: true,
+                    createdAt: true
+                }
             });
 
             if (offlineAgents.length === 0) {
+                console.log('[AgentStatusService] Found 0 expired agents.');
                 return 0;
             }
 
-            const agentIds = offlineAgents.map(a => a.id);
-            console.log(`[AgentStatusService] Detected ${offlineAgents.length} dead agents. Transitioning to OFFLINE:`, 
-                offlineAgents.map(a => `${a.hostname} (${a.id})`).join(', ')
-            );
+            for (const agent of offlineAgents) {
+                const lastHb = agent.lastHeartbeatAt || agent.createdAt;
+                const diffSec = Math.floor((Date.now() - lastHb.getTime()) / 1000);
+                const timeoutSec = Math.floor(this.offlineTimeoutMs / 1000);
+                console.log(`[AgentStatusService] Agent transition: ONLINE -> OFFLINE
+  Current Time:   ${new Date().toISOString()}
+  Last Heartbeat: ${lastHb.toISOString()}
+  Difference:     ${diffSec}s
+  Timeout:        ${timeoutSec}s
+  Reason:         Inactivity threshold exceeded`);
+            }
 
+            const agentIds = offlineAgents.map(a => a.id);
             const result = await prisma.agent.updateMany({
                 where: {
                     id: { in: agentIds }
@@ -83,6 +101,7 @@ export class AgentStatusService {
                 }
             });
 
+            console.log(`[AgentStatusService] Found ${offlineAgents.length} expired agents.`);
             return result.count;
         } finally {
             this.isScanning = false;

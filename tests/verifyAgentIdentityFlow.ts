@@ -281,6 +281,21 @@ async function runIdentityIntegrationSuite() {
         }
         console.log('✅ Offline agent transition scan verified successfully.');
 
+        // 12. Agent Recovery (OFFLINE -> ONLINE transition)
+        console.log('[TestRecovery] Simulating agent recovery (OFFLINE -> ONLINE)...');
+        const recoveryResponse2 = await client.heartbeat(recoveryReq);
+        if (!recoveryResponse2.success) {
+            throw new Error(`Assertion Failed: Recovery heartbeat failed: ${recoveryResponse2.message}`);
+        }
+
+        const recoveredAgent = await prisma.agent.findUnique({
+            where: { id: activeAgentId }
+        });
+        if (!recoveredAgent || recoveredAgent.status !== 'ONLINE') {
+            throw new Error(`Assertion Failed: Agent status should have recovered to ONLINE, got: ${recoveredAgent?.status}`);
+        }
+        console.log('✅ Agent recovery (OFFLINE -> ONLINE) verified successfully.');
+
         // Stop services
         await server.stop();
         try {
