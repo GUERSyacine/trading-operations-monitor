@@ -81,9 +81,6 @@ export class AgentIdentityService {
         return this.identity !== null;
     }
 
-    /**
-     * Stop any active background loops (clean shutdown).
-     */
     public stop(): void {
         if (this.retryTimeoutId) {
             clearTimeout(this.retryTimeoutId);
@@ -91,6 +88,17 @@ export class AgentIdentityService {
         }
         this.isRegistering = false;
         console.log('[AgentIdentityService] Background registration loop stopped.');
+    }
+
+    /**
+     * Clear local cached credentials and restart background registration flow.
+     */
+    public async clearIdentityAndReRegister(): Promise<void> {
+        console.warn('[AgentIdentityService] Clearing local cached identity and restarting registration...');
+        this.identity = null;
+        await this.store.clear();
+        this.activeMachineId = this.store.generatePersistentMachineId();
+        this.triggerRegistrationLoop(0);
     }
 
     /**

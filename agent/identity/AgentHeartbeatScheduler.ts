@@ -172,8 +172,11 @@ export class AgentHeartbeatScheduler {
                 console.warn(`[AgentHeartbeatScheduler] Heartbeat rejected by server. Status: ${response.status}. Msg: ${response.message}`);
                 
                 if (response.status === 'UNAUTHORIZED' || response.status === 'INVALID_TOKEN') {
-                    console.error('[AgentHeartbeatScheduler] Credentials revoked or token is invalid. Stopping scheduler.');
+                    console.error('[AgentHeartbeatScheduler] Credentials revoked or token is invalid. Resetting identity and re-registering...');
                     this.stop();
+                    this.identityService.clearIdentityAndReRegister().catch((err) => {
+                        console.error('[AgentHeartbeatScheduler] Failed to reset identity and re-register:', err?.message || err);
+                    });
                 }
             }
 

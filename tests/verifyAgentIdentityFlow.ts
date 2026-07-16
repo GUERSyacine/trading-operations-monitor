@@ -296,7 +296,55 @@ async function runIdentityIntegrationSuite() {
         }
         console.log('✅ Agent recovery (OFFLINE -> ONLINE) verified successfully.');
 
+        // 13. Self-Healing Database Reset Recovery
+        console.log('[TestSelfHealing] Simulating database reset / identity revocation...');
+        await prisma.agentHeartbeat.deleteMany({ where: { agentId: activeAgentId } });
+        await prisma.agent.delete({ where: { id: activeAgentId } });
+        console.log('[TestSelfHealing] Agent deleted from database. Triggering heartbeat cycle...');
+        
+        // Ensure scheduler is running so that it doesn't return early due to !this.isRunning
+        (scheduler as any).isRunning = true;
+        await scheduler.executeHeartbeatCycle();
+        
+        // Now wait for background registration to complete
+        console.log('[TestSelfHealing] Waiting for self-healing re-registration...');
+        let selfHealed = false;
+        for (let i = 0; i < 20; i++) {
+            if (thirdServiceInstance.isRegistered()) {
+                const newId = thirdServiceInstance.getIdentity()?.agentId;
+                if (newId && newId !== activeAgentId) {
+                    selfHealed = true;
+                    break;
+                }
+            }
+            await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+
+        if (!selfHealed) {
+            throw new Error('Assertion Failed: Agent failed to auto-recover and re-register after database wipe.');
+        }
+
+        // Verify that the new agent is in the database and is ONLINE
+        const newAgentId = thirdServiceInstance.getIdentity()!.agentId;
+        const newAgent = await prisma.agent.findUnique({
+            where: { id: newAgentId }
+        });
+
+        if (!newAgent || newAgent.status !== 'ONLINE') {
+            throw new Error(`Assertion Failed: New registered agent should exist in DB and be ONLINE, got: ${newAgent?.status}`);
+        }
+        
+        // Also verify the local identity file exists and contains the new credentials
+        const updatedFileContentStr = await fs.readFile(testStorePath, 'utf-8');
+        const updatedFileJson = JSON.parse(updatedFileContentStr);
+        if (updatedFileJson.agentId !== newAgentId) {
+            throw new Error(`Assertion Failed: Identity file should contain new agentId ${newAgentId}, got: ${updatedFileJson.agentId}`);
+        }
+
+        console.log('✅ Self-healing database reset recovery verified successfully.');
+
         // Stop services
+        scheduler.stop();
         await server.stop();
         try {
             await fs.unlink(testStorePath);
