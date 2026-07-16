@@ -148,10 +148,13 @@ export class DeveloperConsoleController {
         agentSecret?: string;
         message?: string;
     }> {
-        console.log(`[Registration] Registration request received
-  Hostname:           ${payload.hostname}
-  Machine ID:         ${payload.machineId}
-  License Token:      ${payload.licenseToken ? payload.licenseToken.substring(0, 8) + '...' : 'None'}`);
+        console.log(`======================================================
+REGISTRATION RECEIVED
+======================================================
+Hostname:      ${payload.hostname}
+Machine ID:    ${payload.machineId}
+License Token: ${payload.licenseToken ? payload.licenseToken.substring(0, 8) + '...' : 'None'}
+======================================================`);
 
         // 1. Verify token exists and is active
         const token = await prisma.registrationToken.findUnique({
@@ -236,13 +239,16 @@ export class DeveloperConsoleController {
             }
         });
 
-        console.log(`[Registration] Agent registered successfully
-  Agent ID:           ${agent.id}
-  Hostname:           ${agent.hostname}
-  Machine ID:         ${agent.machineId}
-  Capabilities:       ${payload.capabilities.join(', ')}
-  Heartbeat Interval: 30s
-  Agent secret generated successfully.`);
+        console.log(`======================================================
+REGISTRATION SUCCESSFUL
+======================================================
+Agent ID:           ${agent.id}
+Hostname:           ${agent.hostname}
+Machine ID:         ${agent.machineId}
+Capabilities:       ${payload.capabilities.join(', ')}
+Heartbeat Interval: 30s
+Agent secret generated successfully.
+======================================================`);
 
         return {
             success: true,
@@ -278,14 +284,6 @@ export class DeveloperConsoleController {
         configOverrides?: Record<string, any>;
         message?: string;
     }> {
-        console.log(`[Heartbeat] Heartbeat accepted
-  Hostname:   ${payload.hostname}
-  CPU:        ${payload.metrics.cpuPct}%
-  RAM:        ${payload.metrics.memoryPct}%
-  Disk:       ${payload.metrics.diskPct}%
-  DB:         ${payload.health.databaseHealthy ? 'Healthy' : 'Unhealthy'}
-  Freqtrade:  ${payload.health.freqtradeHealthy ? 'Healthy' : 'Unhealthy'}`);
-
         // 1. Look up agent by body agentId
         const agent = await prisma.agent.findUnique({
             where: { id: payload.agentId }
@@ -325,34 +323,48 @@ export class DeveloperConsoleController {
             }
         });
 
-        console.log(`[Heartbeat] Heartbeat received
-  Agent ID:                  ${agent.id}
-  Machine ID:                ${agent.machineId}
-  Previous status:           ${prevStatus}
-  New status:                ${updatedAgent.status}
-  Previous heartbeat timestamp: ${prevHeartbeat ? prevHeartbeat.toISOString() : 'None'}
-  New heartbeat timestamp:   ${now.toISOString()}`);
+        let dbUpdatedRows = 0;
+        if (updatedAgent) {
+            dbUpdatedRows = 1;
+        }
+
+        console.log(`======================================================
+HEARTBEAT RECEIVED
+======================================================
+Agent ID:     ${agent.id}
+Hostname:     ${payload.hostname}
+Machine ID:   ${agent.machineId}
+
+CPU:          ${payload.metrics.cpuPct}%
+RAM:          ${payload.metrics.memoryPct}%
+Disk:         ${payload.metrics.diskPct}%
+
+Database:     ${payload.health.databaseHealthy ? 'Healthy' : 'Unhealthy'}
+Freqtrade:    ${payload.health.freqtradeHealthy ? 'Healthy' : 'Unhealthy'}
+
+Previous status: ${prevStatus}
+New status:      ${updatedAgent.status}
+
+Rows updated: ${dbUpdatedRows}
+
+Heartbeat acknowledged successfully.
+======================================================`);
 
         if (prevStatus !== 'ONLINE') {
             console.log(`[Heartbeat] Agent transitioned ${prevStatus} -> ONLINE`);
         }
 
-        let dbUpdatedRows = 0;
-        if (updatedAgent) {
-            dbUpdatedRows = 1;
-            console.log(`[Heartbeat] Persisted to database successfully. Rows updated: ${dbUpdatedRows}`);
-        } else {
-            console.error(`[Heartbeat] Error: Database write returned null/undefined for update on agent ${agent.id}`);
-        }
-
         if (updatedAgent.status !== 'ONLINE') {
-            console.error(`[Heartbeat] Diagnostic Context (Status Mismatch):
-  Heartbeat was accepted, but the persisted status is not ONLINE!
-  Persisted status before update:  ${prevStatus}
-  Persisted status after update:   ${updatedAgent.status}
-  Last heartbeat before update:    ${prevHeartbeat ? prevHeartbeat.toISOString() : 'None'}
-  Last heartbeat after update:     ${updatedAgent.lastHeartbeatAt ? updatedAgent.lastHeartbeatAt.toISOString() : 'None'}
-  Reason:                          Persisted status remained ${updatedAgent.status} post-update.`);
+            console.error(`======================================================
+HEARTBEAT DIAGNOSTIC CONTEXT (STATUS MISMATCH)
+======================================================
+Heartbeat was accepted, but the persisted status is not ONLINE!
+Persisted status before update:  ${prevStatus}
+Persisted status after update:   ${updatedAgent.status}
+Last heartbeat before update:    ${prevHeartbeat ? prevHeartbeat.toISOString() : 'None'}
+Last heartbeat after update:     ${updatedAgent.lastHeartbeatAt ? updatedAgent.lastHeartbeatAt.toISOString() : 'None'}
+Reason:                          Persisted status remained ${updatedAgent.status} post-update.
+======================================================`);
         }
 
         // 4. Create AgentHeartbeat record

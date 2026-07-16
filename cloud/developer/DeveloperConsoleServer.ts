@@ -4,6 +4,7 @@ import { DeveloperConsoleGateway } from './DeveloperConsoleGateway';
 import { DASHBOARD_HTML } from './dashboardHtml';
 import { FailureType, FailureScope, FeatureFlag, SystemCommand, OperationScenario } from '../../shared/types/developer';
 import { AgentStatusService } from './AgentStatusService';
+import { prisma } from '../../shared/prisma';
 
 import { EventPersistenceService } from '../../shared/services/EventPersistenceService';
 import { OperationsSimulationService } from './OperationsSimulationService';
@@ -318,25 +319,48 @@ export class DeveloperConsoleServer {
                     return;
                 }
 
+                const machineId = payload.machine?.machineId;
+                let agentId = payload.machine?.agentId || 'unknown';
+                if ((agentId === 'unknown' || !agentId) && machineId) {
+                    try {
+                        const dbAgent = await prisma.agent.findUnique({
+                            where: { machineId }
+                        });
+                        if (dbAgent) {
+                            agentId = dbAgent.id;
+                        }
+                    } catch (err) {
+                        // ignore DB lookup error
+                    }
+                }
+
                 if (type === 'ALERT') {
                     if (payload.alert) {
-                        console.log(`Received ALERT
-  Hostname: ${payload.machine?.hostname || 'unknown'}
-  Machine:  ${payload.machine?.machineId || 'unknown'}
-  Title:    ${payload.alert.title || 'unknown'}
-  Severity: ${payload.alert.level || 'unknown'}`);
+                        console.log(`======================================================
+ALERT RECEIVED
+======================================================
+Hostname : ${payload.machine?.hostname || 'unknown'}
+Machine  : ${payload.machine?.machineId || 'unknown'}
+
+Severity : ${payload.alert.level || 'unknown'}
+Title    : ${payload.alert.title || 'unknown'}
+======================================================`);
                         this.dispatchTelegramAlert(payload.alert).catch(err => {
                             console.error('[MockCloudGateway] Failed to dispatch Telegram alert:', err);
                         });
                     }
                 } else if (type === 'INCIDENT') {
-                    console.log(`Received INCIDENT
-  Hostname:   ${payload.machine?.hostname || 'unknown'}
-  Machine:    ${payload.machine?.machineId || 'unknown'}
-  Agent:      ${payload.machine?.agentId || 'unknown'}
-  Incident:   ${payload.incident?.incidentId || 'unknown'}
-  Severity:   ${payload.incident?.level || 'unknown'}
-  Transition: ${payload.event || 'unknown'}`);
+                    console.log(`======================================================
+INCIDENT RECEIVED
+======================================================
+Hostname   : ${payload.machine?.hostname || 'unknown'}
+Machine    : ${payload.machine?.machineId || 'unknown'}
+Agent      : ${agentId}
+
+Incident   : ${payload.incident?.incidentId || 'unknown'}
+Severity   : ${payload.incident?.level || 'unknown'}
+Transition : ${payload.event || 'unknown'}
+======================================================`);
                 }
 
                 res.writeHead(201, { 'Content-Type': 'application/json' });
