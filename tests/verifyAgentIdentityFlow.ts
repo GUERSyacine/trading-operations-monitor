@@ -16,6 +16,7 @@ import { InfrastructureController } from '../cloud/developer/InfrastructureContr
 import { FailureInjectionService } from '../shared/services/FailureInjectionService';
 import { FeatureFlagService } from '../shared/services/FeatureFlagService';
 import { AgentStatusService } from '../cloud/developer/AgentStatusService';
+import { DefaultMachineInfoProvider } from '../shared/contracts/DefaultMachineInfoProvider';
 
 async function runIdentityIntegrationSuite() {
     console.log('🧪 Starting Agent Identity Integration Test Suite...');
@@ -343,8 +344,44 @@ async function runIdentityIntegrationSuite() {
 
         console.log('✅ Self-healing database reset recovery verified successfully.');
 
-        // Stop services
+        // 14. Cold Boot Heartbeat Loop and Dynamic Machine ID Verification
+        console.log('[TestColdBoot] Simulating cold boot / agent restart with cached identity...');
         scheduler.stop();
+
+        const coldBootIdentityService = new AgentIdentityService(store, client, token);
+        const coldBootMachineProvider = new DefaultMachineInfoProvider(
+            () => coldBootIdentityService.getIdentity()?.machineId || coldBootIdentityService.getActiveMachineId()
+        );
+
+        // Before initialize, machine provider resolves to 'local-vps'
+        if (coldBootMachineProvider.getMachineInfo().machineId !== 'local-vps') {
+            throw new Error(`Assertion Failed: Expected default machineId 'local-vps' before initialization, got: ${coldBootMachineProvider.getMachineInfo().machineId}`);
+        }
+
+        const coldBootInitResult = await coldBootIdentityService.initialize();
+        if (!coldBootInitResult) {
+            throw new Error('Assertion Failed: Cold boot initialize should return true (credentials loaded from cache).');
+        }
+
+        // Initialize has run: machine provider should now resolve to the cached machine ID
+        const cachedIdentity = coldBootIdentityService.getIdentity()!;
+        if (coldBootMachineProvider.getMachineInfo().machineId !== cachedIdentity.machineId) {
+            throw new Error(`Assertion Failed: MachineInfo machineId ${coldBootMachineProvider.getMachineInfo().machineId} does not match cached identity machineId ${cachedIdentity.machineId}`);
+        }
+        console.log('✅ Dynamic machine ID resolution verified successfully.');
+
+        const coldBootScheduler = new AgentHeartbeatScheduler(coldBootIdentityService, client, 15000);
+        coldBootScheduler.start();
+
+        // Verify that the heartbeat scheduler loop is immediately configured (intervalId is set)
+        if (!(coldBootScheduler as any).intervalId) {
+            throw new Error('Assertion Failed: Heartbeat scheduler loop was not configured on cold boot startup.');
+        }
+        console.log('✅ Cold boot heartbeat scheduler auto-start verified successfully.');
+
+        coldBootScheduler.stop();
+
+        // Stop services
         await server.stop();
         try {
             await fs.unlink(testStorePath);

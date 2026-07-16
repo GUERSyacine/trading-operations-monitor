@@ -2,9 +2,13 @@ import { MachineInfo, MachineInfoProvider } from './types';
 import * as os from 'os';
 
 export class DefaultMachineInfoProvider implements MachineInfoProvider {
+    constructor(private readonly dynamicMachineIdResolver?: () => string | undefined) {}
+
     getMachineInfo(): MachineInfo {
+        const resolvedMachineId = this.dynamicMachineIdResolver?.() || process.env.MACHINE_ID || 'local-vps';
+
         return {
-            machineId: process.env.MACHINE_ID || 'local-vps',
+            machineId: resolvedMachineId,
             botId: process.env.BOT_ID || 'ft-bot-1',
             licenseKey: process.env.LICENSE_KEY || 'watchdog-license-default',
             hostname: os.hostname(),

@@ -16,6 +16,10 @@ export class AgentIdentityService {
         private readonly licenseToken: string
     ) {}
 
+    public getActiveMachineId(): string | undefined {
+        return this.activeMachineId || this.identity?.machineId;
+    }
+
     /**
      * Start the identity service. Resolves immediately if credentials are cached.
      * Otherwise, triggers non-blocking registration in the background.
@@ -25,6 +29,16 @@ export class AgentIdentityService {
         if (loadResult.status === 'SUCCESS' && loadResult.identity) {
             this.identity = loadResult.identity;
             console.log(`[AgentIdentityService] Identity loaded successfully. Agent ID: ${this.identity.agentId}`);
+            
+            // Trigger listeners immediately for loaded cached credentials
+            for (const cb of this.registrationCallbacks) {
+                try {
+                    cb(this.identity);
+                } catch (err) {
+                    console.error('[AgentIdentityService] Error in registration callback during initialize:', err);
+                }
+            }
+            
             return true;
         }
 

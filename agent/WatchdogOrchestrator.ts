@@ -78,7 +78,9 @@ export class WatchdogOrchestrator {
         const featureFlagService = new FeatureFlagService(eventBus);
         const devConsoleGateway = new DeveloperConsoleGateway(eventBus);
 
-        const machineProvider = new DefaultMachineInfoProvider();
+        const machineProvider = new DefaultMachineInfoProvider(
+            () => this.identityService?.getIdentity()?.machineId || this.identityService?.getActiveMachineId()
+        );
         const outboxPublisher = new OutboxPublisher(machineProvider);
         this.alertingService = new AlertingService({ flags: featureFlagService, outboxPublisher });
         this.incidentManager = new IncidentManager(this.alertingService, outboxPublisher);
