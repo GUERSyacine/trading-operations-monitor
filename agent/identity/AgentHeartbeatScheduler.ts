@@ -161,16 +161,74 @@ export class AgentHeartbeatScheduler {
             };
 
             console.log(`[AgentHeartbeatScheduler] Sending heartbeat. CPU: ${cpuPct}%, RAM: ${memoryPct}%, Disk: ${diskPct}%, DB Healthy: ${databaseHealthy}, FT Healthy: ${freqtradeHealthy}, Outbox size: ${outboxPendingCount}`);
+            
+            const startTimestamp = Date.now();
             const response = await this.client.heartbeat(req);
+            const latency = Date.now() - startTimestamp;
 
             if (response.success) {
                 console.log(`[AgentHeartbeatScheduler] Heartbeat acknowledged successfully. Status: ${response.status}`);
                 if (response.configOverrides) {
                     console.log('[AgentHeartbeatScheduler] Received configuration overrides:', JSON.stringify(response.configOverrides));
                 }
+
+                // Additional structured dashboard-style log
+                const dbStatus = databaseHealthy ? 'Healthy' : 'Unhealthy';
+                const ftStatus = freqtradeHealthy ? 'Healthy' : 'Unhealthy';
+                const machineId = identity.machineId || 'unknown';
+                const cloudTime = response.message?.includes('timestamp') 
+                    ? new Date().toISOString() // fallback if no timestamp field returned directly
+                    : new Date().toISOString();
+
+                console.log(`======================================================
+❤️ HEARTBEAT SENT & ACKNOWLEDGED
+======================================================
+Agent ID:     ${identity.agentId}
+Hostname:     ${req.hostname}
+Machine ID:   ${machineId}
+
+Telemetry
+---------
+CPU:          ${cpuPct}%
+RAM:          ${memoryPct}%
+Disk:         ${diskPct}%
+
+Services
+--------
+Database:     ${dbStatus}
+Freqtrade:    ${ftStatus}
+
+Outbox
+------
+Pending:      ${outboxPendingCount}
+
+Cloud
+-----
+Result:       SUCCESS
+Latency:      ${latency} ms
+Cloud Time:   ${cloudTime}
+======================================================`);
             } else {
                 console.warn(`[AgentHeartbeatScheduler] Heartbeat rejected by server. Status: ${response.status}. Msg: ${response.message}`);
                 
+                // Additional structured dashboard-style log for failures
+                const intervalSeconds = Math.round(this.heartbeatIntervalMs / 1000);
+                const machineId = identity.machineId || 'unknown';
+                console.log(`======================================================
+⚠️ HEARTBEAT TRANSMISSION FAILED
+======================================================
+Agent ID:     ${identity.agentId}
+Hostname:     ${req.hostname}
+Machine ID:   ${machineId}
+
+Error Details
+-------------
+Type:         ${response.status}
+Message:      ${response.message || 'No failure message provided'}
+
+Next Retry:   Next scheduled heartbeat in ${intervalSeconds} seconds
+======================================================`);
+
                 if (response.status === 'UNAUTHORIZED' || response.status === 'INVALID_TOKEN') {
                     console.error('[AgentHeartbeatScheduler] Credentials revoked or token is invalid. Resetting identity and re-registering...');
                     this.stop();
@@ -182,6 +240,25 @@ export class AgentHeartbeatScheduler {
 
         } catch (error: any) {
             console.error('[AgentHeartbeatScheduler] Heartbeat submission failed with unexpected error:', error?.message || error);
+            
+            // Additional structured dashboard-style log for unexpected catch-block exceptions
+            const intervalSeconds = Math.round(this.heartbeatIntervalMs / 1000);
+            const activeId = this.identityService.getIdentity()?.agentId || 'unknown';
+            const activeMachineId = this.identityService.getIdentity()?.machineId || this.identityService.getActiveMachineId() || 'unknown';
+            console.log(`======================================================
+⚠️ HEARTBEAT TRANSMISSION FAILED
+======================================================
+Agent ID:     ${activeId}
+Hostname:     ${os.hostname()}
+Machine ID:   ${activeMachineId}
+
+Error Details
+-------------
+Type:         EXCEPTIONAL_FAILURE
+Message:      ${error?.message || String(error)}
+
+Next Retry:   Next scheduled heartbeat in ${intervalSeconds} seconds
+======================================================`);
         } finally {
             this.isExecuting = false;
         }

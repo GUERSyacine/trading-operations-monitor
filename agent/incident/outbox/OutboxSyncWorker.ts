@@ -81,6 +81,10 @@ export class OutboxSyncWorker {
             const startTime = Date.now();
             const successIds: number[] = [];
             let failCount = 0;
+            let lastErrorMsg = '';
+            let lastRecordAttempt = 0;
+            let lastDelayMs = 0;
+            let lastNextRetryAt: Date = new Date();
 
             for (const record of records) {
                 try {
@@ -114,6 +118,11 @@ export class OutboxSyncWorker {
                     const status = attempts >= this.maxAttempts ? 'FAILED' : 'PENDING';
                     const errMsg = error.name === 'AbortError' ? 'Request timed out' : (error.message || String(error));
 
+                    lastErrorMsg = errMsg;
+                    lastRecordAttempt = attempts;
+                    lastDelayMs = delayMs;
+                    lastNextRetryAt = nextRetryAt;
+
                     await prisma.incidentOutbox.update({
                         where: { id: record.id },
                         data: {
@@ -138,6 +147,47 @@ export class OutboxSyncWorker {
 
             const duration = Date.now() - startTime;
             console.log(`[SyncWorker] Processed batch: ${successIds.length} sent, ${failCount} failed, duration=${duration}ms`);
+
+            // Fetch remaining backlog count in local database outbox
+            let remainingCount = 0;
+            try {
+                remainingCount = await prisma.incidentOutbox.count({
+                    where: { status: 'PENDING' }
+                });
+            } catch (err) {
+                // Suppress or log error without failing sync cycle
+            }
+
+            if (failCount > 0) {
+                const delaySeconds = Math.round(lastDelayMs / 1000);
+                console.log(`======================================================
+❌ OUTBOX PUBLISHER - SYNC FAILURE
+======================================================
+Batch Size:   ${records.length}
+Status:       FAILED
+Processed:    ${successIds.length} sent, ${failCount} failed
+
+Retry Context
+-------------
+Attempt:      ${lastRecordAttempt} / ${this.maxAttempts}
+Backoff:      ${lastDelayMs} ms
+Next Retry:   in ${delaySeconds} seconds (${lastNextRetryAt.toISOString()})
+Reason:       ${lastErrorMsg}
+======================================================`);
+            } else {
+                console.log(`======================================================
+📦 OUTBOX PUBLISHER - BATCH SYNCED
+======================================================
+Batch Size:   ${records.length}
+Status:       SUCCESS
+Processed:    ${successIds.length} sent, ${failCount} failed
+Duration:     ${duration} ms
+
+Backlog
+-------
+Remaining:    ${remainingCount} pending events in local outbox
+======================================================`);
+            }
         } catch (globalErr: any) {
             console.error('[SyncWorker] Critical error inside sync cycle:', globalErr.message || globalErr);
         } finally {
