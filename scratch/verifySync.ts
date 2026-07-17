@@ -56,7 +56,7 @@ async function main() {
 
         // Instantiate sync worker targeting port 3005
         const worker = new OutboxSyncWorker(
-            'http://127.0.0.1:3005/api/v1/cloud/incidents',
+            'http://127.0.0.1:3005/api/v1/agent/incidents',
             5000, // interval
             5,    // maxAttempts
             1000, // backoffBaseMs
@@ -87,7 +87,7 @@ async function main() {
 
         // Target fail=true to force 500 error
         const failWorker = new OutboxSyncWorker(
-            'http://127.0.0.1:3005/api/v1/cloud/incidents?fail=true',
+            'http://127.0.0.1:3005/api/v1/agent/incidents?fail=true',
             5000,
             5,
             1000,
@@ -120,7 +120,7 @@ async function main() {
 
         // Target an invalid port to simulate network offline
         const offlineWorker = new OutboxSyncWorker(
-            'http://127.0.0.1:9999/api/v1/cloud/incidents',
+            'http://127.0.0.1:9999/api/v1/agent/incidents',
             5000,
             5,
             1000,
@@ -233,7 +233,7 @@ async function main() {
         });
 
         // 2. Call the manual retry API endpoint for all failed records
-        const retryRes = await fetch('http://127.0.0.1:3005/api/v1/dev/outbox/retry-failed', {
+        const retryRes = await fetch('http://127.0.0.1:3005/api/v1/admin/outbox/retry-failed', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         });
@@ -264,7 +264,7 @@ async function main() {
         });
 
         // Call selective retry for failed1 only
-        const selRes = await fetch('http://127.0.0.1:3005/api/v1/dev/outbox/retry-failed', {
+        const selRes = await fetch('http://127.0.0.1:3005/api/v1/admin/outbox/retry-failed', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ids: [failed1.id] })

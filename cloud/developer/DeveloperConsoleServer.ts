@@ -44,8 +44,12 @@ export class DeveloperConsoleServer {
 
     public start(): void {
         this.server = http.createServer(async (req, res) => {
-            const url = req.url || '';
+            const rawUrl = req.url || '';
             const method = req.method || 'GET';
+
+            // Safe parsing of pathname to strip query parameters & fragments
+            const parsedUrl = new URL(rawUrl, `http://${req.headers.host || 'localhost'}`);
+            const pathname = parsedUrl.pathname;
 
             // CORS headers for local execution
             res.setHeader('Access-Control-Allow-Origin', '*');
@@ -59,14 +63,14 @@ export class DeveloperConsoleServer {
             }
 
             // 1. Static SPA Dashboard View
-            if (url === '/' || url === '/index.html') {
+            if (pathname === '/' || pathname === '/index.html') {
                 res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
                 res.end(DASHBOARD_HTML);
                 return;
             }
 
             // 2. Health Endpoint
-            if (url === '/health' && method === 'GET') {
+            if (pathname === '/health' && method === 'GET') {
                 this.sendJson(res, 200, {
                     success: true,
                     message: 'Developer Console is UP',
@@ -81,17 +85,17 @@ export class DeveloperConsoleServer {
                 return;
             }
 
-            // 3. SSE Stream
-            if (url === '/api/v1/events/stream' && method === 'GET') {
+            // 3. SSE Stream (Versioned dashboard and legacy support)
+            if ((pathname === '/api/v1/dashboard/events/stream' || pathname === '/api/v1/events/stream') && method === 'GET') {
                 this.handleSseStream(req, res);
                 return;
             }
 
             // 4. REST Router (Versioned)
             try {
-                await this.handleRestRoute(req, res, url, method);
+                await this.handleRestRoute(req, res, pathname, rawUrl, method);
             } catch (err: any) {
-                console.error(`[DevConsole] Error on route ${url}:`, err.message || err);
+                console.error(`[DevConsole] Error on route ${rawUrl}:`, err.message || err);
                 this.sendJson(res, 500, { success: false, message: err.message || 'Internal Server Error' });
             }
         });
@@ -131,10 +135,16 @@ export class DeveloperConsoleServer {
         });
     }
 
-    private async handleRestRoute(req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string): Promise<void> {
+    private async handleRestRoute(
+        req: http.IncomingMessage,
+        res: http.ServerResponse,
+        pathname: string,
+        rawUrl: string,
+        method: string
+    ): Promise<void> {
         if (method === 'GET') {
-            // Route 4.4a: Get Feature Flags
-            if (url === '/api/v1/flags') {
+            // Dashboard: Get Feature Flags
+            if (pathname === '/api/v1/dashboard/flags' || pathname === '/api/v1/flags') {
                 try {
                     const flags = this.controller.getAllFeatureFlags();
                     this.sendJson(res, 200, { success: true, data: flags });
@@ -143,12 +153,20 @@ export class DeveloperConsoleServer {
                 }
                 return;
             }
+
+            // Dashboard: Get Freqtrade Status
+            if (pathname === '/api/v1/dashboard/infra/status' || pathname === '/api/v1/infra/status') {
+                const status = await this.controller.getFreqtradeStatus();
+                this.sendJson(res, 200, { success: true, message: 'Successfully fetched status', data: { status } });
+                return;
+            }
         }
 
         if (method === 'PUT') {
-            // Route 4.4b: Update Feature Flag
-            if (url.startsWith('/api/v1/flags/')) {
-                const flagStr = url.substring('/api/v1/flags/'.length).toUpperCase();
+            // Dashboard: Update Feature Flag
+            if (pathname.startsWith('/api/v1/dashboard/flags/') || pathname.startsWith('/api/v1/flags/')) {
+                const prefix = pathname.startsWith('/api/v1/dashboard/flags/') ? '/api/v1/dashboard/flags/' : '/api/v1/flags/';
+                const flagStr = pathname.substring(prefix.length).toUpperCase();
                 if (!Object.values(FeatureFlag).includes(flagStr as FeatureFlag)) {
                     this.sendJson(res, 400, { success: false, message: `Invalid flag: ${flagStr}` });
                     return;
@@ -189,8 +207,8 @@ export class DeveloperConsoleServer {
                 return;
             }
 
-            // Agent Registration Route
-            if (url === '/api/v1/agents/register') {
+            // Agent: Register Agent
+            if (pathname === '/api/v1/agent/register' || pathname === '/api/v1/agents/register') {
                 try {
                     const result = await this.controller.registerAgent(payload);
                     this.sendJson(res, result.success ? 200 : (result.status === 'INVALID_TOKEN' ? 403 : 400), result);
@@ -200,8 +218,8 @@ export class DeveloperConsoleServer {
                 return;
             }
 
-            // Agent Heartbeat Route
-            if (url === '/api/v1/agents/heartbeat') {
+            // Agent: Agent Heartbeat
+            if (pathname === '/api/v1/agent/heartbeat' || pathname === '/api/v1/agents/heartbeat') {
                 const headerSecret = req.headers['x-agent-secret'] as string | undefined;
                 try {
                     const result = await this.controller.receiveHeartbeat(payload, headerSecret);
@@ -212,8 +230,8 @@ export class DeveloperConsoleServer {
                 return;
             }
 
-            // Route 4.1: Inject Failure
-            if (url === '/api/v1/failures/inject') {
+            // Admin: Inject Failure
+            if (pathname === '/api/v1/admin/failures/inject' || pathname === '/api/v1/failures/inject') {
                 const { type, scope, ttlSeconds, correlationId } = payload;
                 if (!type || !scope) {
                     this.sendJson(res, 400, { success: false, message: 'Fields type and scope are required.' });
@@ -228,8 +246,8 @@ export class DeveloperConsoleServer {
                 return;
             }
 
-            // Route 4.2: Clear Failure
-            if (url === '/api/v1/failures/clear') {
+            // Admin: Clear Failure
+            if (pathname === '/api/v1/admin/failures/clear' || pathname === '/api/v1/failures/clear') {
                 const { type, correlationId } = payload;
                 if (!type) {
                     this.sendJson(res, 400, { success: false, message: 'Field type is required.' });
@@ -244,8 +262,8 @@ export class DeveloperConsoleServer {
                 return;
             }
 
-            // Route 4.3: Clear All Failures
-            if (url === '/api/v1/failures/clear-all') {
+            // Admin: Clear All Failures
+            if (pathname === '/api/v1/admin/failures/clear-all' || pathname === '/api/v1/failures/clear-all') {
                 const { correlationId } = payload;
                 try {
                     this.controller.clearAllFailures(correlationId);
@@ -256,8 +274,8 @@ export class DeveloperConsoleServer {
                 return;
             }
 
-            // Route 4.5: Execute Infrastructure Command
-            if (url === '/api/v1/infra/command') {
+            // Admin: Execute Infrastructure Command
+            if (pathname === '/api/v1/admin/infra/command' || pathname === '/api/v1/infra/command') {
                 const { command, correlationId } = payload;
                 if (!command) {
                     this.sendJson(res, 400, { success: false, message: 'Field command is required.' });
@@ -272,8 +290,8 @@ export class DeveloperConsoleServer {
                 return;
             }
 
-            // Route 4.6: Run Operations Scenario
-            if (url === '/api/v1/operations/run') {
+            // Admin: Run Operations Scenario
+            if (pathname === '/api/v1/admin/operations/run' || pathname === '/api/v1/operations/run') {
                 const { scenario, tradeId, symbol, timestampOffset, correlationId } = payload;
                 if (!scenario) {
                     this.sendJson(res, 400, { success: false, message: 'Field scenario is required.' });
@@ -292,8 +310,8 @@ export class DeveloperConsoleServer {
                 return;
             }
 
-            // Route 4.7: Reset Operations Simulation Lab
-            if (url === '/api/v1/operations/reset' || url === '/api/v1/dev/lab/reset') {
+            // Admin: Reset Operations Simulation Lab
+            if (pathname === '/api/v1/admin/operations/reset' || pathname === '/api/v1/admin/operations/reset' || pathname === '/api/v1/dev/lab/reset') {
                 const { correlationId } = payload;
                 try {
                     await this.controller.resetSimulationLab(correlationId);
@@ -304,72 +322,8 @@ export class DeveloperConsoleServer {
                 return;
             }
 
-            // Route 4.8: Mock Cloud Gateway Endpoint
-            if (url.startsWith('/api/v1/cloud/incidents')) {
-                if (url.includes('fail=true') || req.headers['x-mock-fail'] === 'true') {
-                    res.writeHead(500, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ error: 'Mock cloud gateway internal failure' }));
-                    return;
-                }
-
-                const type = payload.type;
-                if (type !== 'INCIDENT' && type !== 'ALERT') {
-                    res.writeHead(400, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ error: `Bad Request: Unsupported payload type "${type}"` }));
-                    return;
-                }
-
-                const machineId = payload.machine?.machineId;
-                let agentId = payload.machine?.agentId || 'unknown';
-                if ((agentId === 'unknown' || !agentId) && machineId) {
-                    try {
-                        const dbAgent = await prisma.agent.findUnique({
-                            where: { machineId }
-                        });
-                        if (dbAgent) {
-                            agentId = dbAgent.id;
-                        }
-                    } catch (err) {
-                        // ignore DB lookup error
-                    }
-                }
-
-                if (type === 'ALERT') {
-                    if (payload.alert) {
-                        console.log(`======================================================
-ALERT RECEIVED
-======================================================
-Hostname : ${payload.machine?.hostname || 'unknown'}
-Machine  : ${payload.machine?.machineId || 'unknown'}
-
-Severity : ${payload.alert.level || 'unknown'}
-Title    : ${payload.alert.title || 'unknown'}
-======================================================`);
-                        this.dispatchTelegramAlert(payload.alert).catch(err => {
-                            console.error('[MockCloudGateway] Failed to dispatch Telegram alert:', err);
-                        });
-                    }
-                } else if (type === 'INCIDENT') {
-                    console.log(`======================================================
-INCIDENT RECEIVED
-======================================================
-Hostname   : ${payload.machine?.hostname || 'unknown'}
-Machine    : ${payload.machine?.machineId || 'unknown'}
-Agent      : ${agentId}
-
-Incident   : ${payload.incident?.incidentId || 'unknown'}
-Severity   : ${payload.incident?.level || 'unknown'}
-Transition : ${payload.event || 'unknown'}
-======================================================`);
-                }
-
-                res.writeHead(201, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ received: true }));
-                return;
-            }
-
-            // Route 4.9: Retry Failed Outbox Entries
-            if (url === '/api/v1/dev/outbox/retry-failed') {
+            // Admin: Retry Failed Outbox Entries
+            if (pathname === '/api/v1/admin/outbox/retry-failed' || pathname === '/api/v1/dev/outbox/retry-failed') {
                 try {
                     const ids = payload.ids;
                     if (ids !== undefined && (!Array.isArray(ids) || !ids.every(id => typeof id === 'number'))) {
@@ -388,20 +342,82 @@ Transition : ${payload.event || 'unknown'}
                 }
                 return;
             }
-        }
 
-        if (method === 'GET') {
-            // Route 4.6: Get Freqtrade Status
-            if (url === '/api/v1/infra/status') {
-                const status = await this.controller.getFreqtradeStatus();
-                this.sendJson(res, 200, { success: true, message: 'Successfully fetched status', data: { status } });
+            // Agent: Ingest Incidents
+            if (pathname === '/api/v1/agent/incidents') {
+                if (rawUrl.includes('fail=true') || req.headers['x-mock-fail'] === 'true') {
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Mock cloud gateway internal failure' }));
+                    return;
+                }
+
+                const machineId = payload.machine?.machineId;
+                let agentId = payload.machine?.agentId || 'unknown';
+                if ((agentId === 'unknown' || !agentId) && machineId) {
+                    try {
+                        const dbAgent = await prisma.agent.findUnique({
+                            where: { machineId }
+                        });
+                        if (dbAgent) {
+                            agentId = dbAgent.id;
+                        }
+                    } catch (err) {
+                        // ignore DB lookup error
+                    }
+                }
+
+                console.log(`======================================================
+INCIDENT RECEIVED
+======================================================
+Hostname   : ${payload.machine?.hostname || 'unknown'}
+Machine    : ${payload.machine?.machineId || 'unknown'}
+Agent      : ${agentId}
+
+Incident   : ${payload.incident?.incidentId || 'unknown'}
+Severity   : ${payload.incident?.level || 'unknown'}
+Transition : ${payload.event || 'unknown'}
+======================================================`);
+
+                res.writeHead(201, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ received: true }));
                 return;
+            }
+
+            // Agent: Ingest Alerts
+            if (pathname === '/api/v1/agent/alerts') {
+                return this.handleAgentAlert(req, res, payload);
             }
         }
 
         // Endpoint 404 fallback
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: false, message: 'Not Found', timestamp: Date.now() }));
+    }
+
+    private async handleAgentAlert(req: http.IncomingMessage, res: http.ServerResponse, payload: any): Promise<void> {
+        if (req.url?.includes('fail=true') || req.headers['x-mock-fail'] === 'true') {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Mock cloud gateway internal failure' }));
+            return;
+        }
+
+        if (payload.alert) {
+            console.log(`======================================================
+ALERT RECEIVED
+======================================================
+Hostname : ${payload.machine?.hostname || 'unknown'}
+Machine  : ${payload.machine?.machineId || 'unknown'}
+
+Severity : ${payload.alert.level || 'unknown'}
+Title    : ${payload.alert.title || 'unknown'}
+======================================================`);
+            this.dispatchTelegramAlert(payload.alert).catch(err => {
+                console.error('[MockCloudGateway] Failed to dispatch Telegram alert:', err);
+            });
+        }
+
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ received: true }));
     }
 
     private handleSseStream(req: http.IncomingMessage, res: http.ServerResponse): void {

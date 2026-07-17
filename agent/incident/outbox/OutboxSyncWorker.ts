@@ -91,7 +91,12 @@ export class OutboxSyncWorker {
                     const controller = new AbortController();
                     const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
 
-                    const response = await fetch(this.cloudGatewayUrl, {
+                    const payloadObj = typeof record.payload === 'object' && record.payload !== null ? (record.payload as any) : {};
+                    const targetUrl = payloadObj.type === 'ALERT'
+                        ? this.cloudGatewayUrl.replace('/incidents', '/alerts')
+                        : this.cloudGatewayUrl;
+
+                    const response = await fetch(targetUrl, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'

@@ -59,10 +59,10 @@ export class CloudAgentClient implements AgentApiClient {
     }
 
     /**
-     * POST /api/v1/agents/register
+     * POST /api/v1/agent/register
      */
     public async register(req: AgentRegisterRequest): Promise<AgentRegisterResponse> {
-        const url = `${this.baseUrl}/api/v1/agents/register`;
+        const url = `${this.baseUrl}/api/v1/agent/register`;
         try {
             const response = await this.fetchWithTimeout(url, {
                 method: 'POST',
@@ -100,10 +100,10 @@ export class CloudAgentClient implements AgentApiClient {
     }
 
     /**
-     * POST /api/v1/agents/heartbeat
+     * POST /api/v1/agent/heartbeat
      */
     public async heartbeat(req: AgentHeartbeatRequest): Promise<AgentHeartbeatResponse> {
-        const url = `${this.baseUrl}/api/v1/agents/heartbeat`;
+        const url = `${this.baseUrl}/api/v1/agent/heartbeat`;
         try {
             const response = await this.fetchWithTimeout(url, {
                 method: 'POST',

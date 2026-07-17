@@ -91,12 +91,12 @@ async function runTests() {
         assert.strictEqual(healthData.data.readOnly, false);
         assert.ok(healthData.data.uptime >= 0);
 
-        // 2. Verify POST /api/v1/failures/inject
-        console.log('   - Testing POST /api/v1/failures/inject...');
+        // 2. Verify POST /api/v1/admin/failures/inject
+        console.log('   - Testing POST /api/v1/admin/failures/inject...');
         const injectRes = await httpRequest({
             host: '127.0.0.1',
             port: testPort,
-            path: '/api/v1/failures/inject',
+            path: '/api/v1/admin/failures/inject',
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         }, {
@@ -110,12 +110,12 @@ async function runTests() {
         assert.strictEqual(injectData.success, true);
         assert.ok(failures.isFailureActive(FailureType.DNS_FAILURE));
 
-        // 3. Verify GET /api/v1/infra/status
-        console.log('   - Testing GET /api/v1/infra/status...');
+        // 3. Verify GET /api/v1/dashboard/infra/status
+        console.log('   - Testing GET /api/v1/dashboard/infra/status...');
         const statusRes = await httpRequest({
             host: '127.0.0.1',
             port: testPort,
-            path: '/api/v1/infra/status',
+            path: '/api/v1/dashboard/infra/status',
             method: 'GET'
         });
         assert.strictEqual(statusRes.statusCode, 200);
@@ -123,13 +123,13 @@ async function runTests() {
         assert.strictEqual(statusData.success, true);
         assert.strictEqual(statusData.data.status, 'stopped');
 
-        // 4. Verify SSE Event Stream (/api/v1/events/stream)
+        // 4. Verify SSE Event Stream (/api/v1/dashboard/events/stream)
         console.log('   - Testing SSE stream connection and data delivery...');
         const sseEvents: string[] = [];
         const sseReq = http.request({
             host: '127.0.0.1',
             port: testPort,
-            path: '/api/v1/events/stream',
+            path: '/api/v1/dashboard/events/stream',
             method: 'GET'
         }, (res) => {
             res.on('data', chunk => {
@@ -150,7 +150,7 @@ async function runTests() {
         await httpRequest({
             host: '127.0.0.1',
             port: testPort,
-            path: '/api/v1/failures/clear',
+            path: '/api/v1/admin/failures/clear',
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         }, {
@@ -168,12 +168,12 @@ async function runTests() {
         const clearEvent = JSON.parse(sseEvents[sseEvents.length - 1]);
         assert.strictEqual(clearEvent.correlationId, 'test_corr_456');
 
-        // 4.5. Verify GET /api/v1/flags and PUT /api/v1/flags/:flag
-        console.log('   - Testing GET /api/v1/flags...');
+        // 4.5. Verify GET /api/v1/dashboard/flags and PUT /api/v1/dashboard/flags/:flag
+        console.log('   - Testing GET /api/v1/dashboard/flags...');
         const getFlagsRes = await httpRequest({
             host: '127.0.0.1',
             port: testPort,
-            path: '/api/v1/flags',
+            path: '/api/v1/dashboard/flags',
             method: 'GET'
         });
         assert.strictEqual(getFlagsRes.statusCode, 200);
@@ -183,11 +183,11 @@ async function runTests() {
         assert.strictEqual(getFlagsData.data.WEBSOCKET.enabled, true); // default true
         assert.strictEqual(getFlagsData.data.WEBSOCKET.name, 'WebSocket Ingestion');
 
-        console.log('   - Testing PUT /api/v1/flags/WEBSOCKET...');
+        console.log('   - Testing PUT /api/v1/dashboard/flags/WEBSOCKET...');
         const putFlagRes = await httpRequest({
             host: '127.0.0.1',
             port: testPort,
-            path: '/api/v1/flags/WEBSOCKET',
+            path: '/api/v1/dashboard/flags/WEBSOCKET',
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' }
         }, {
@@ -200,14 +200,14 @@ async function runTests() {
         assert.strictEqual(putFlagData.success, true);
         assert.strictEqual(flags.isFeatureEnabled(FeatureFlag.WEBSOCKET), false);
 
-        // 4.5 Verify POST /api/v1/operations/run
-        console.log('   - Testing POST /api/v1/operations/run...');
+        // 4.5 Verify POST /api/v1/admin/operations/run
+        console.log('   - Testing POST /api/v1/admin/operations/run...');
         
         // Test Backward Transition (Failure Scenario)
         const runSimRes = await httpRequest({
             host: '127.0.0.1',
             port: testPort,
-            path: '/api/v1/operations/run',
+            path: '/api/v1/admin/operations/run',
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         }, {
@@ -225,7 +225,7 @@ async function runTests() {
         const runHappyRes = await httpRequest({
             host: '127.0.0.1',
             port: testPort,
-            path: '/api/v1/operations/run',
+            path: '/api/v1/admin/operations/run',
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         }, {
@@ -239,7 +239,7 @@ async function runTests() {
         const runCancelRes = await httpRequest({
             host: '127.0.0.1',
             port: testPort,
-            path: '/api/v1/operations/run',
+            path: '/api/v1/admin/operations/run',
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         }, {
@@ -253,7 +253,7 @@ async function runTests() {
         const runExitRes = await httpRequest({
             host: '127.0.0.1',
             port: testPort,
-            path: '/api/v1/operations/run',
+            path: '/api/v1/admin/operations/run',
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         }, {
@@ -263,12 +263,12 @@ async function runTests() {
         assert.strictEqual(runExitRes.statusCode, 200);
         assert.strictEqual(JSON.parse(runExitRes.data).success, true);
 
-        // 4.8. Verify POST /api/v1/dev/lab/reset
-        console.log('   - Testing POST /api/v1/dev/lab/reset...');
+        // 4.8. Verify POST /api/v1/admin/operations/reset
+        console.log('   - Testing POST /api/v1/admin/operations/reset...');
         const resetRes = await httpRequest({
             host: '127.0.0.1',
             port: testPort,
-            path: '/api/v1/dev/lab/reset',
+            path: '/api/v1/admin/operations/reset',
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         }, {
@@ -286,7 +286,7 @@ async function runTests() {
         const rejectRes = await httpRequest({
             host: '127.0.0.1',
             port: testPort,
-            path: '/api/v1/failures/inject',
+            path: '/api/v1/admin/failures/inject',
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         }, {

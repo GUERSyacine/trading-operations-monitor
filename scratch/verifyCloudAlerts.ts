@@ -47,11 +47,11 @@ async function main() {
 
     // Workers
     const onlineWorker = new OutboxSyncWorker(
-        'http://127.0.0.1:3005/api/v1/cloud/incidents',
+        'http://127.0.0.1:3005/api/v1/agent/incidents',
         5000, 5, 100, 50, 2000
     );
     const offlineWorker = new OutboxSyncWorker(
-        'http://127.0.0.1:3005/api/v1/cloud/incidents?fail=true',
+        'http://127.0.0.1:3005/api/v1/agent/incidents?fail=true',
         5000, 5, 10, 50, 2000
     );
 
