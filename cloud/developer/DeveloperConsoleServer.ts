@@ -6,6 +6,7 @@ import { FailureType, FailureScope, FeatureFlag, SystemCommand, OperationScenari
 import { AgentStatusService } from './AgentStatusService';
 import { prisma } from '../../shared/prisma';
 import { Agent } from '@prisma/client';
+import { ErrorCode, ErrorResponse } from '../../shared/types/errors';
 
 import { EventPersistenceService } from '../../shared/services/EventPersistenceService';
 import { OperationsSimulationService } from './OperationsSimulationService';
@@ -97,7 +98,7 @@ export class DeveloperConsoleServer {
                 await this.handleRestRoute(req, res, pathname, rawUrl, method);
             } catch (err: any) {
                 console.error(`[DevConsole] Error on route ${rawUrl}:`, err.message || err);
-                this.sendJson(res, 500, { success: false, message: err.message || 'Internal Server Error' });
+                this.sendError(res, 500, 'SERVER_ERROR', err.message || 'Internal Server Error');
             }
         });
 
@@ -150,7 +151,7 @@ export class DeveloperConsoleServer {
                     const flags = this.controller.getAllFeatureFlags();
                     this.sendJson(res, 200, { success: true, data: flags });
                 } catch (err: any) {
-                    this.sendJson(res, 500, { success: false, message: err.message });
+                    this.sendError(res, 500, 'SERVER_ERROR', err.message);
                 }
                 return;
             }
@@ -161,6 +162,28 @@ export class DeveloperConsoleServer {
                 this.sendJson(res, 200, { success: true, message: 'Successfully fetched status', data: { status } });
                 return;
             }
+
+            // Agent: Get Config (Reserved)
+            if (pathname === '/api/v1/agent/config') {
+                const authResult = await this.authenticateAgent(req);
+                if (!authResult.success) {
+                    this.sendJson(res, authResult.statusCode, authResult.body);
+                    return;
+                }
+                this.sendJson(res, 200, { success: true, config: {} });
+                return;
+            }
+
+            // Agent: Get Update (Reserved)
+            if (pathname === '/api/v1/agent/update') {
+                const authResult = await this.authenticateAgent(req);
+                if (!authResult.success) {
+                    this.sendJson(res, authResult.statusCode, authResult.body);
+                    return;
+                }
+                this.sendJson(res, 200, { success: true, updateAvailable: false });
+                return;
+            }
         }
 
         if (method === 'PUT') {
@@ -169,7 +192,7 @@ export class DeveloperConsoleServer {
                 const prefix = pathname.startsWith('/api/v1/dashboard/flags/') ? '/api/v1/dashboard/flags/' : '/api/v1/flags/';
                 const flagStr = pathname.substring(prefix.length).toUpperCase();
                 if (!Object.values(FeatureFlag).includes(flagStr as FeatureFlag)) {
-                    this.sendJson(res, 400, { success: false, message: `Invalid flag: ${flagStr}` });
+                    this.sendError(res, 400, 'BAD_REQUEST', `Invalid flag: ${flagStr}`);
                     return;
                 }
 
@@ -178,13 +201,13 @@ export class DeveloperConsoleServer {
                 try {
                     payload = JSON.parse(body || '{}');
                 } catch (e) {
-                    this.sendJson(res, 400, { success: false, message: 'Invalid JSON payload' });
+                    this.sendError(res, 400, 'BAD_REQUEST', 'Invalid JSON payload');
                     return;
                 }
 
                 const { enabled, reason, correlationId } = payload;
                 if (enabled === undefined) {
-                    this.sendJson(res, 422, { success: false, message: 'Field "enabled" is required.' });
+                    this.sendError(res, 422, 'UNPROCESSABLE_ENTITY', 'Field "enabled" is required.');
                     return;
                 }
 
@@ -192,7 +215,7 @@ export class DeveloperConsoleServer {
                     this.controller.setFeatureFlag(flagStr as FeatureFlag, enabled, reason, correlationId);
                     this.sendJson(res, 200, { success: true, message: `Updated feature flag ${flagStr} to ${enabled}` });
                 } catch (err: any) {
-                    this.sendJson(res, 403, { success: false, message: err.message });
+                    this.sendError(res, 403, 'FORBIDDEN', err.message);
                 }
                 return;
             }
@@ -204,7 +227,7 @@ export class DeveloperConsoleServer {
             try {
                 payload = JSON.parse(body || '{}');
             } catch (e) {
-                this.sendJson(res, 400, { success: false, message: 'Invalid JSON payload' });
+                this.sendError(res, 400, 'BAD_REQUEST', 'Invalid JSON payload');
                 return;
             }
 
@@ -212,9 +235,15 @@ export class DeveloperConsoleServer {
             if (pathname === '/api/v1/agent/register' || pathname === '/api/v1/agents/register') {
                 try {
                     const result = await this.controller.registerAgent(payload);
-                    this.sendJson(res, result.success ? 200 : (result.status === 'INVALID_TOKEN' ? 403 : 400), result);
+                    if (result.success) {
+                        this.sendJson(res, 200, result);
+                    } else {
+                        const statusCode = result.status === 'INVALID_TOKEN' ? 403 : 400;
+                        const code: ErrorCode = result.status === 'INVALID_TOKEN' ? 'INVALID_TOKEN' : 'BAD_REQUEST';
+                        this.sendError(res, statusCode, code, result.message || 'Registration failed');
+                    }
                 } catch (err: any) {
-                    this.sendJson(res, 500, { success: false, message: err.message || 'Internal registration error' });
+                    this.sendError(res, 500, 'SERVER_ERROR', err.message || 'Internal registration error');
                 }
                 return;
             }
@@ -228,9 +257,17 @@ export class DeveloperConsoleServer {
                 }
                 try {
                     const result = await this.controller.receiveHeartbeat(payload, authResult.agent.agentSecret);
-                    this.sendJson(res, result.success ? 200 : (result.status === 'UNAUTHORIZED' ? 401 : (result.status === 'INVALID_TOKEN' ? 403 : 400)), result);
+                    if (result.success) {
+                        this.sendJson(res, 200, result);
+                    } else {
+                        const statusCode = result.status === 'UNAUTHORIZED' ? 401 : (result.status === 'INVALID_TOKEN' ? 403 : 400);
+                        let code: ErrorCode = 'BAD_REQUEST';
+                        if (result.status === 'UNAUTHORIZED') code = 'UNAUTHORIZED';
+                        else if (result.status === 'INVALID_TOKEN') code = 'INVALID_TOKEN';
+                        this.sendError(res, statusCode, code, result.message || 'Heartbeat failed');
+                    }
                 } catch (err: any) {
-                    this.sendJson(res, 500, { success: false, message: err.message || 'Internal heartbeat error' });
+                    this.sendError(res, 500, 'SERVER_ERROR', err.message || 'Internal heartbeat error');
                 }
                 return;
             }
@@ -239,14 +276,14 @@ export class DeveloperConsoleServer {
             if (pathname === '/api/v1/admin/failures/inject' || pathname === '/api/v1/failures/inject') {
                 const { type, scope, ttlSeconds, correlationId } = payload;
                 if (!type || !scope) {
-                    this.sendJson(res, 400, { success: false, message: 'Fields type and scope are required.' });
+                    this.sendError(res, 400, 'BAD_REQUEST', 'Fields type and scope are required.');
                     return;
                 }
                 try {
                     this.controller.injectFailure(type as FailureType, scope as FailureScope, ttlSeconds, correlationId);
                     this.sendJson(res, 200, { success: true, message: `Successfully injected failure: ${type}` });
                 } catch (err: any) {
-                    this.sendJson(res, 403, { success: false, message: err.message });
+                    this.sendError(res, 403, 'FORBIDDEN', err.message);
                 }
                 return;
             }
@@ -255,14 +292,14 @@ export class DeveloperConsoleServer {
             if (pathname === '/api/v1/admin/failures/clear' || pathname === '/api/v1/failures/clear') {
                 const { type, correlationId } = payload;
                 if (!type) {
-                    this.sendJson(res, 400, { success: false, message: 'Field type is required.' });
+                    this.sendError(res, 400, 'BAD_REQUEST', 'Field type is required.');
                     return;
                 }
                 try {
                     this.controller.clearFailure(type as FailureType, correlationId);
                     this.sendJson(res, 200, { success: true, message: `Successfully cleared failure: ${type}` });
                 } catch (err: any) {
-                    this.sendJson(res, 403, { success: false, message: err.message });
+                    this.sendError(res, 403, 'FORBIDDEN', err.message);
                 }
                 return;
             }
@@ -274,7 +311,7 @@ export class DeveloperConsoleServer {
                     this.controller.clearAllFailures(correlationId);
                     this.sendJson(res, 200, { success: true, message: 'Cleared all injected failures' });
                 } catch (err: any) {
-                    this.sendJson(res, 403, { success: false, message: err.message });
+                    this.sendError(res, 403, 'FORBIDDEN', err.message);
                 }
                 return;
             }
@@ -283,23 +320,23 @@ export class DeveloperConsoleServer {
             if (pathname === '/api/v1/admin/infra/command' || pathname === '/api/v1/infra/command') {
                 const { command, correlationId } = payload;
                 if (!command) {
-                    this.sendJson(res, 400, { success: false, message: 'Field command is required.' });
+                    this.sendError(res, 400, 'BAD_REQUEST', 'Field command is required.');
                     return;
                 }
                 try {
                     await this.controller.executeInfraCommand(command as SystemCommand, correlationId);
                     this.sendJson(res, 200, { success: true, message: `Command executed: ${command}` });
                 } catch (err: any) {
-                    this.sendJson(res, 403, { success: false, message: err.message });
+                    this.sendError(res, 403, 'FORBIDDEN', err.message);
                 }
                 return;
             }
 
             // Admin: Run Operations Scenario
-            if (pathname === '/api/v1/admin/operations/run' || pathname === '/api/v1/operations/run') {
+            if (pathname === '/api/v1/admin/operations/run' || pathname === '/api/v1/admin/operations/run') {
                 const { scenario, tradeId, symbol, timestampOffset, correlationId } = payload;
                 if (!scenario) {
-                    this.sendJson(res, 400, { success: false, message: 'Field scenario is required.' });
+                    this.sendError(res, 400, 'BAD_REQUEST', 'Field scenario is required.');
                     return;
                 }
                 try {
@@ -310,7 +347,7 @@ export class DeveloperConsoleServer {
                     );
                     this.sendJson(res, 200, { success: true, message: `Successfully executed operations scenario: ${scenario}` });
                 } catch (err: any) {
-                    this.sendJson(res, 403, { success: false, message: err.message });
+                    this.sendError(res, 403, 'FORBIDDEN', err.message);
                 }
                 return;
             }
@@ -322,7 +359,7 @@ export class DeveloperConsoleServer {
                     await this.controller.resetSimulationLab(correlationId);
                     this.sendJson(res, 200, { success: true, message: 'Successfully reset operations simulation lab' });
                 } catch (err: any) {
-                    this.sendJson(res, 403, { success: false, message: err.message });
+                    this.sendError(res, 403, 'FORBIDDEN', err.message);
                 }
                 return;
             }
@@ -332,7 +369,7 @@ export class DeveloperConsoleServer {
                 try {
                     const ids = payload.ids;
                     if (ids !== undefined && (!Array.isArray(ids) || !ids.every(id => typeof id === 'number'))) {
-                        this.sendJson(res, 400, { success: false, message: 'Field "ids" must be an array of numbers.' });
+                        this.sendError(res, 400, 'BAD_REQUEST', 'Field "ids" must be an array of numbers.');
                         return;
                     }
 
@@ -343,7 +380,7 @@ export class DeveloperConsoleServer {
                         status: 'QUEUED'
                     });
                 } catch (err: any) {
-                    this.sendJson(res, 403, { success: false, message: err.message });
+                    this.sendError(res, 403, 'FORBIDDEN', err.message);
                 }
                 return;
             }
@@ -388,8 +425,7 @@ Transition : ${payload.event || 'unknown'}
         }
 
         // Endpoint 404 fallback
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: false, message: 'Not Found', timestamp: Date.now() }));
+        this.sendError(res, 404, 'NOT_FOUND', 'Not Found');
     }
 
     private async handleAgentAlert(req: http.IncomingMessage, res: http.ServerResponse, payload: any): Promise<void> {
@@ -462,7 +498,7 @@ Title    : ${payload.alert.title || 'unknown'}
         req: http.IncomingMessage
     ): Promise<
         | { success: true; agent: Agent }
-        | { success: false; statusCode: number; body: { success: false; status: string; message: string } }
+        | { success: false; statusCode: number; body: ErrorResponse }
     > {
         const headerAgentId = req.headers['x-agent-id'] as string | undefined;
         const headerSecret = req.headers['x-agent-secret'] as string | undefined;
@@ -474,7 +510,11 @@ Title    : ${payload.alert.title || 'unknown'}
                 body: {
                     success: false,
                     status: 'UNAUTHORIZED',
-                    message: 'Authentication headers X-Agent-Id and X-Agent-Secret are required.'
+                    message: 'Authentication headers X-Agent-Id and X-Agent-Secret are required.',
+                    error: {
+                        code: 'UNAUTHORIZED',
+                        message: 'Authentication headers X-Agent-Id and X-Agent-Secret are required.'
+                    }
                 }
             };
         }
@@ -492,7 +532,11 @@ Title    : ${payload.alert.title || 'unknown'}
                     body: {
                         success: false,
                         status: 'INVALID_TOKEN',
-                        message: 'Agent not found.'
+                        message: 'Agent not found.',
+                        error: {
+                            code: 'INVALID_TOKEN',
+                            message: 'Agent not found.'
+                        }
                     }
                 };
             }
@@ -505,7 +549,11 @@ Title    : ${payload.alert.title || 'unknown'}
                     body: {
                         success: false,
                         status: 'UNAUTHORIZED',
-                        message: 'Authentication secret mismatch.'
+                        message: 'Authentication secret mismatch.',
+                        error: {
+                            code: 'UNAUTHORIZED',
+                            message: 'Authentication secret mismatch.'
+                        }
                     }
                 };
             }
@@ -519,7 +567,11 @@ Title    : ${payload.alert.title || 'unknown'}
                 body: {
                     success: false,
                     status: 'INVALID_TOKEN',
-                    message: 'Agent lookup error (invalid ID format).'
+                    message: 'Agent lookup error (invalid ID format).',
+                    error: {
+                        code: 'INVALID_TOKEN',
+                        message: 'Agent lookup error (invalid ID format).'
+                    }
                 }
             };
         }
@@ -528,6 +580,19 @@ Title    : ${payload.alert.title || 'unknown'}
     private sendJson(res: http.ServerResponse, statusCode: number, payload: any): void {
         res.writeHead(statusCode, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ...payload, timestamp: Date.now() }));
+    }
+
+    private sendError(res: http.ServerResponse, statusCode: number, code: ErrorCode, message: string, details?: Record<string, unknown>): void {
+        this.sendJson(res, statusCode, {
+            success: false,
+            status: code,
+            message,
+            error: {
+                code,
+                message,
+                details
+            }
+        });
     }
 
     private readRequestBody(req: http.IncomingMessage): Promise<string> {

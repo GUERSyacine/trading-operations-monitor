@@ -74,11 +74,21 @@ export class CloudAgentClient implements AgentApiClient {
 
             if (!response.ok) {
                 const text = await response.text();
-                const status = this.mapHttpStatusToStatus(response.status);
+                let parsed: any = null;
+                try {
+                    parsed = JSON.parse(text);
+                } catch {}
+
+                const rawStatus = parsed?.error?.code || this.mapHttpStatusToStatus(response.status);
+                const status: AgentApiStatus = ['SUCCESS', 'NETWORK_ERROR', 'SERVER_ERROR', 'UNAUTHORIZED', 'INVALID_TOKEN', 'TIMEOUT'].includes(rawStatus)
+                    ? (rawStatus as AgentApiStatus)
+                    : this.mapHttpStatusToStatus(response.status);
+
+                const message = parsed?.error?.message || parsed?.message || `Registration failed with status ${response.status}: ${text}`;
                 return {
                     success: false,
                     status,
-                    message: `Registration failed with status ${response.status}: ${text}`
+                    message
                 };
             }
 
@@ -117,11 +127,21 @@ export class CloudAgentClient implements AgentApiClient {
 
             if (!response.ok) {
                 const text = await response.text();
-                const status = this.mapHttpStatusToStatus(response.status);
+                let parsed: any = null;
+                try {
+                    parsed = JSON.parse(text);
+                } catch {}
+
+                const rawStatus = parsed?.error?.code || this.mapHttpStatusToStatus(response.status);
+                const status: AgentApiStatus = ['SUCCESS', 'NETWORK_ERROR', 'SERVER_ERROR', 'UNAUTHORIZED', 'INVALID_TOKEN', 'TIMEOUT'].includes(rawStatus)
+                    ? (rawStatus as AgentApiStatus)
+                    : this.mapHttpStatusToStatus(response.status);
+
+                const message = parsed?.error?.message || parsed?.message || `Heartbeat failed with status ${response.status}: ${text}`;
                 return {
                     success: false,
                     status,
-                    message: `Heartbeat failed with status ${response.status}: ${text}`
+                    message
                 };
             }
 

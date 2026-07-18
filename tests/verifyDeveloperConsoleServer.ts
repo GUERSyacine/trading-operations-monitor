@@ -326,6 +326,8 @@ async function runTests() {
         const rejectData = JSON.parse(rejectRes.data);
         assert.strictEqual(rejectData.success, false);
         assert.ok(rejectData.message.includes('READ-ONLY'));
+        assert.strictEqual(rejectData.error.code, 'FORBIDDEN');
+        assert.ok(rejectData.error.message.includes('READ-ONLY'));
 
         // 6. Verify Agent Authentication Contract (Heartbeat, Incidents, Alerts)
         console.log('   - Testing Agent Authentication Contract (Missing Headers -> 401)...');
@@ -340,6 +342,8 @@ async function runTests() {
         const missHeaderData = JSON.parse(missHeaderRes.data);
         assert.strictEqual(missHeaderData.success, false);
         assert.strictEqual(missHeaderData.status, 'UNAUTHORIZED');
+        assert.strictEqual(missHeaderData.error.code, 'UNAUTHORIZED');
+        assert.ok(missHeaderData.error.message.includes('Authentication headers'));
 
         console.log('   - Testing Agent Authentication Contract (Wrong Secret -> 401)...');
         const wrongSecretRes = await httpRequest({
@@ -357,6 +361,8 @@ async function runTests() {
         const wrongSecretData = JSON.parse(wrongSecretRes.data);
         assert.strictEqual(wrongSecretData.success, false);
         assert.strictEqual(wrongSecretData.status, 'UNAUTHORIZED');
+        assert.strictEqual(wrongSecretData.error.code, 'UNAUTHORIZED');
+        assert.ok(wrongSecretData.error.message.includes('Authentication secret mismatch'));
 
         console.log('   - Testing Agent Authentication Contract (Unknown Agent ID -> 403 INVALID_TOKEN)...');
         const unknownAgentRes = await httpRequest({
@@ -374,6 +380,8 @@ async function runTests() {
         const unknownAgentData = JSON.parse(unknownAgentRes.data);
         assert.strictEqual(unknownAgentData.success, false);
         assert.strictEqual(unknownAgentData.status, 'INVALID_TOKEN');
+        assert.strictEqual(unknownAgentData.error.code, 'INVALID_TOKEN');
+        assert.ok(unknownAgentData.error.message.includes('Agent not found'));
 
         console.log('   - Testing Agent Authentication Contract (Success Path -> 201)...');
         const successAuthRes = await httpRequest({
@@ -425,6 +433,95 @@ async function runTests() {
         assert.strictEqual(hbAuthRes.statusCode, 200);
         const hbAuthData = JSON.parse(hbAuthRes.data);
         assert.strictEqual(hbAuthData.success, true);
+
+        // 7. Verify Standardized Error Response Codes (404 and 422)
+        console.log('   - Testing GET /invalid-endpoint (404 Fallback)...');
+        const notFoundRes = await httpRequest({
+            host: '127.0.0.1',
+            port: testPort,
+            path: '/api/v1/invalid-route-that-does-not-exist',
+            method: 'GET'
+        });
+        assert.strictEqual(notFoundRes.statusCode, 404);
+        const notFoundData = JSON.parse(notFoundRes.data);
+        assert.strictEqual(notFoundData.success, false);
+        assert.strictEqual(notFoundData.error.code, 'NOT_FOUND');
+        assert.strictEqual(notFoundData.error.message, 'Not Found');
+
+        console.log('   - Testing PUT /api/v1/dashboard/flags/WEBSOCKET (Missing enabled -> 422)...');
+        // Clear read-only override so the PUT request is processed
+        delete process.env.DEV_CONSOLE_READ_ONLY;
+        const invalidPutRes = await httpRequest({
+            host: '127.0.0.1',
+            port: testPort,
+            path: '/api/v1/dashboard/flags/WEBSOCKET',
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' }
+        }, {
+            reason: 'Test Suite Invalid enabled'
+        });
+        assert.strictEqual(invalidPutRes.statusCode, 422);
+        const invalidPutData = JSON.parse(invalidPutRes.data);
+        assert.strictEqual(invalidPutData.success, false);
+        assert.strictEqual(invalidPutData.error.code, 'UNPROCESSABLE_ENTITY');
+        assert.ok(invalidPutData.error.message.includes('enabled'));
+
+        // 8. Verify Reserved Agent Config & Update Routes
+        console.log('   - Testing GET /api/v1/agent/config (Unauthenticated -> 401)...');
+        const configUnauthRes = await httpRequest({
+            host: '127.0.0.1',
+            port: testPort,
+            path: '/api/v1/agent/config',
+            method: 'GET'
+        });
+        assert.strictEqual(configUnauthRes.statusCode, 401);
+        const configUnauthData = JSON.parse(configUnauthRes.data);
+        assert.strictEqual(configUnauthData.success, false);
+        assert.strictEqual(configUnauthData.error.code, 'UNAUTHORIZED');
+
+        console.log('   - Testing GET /api/v1/agent/config (Authenticated -> 200)...');
+        const configAuthRes = await httpRequest({
+            host: '127.0.0.1',
+            port: testPort,
+            path: '/api/v1/agent/config',
+            method: 'GET',
+            headers: {
+                'X-Agent-Id': '1d422890-9370-45ed-9b2b-83fa904f7e7e',
+                'X-Agent-Secret': 'sec_testsecret123456'
+            }
+        });
+        assert.strictEqual(configAuthRes.statusCode, 200);
+        const configAuthData = JSON.parse(configAuthRes.data);
+        assert.strictEqual(configAuthData.success, true);
+        assert.deepStrictEqual(configAuthData.config, {});
+
+        console.log('   - Testing GET /api/v1/agent/update (Unauthenticated -> 401)...');
+        const updateUnauthRes = await httpRequest({
+            host: '127.0.0.1',
+            port: testPort,
+            path: '/api/v1/agent/update',
+            method: 'GET'
+        });
+        assert.strictEqual(updateUnauthRes.statusCode, 401);
+        const updateUnauthData = JSON.parse(updateUnauthRes.data);
+        assert.strictEqual(updateUnauthData.success, false);
+        assert.strictEqual(updateUnauthData.error.code, 'UNAUTHORIZED');
+
+        console.log('   - Testing GET /api/v1/agent/update (Authenticated -> 200)...');
+        const updateAuthRes = await httpRequest({
+            host: '127.0.0.1',
+            port: testPort,
+            path: '/api/v1/agent/update',
+            method: 'GET',
+            headers: {
+                'X-Agent-Id': '1d422890-9370-45ed-9b2b-83fa904f7e7e',
+                'X-Agent-Secret': 'sec_testsecret123456'
+            }
+        });
+        assert.strictEqual(updateAuthRes.statusCode, 200);
+        const updateAuthData = JSON.parse(updateAuthRes.data);
+        assert.strictEqual(updateAuthData.success, true);
+        assert.strictEqual(updateAuthData.updateAvailable, false);
 
         console.log('🎉 ALL SERVER INTEGRATION TESTS PASSED SUCCESSFULLY!\n');
     } finally {
