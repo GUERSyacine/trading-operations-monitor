@@ -109,6 +109,7 @@ export class CloudAgentClient implements AgentApiClient {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'X-Agent-Id': req.agentId,
                     'X-Agent-Secret': req.agentSecret // Authorization Header
                 },
                 body: JSON.stringify(req)

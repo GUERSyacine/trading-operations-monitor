@@ -151,7 +151,16 @@ export class WatchdogOrchestrator {
         );
 
         this.anomalyDetector = new LifecycleAnomalyDetector(this.incidentManager);
-        this.syncWorker = new OutboxSyncWorker();
+        this.syncWorker = new OutboxSyncWorker(
+            undefined, // cloudGatewayUrl
+            undefined, // syncIntervalMs
+            undefined, // maxAttempts
+            undefined, // backoffBaseMs
+            undefined, // batchSize
+            undefined, // timeoutMs
+            () => this.identityService?.getIdentity()?.agentId,
+            () => this.identityService?.getIdentity()?.agentSecret
+        );
     }
 
 

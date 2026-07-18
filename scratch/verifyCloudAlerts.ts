@@ -40,6 +40,32 @@ async function main() {
     // Give server a moment to bind
     await new Promise(resolve => setTimeout(resolve, 500));
 
+    // Seed Mock Agent and RegistrationToken
+    await prisma.registrationToken.upsert({
+        where: { token: 'dummy-token' },
+        update: {},
+        create: {
+            token: 'dummy-token',
+            maxAgents: 10,
+            expiresAt: new Date(Date.now() + 1000000)
+        }
+    });
+
+    await prisma.agent.upsert({
+        where: { id: '1d422890-9370-45ed-9b2b-83fa904f7e7e' },
+        update: {},
+        create: {
+            id: '1d422890-9370-45ed-9b2b-83fa904f7e7e',
+            hostname: 'vps-test',
+            machineId: 'vps-machine',
+            agentSecret: 'sec_testsecret123456',
+            status: 'ONLINE',
+            version: '1.0.0',
+            capabilities: '{}',
+            registrationTokenId: 'dummy-token'
+        }
+    });
+
     // Instantiate OutboxPublisher and AlertingService
     const machineProvider = new DefaultMachineInfoProvider();
     const outboxPublisher = new OutboxPublisher(machineProvider);
@@ -48,11 +74,15 @@ async function main() {
     // Workers
     const onlineWorker = new OutboxSyncWorker(
         'http://127.0.0.1:3005/api/v1/agent/incidents',
-        5000, 5, 100, 50, 2000
+        5000, 5, 100, 50, 2000,
+        () => '1d422890-9370-45ed-9b2b-83fa904f7e7e',
+        () => 'sec_testsecret123456'
     );
     const offlineWorker = new OutboxSyncWorker(
         'http://127.0.0.1:3005/api/v1/agent/incidents?fail=true',
-        5000, 5, 10, 50, 2000
+        5000, 5, 10, 50, 2000,
+        () => '1d422890-9370-45ed-9b2b-83fa904f7e7e',
+        () => 'sec_testsecret123456'
     );
 
     try {

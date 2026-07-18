@@ -5,6 +5,7 @@ import { DASHBOARD_HTML } from './dashboardHtml';
 import { FailureType, FailureScope, FeatureFlag, SystemCommand, OperationScenario } from '../../shared/types/developer';
 import { AgentStatusService } from './AgentStatusService';
 import { prisma } from '../../shared/prisma';
+import { Agent } from '@prisma/client';
 
 import { EventPersistenceService } from '../../shared/services/EventPersistenceService';
 import { OperationsSimulationService } from './OperationsSimulationService';
@@ -220,9 +221,13 @@ export class DeveloperConsoleServer {
 
             // Agent: Agent Heartbeat
             if (pathname === '/api/v1/agent/heartbeat' || pathname === '/api/v1/agents/heartbeat') {
-                const headerSecret = req.headers['x-agent-secret'] as string | undefined;
+                const authResult = await this.authenticateAgent(req);
+                if (!authResult.success) {
+                    this.sendJson(res, authResult.statusCode, authResult.body);
+                    return;
+                }
                 try {
-                    const result = await this.controller.receiveHeartbeat(payload, headerSecret);
+                    const result = await this.controller.receiveHeartbeat(payload, authResult.agent.agentSecret);
                     this.sendJson(res, result.success ? 200 : (result.status === 'UNAUTHORIZED' ? 401 : (result.status === 'INVALID_TOKEN' ? 403 : 400)), result);
                 } catch (err: any) {
                     this.sendJson(res, 500, { success: false, message: err.message || 'Internal heartbeat error' });
@@ -351,26 +356,19 @@ export class DeveloperConsoleServer {
                     return;
                 }
 
-                const machineId = payload.machine?.machineId;
-                let agentId = payload.machine?.agentId || 'unknown';
-                if ((agentId === 'unknown' || !agentId) && machineId) {
-                    try {
-                        const dbAgent = await prisma.agent.findUnique({
-                            where: { machineId }
-                        });
-                        if (dbAgent) {
-                            agentId = dbAgent.id;
-                        }
-                    } catch (err) {
-                        // ignore DB lookup error
-                    }
+                const authResult = await this.authenticateAgent(req);
+                if (!authResult.success) {
+                    this.sendJson(res, authResult.statusCode, authResult.body);
+                    return;
                 }
+
+                const agentId = authResult.agent.id;
 
                 console.log(`======================================================
 INCIDENT RECEIVED
 ======================================================
-Hostname   : ${payload.machine?.hostname || 'unknown'}
-Machine    : ${payload.machine?.machineId || 'unknown'}
+Hostname   : ${authResult.agent.hostname}
+Machine    : ${authResult.agent.machineId}
 Agent      : ${agentId}
 
 Incident   : ${payload.incident?.incidentId || 'unknown'}
@@ -401,12 +399,18 @@ Transition : ${payload.event || 'unknown'}
             return;
         }
 
+        const authResult = await this.authenticateAgent(req);
+        if (!authResult.success) {
+            this.sendJson(res, authResult.statusCode, authResult.body);
+            return;
+        }
+
         if (payload.alert) {
             console.log(`======================================================
 ALERT RECEIVED
 ======================================================
-Hostname : ${payload.machine?.hostname || 'unknown'}
-Machine  : ${payload.machine?.machineId || 'unknown'}
+Hostname : ${authResult.agent.hostname}
+Machine  : ${authResult.agent.machineId}
 
 Severity : ${payload.alert.level || 'unknown'}
 Title    : ${payload.alert.title || 'unknown'}
@@ -451,6 +455,73 @@ Title    : ${payload.alert.title || 'unknown'}
     private broadcastSseHeartbeat(): void {
         for (const client of this.sseClients) {
             client.write(':ping\n\n');
+        }
+    }
+
+    private async authenticateAgent(
+        req: http.IncomingMessage
+    ): Promise<
+        | { success: true; agent: Agent }
+        | { success: false; statusCode: number; body: { success: false; status: string; message: string } }
+    > {
+        const headerAgentId = req.headers['x-agent-id'] as string | undefined;
+        const headerSecret = req.headers['x-agent-secret'] as string | undefined;
+
+        if (!headerAgentId || !headerSecret) {
+            return {
+                success: false,
+                statusCode: 401,
+                body: {
+                    success: false,
+                    status: 'UNAUTHORIZED',
+                    message: 'Authentication headers X-Agent-Id and X-Agent-Secret are required.'
+                }
+            };
+        }
+
+        try {
+            const agent = await prisma.agent.findUnique({
+                where: { id: headerAgentId }
+            });
+
+            if (!agent) {
+                console.warn(`[Authentication] Agent not found in DB: ${headerAgentId}`);
+                return {
+                    success: false,
+                    statusCode: 403,
+                    body: {
+                        success: false,
+                        status: 'INVALID_TOKEN',
+                        message: 'Agent not found.'
+                    }
+                };
+            }
+
+            if (agent.agentSecret !== headerSecret) {
+                console.warn(`[Authentication] Secret mismatch for agent ID: ${agent.id}`);
+                return {
+                    success: false,
+                    statusCode: 401,
+                    body: {
+                        success: false,
+                        status: 'UNAUTHORIZED',
+                        message: 'Authentication secret mismatch.'
+                    }
+                };
+            }
+
+            return { success: true, agent };
+        } catch (err: any) {
+            console.error(`[Authentication] Database error: ${err.message}`);
+            return {
+                success: false,
+                statusCode: 403,
+                body: {
+                    success: false,
+                    status: 'INVALID_TOKEN',
+                    message: 'Agent lookup error (invalid ID format).'
+                }
+            };
         }
     }
 

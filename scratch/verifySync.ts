@@ -38,8 +38,32 @@ async function main() {
     await new Promise(resolve => setTimeout(resolve, 500));
 
     try {
-        // 2. Clear Database
+        // 2. Clear Database and Seed Mock Agent
         await prisma.incidentOutbox.deleteMany({});
+        await prisma.registrationToken.upsert({
+            where: { token: 'dummy-token' },
+            update: {},
+            create: {
+                token: 'dummy-token',
+                maxAgents: 10,
+                expiresAt: new Date(Date.now() + 1000000)
+            }
+        });
+
+        await prisma.agent.upsert({
+            where: { id: '1d422890-9370-45ed-9b2b-83fa904f7e7e' },
+            update: {},
+            create: {
+                id: '1d422890-9370-45ed-9b2b-83fa904f7e7e',
+                hostname: 'vps-test',
+                machineId: 'vps-machine',
+                agentSecret: 'sec_testsecret123456',
+                status: 'ONLINE',
+                version: '1.0.0',
+                capabilities: '{}',
+                registrationTokenId: 'dummy-token'
+            }
+        });
 
         // ==========================================
         // TEST 1: Success Path
@@ -61,7 +85,9 @@ async function main() {
             5,    // maxAttempts
             1000, // backoffBaseMs
             50,   // batchSize
-            5000  // timeoutMs
+            5000, // timeoutMs
+            () => '1d422890-9370-45ed-9b2b-83fa904f7e7e',
+            () => 'sec_testsecret123456'
         );
 
         await worker.syncCycle();
@@ -92,7 +118,9 @@ async function main() {
             5,
             1000,
             50,
-            5000
+            5000,
+            () => '1d422890-9370-45ed-9b2b-83fa904f7e7e',
+            () => 'sec_testsecret123456'
         );
 
         await failWorker.syncCycle();
@@ -125,7 +153,9 @@ async function main() {
             5,
             1000,
             50,
-            2000 // short timeout
+            2000, // short timeout
+            () => '1d422890-9370-45ed-9b2b-83fa904f7e7e',
+            () => 'sec_testsecret123456'
         );
 
         await offlineWorker.syncCycle();

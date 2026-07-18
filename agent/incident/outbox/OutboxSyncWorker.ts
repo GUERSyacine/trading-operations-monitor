@@ -12,7 +12,9 @@ export class OutboxSyncWorker {
         private readonly maxAttempts: number = MVP_CONFIG.CLOUD_SYNC.MAX_ATTEMPTS,
         private readonly backoffBaseMs: number = MVP_CONFIG.CLOUD_SYNC.BACKOFF_BASE_MS,
         private readonly batchSize: number = MVP_CONFIG.CLOUD_SYNC.BATCH_SIZE,
-        private readonly timeoutMs: number = MVP_CONFIG.CLOUD_SYNC.TIMEOUT_MS
+        private readonly timeoutMs: number = MVP_CONFIG.CLOUD_SYNC.TIMEOUT_MS,
+        private readonly getAgentId?: () => string | undefined,
+        private readonly getAgentSecret?: () => string | undefined
     ) {}
 
     /**
@@ -96,11 +98,25 @@ export class OutboxSyncWorker {
                         ? this.cloudGatewayUrl.replace('/incidents', '/alerts')
                         : this.cloudGatewayUrl;
 
+                    const headers: Record<string, string> = {
+                        'Content-Type': 'application/json'
+                    };
+                    if (this.getAgentId) {
+                        const agentId = this.getAgentId();
+                        if (agentId) {
+                            headers['X-Agent-Id'] = agentId;
+                        }
+                    }
+                    if (this.getAgentSecret) {
+                        const agentSecret = this.getAgentSecret();
+                        if (agentSecret) {
+                            headers['X-Agent-Secret'] = agentSecret;
+                        }
+                    }
+
                     const response = await fetch(targetUrl, {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
+                        headers,
                         body: JSON.stringify(record.payload),
                         signal: controller.signal
                     }).finally(() => clearTimeout(timeoutId));

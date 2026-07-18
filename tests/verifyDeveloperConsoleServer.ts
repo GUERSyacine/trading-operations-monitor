@@ -61,6 +61,34 @@ async function runTests() {
     (prisma.decisionAudit as any).deleteMany = async () => ({ count: 0 });
     (prisma.alertLog as any).deleteMany = async () => ({ count: 0 });
 
+    const mockAgent = {
+        id: '1d422890-9370-45ed-9b2b-83fa904f7e7e',
+        hostname: 'vps-test',
+        machineId: 'vps-machine',
+        agentSecret: 'sec_testsecret123456',
+        status: 'ONLINE'
+    };
+
+    if (!prisma.agent) (prisma as any).agent = {};
+    if (!prisma.agentHeartbeat) (prisma as any).agentHeartbeat = {};
+
+    (prisma.agent as any).findUnique = async (args: any) => {
+        if (args.where.id === '1d422890-9370-45ed-9b2b-83fa904f7e7e') {
+            return mockAgent;
+        }
+        return null;
+    };
+    (prisma.agent as any).update = async (args: any) => {
+        return {
+            ...mockAgent,
+            status: args.data.status,
+            lastHeartbeatAt: args.data.lastHeartbeatAt,
+            hostname: args.data.hostname,
+            version: args.data.version
+        };
+    };
+    (prisma.agentHeartbeat as any).create = async () => ({ id: 'hb-id' });
+
     const controller = new DeveloperConsoleController(
         failures,
         flags,
@@ -298,6 +326,105 @@ async function runTests() {
         const rejectData = JSON.parse(rejectRes.data);
         assert.strictEqual(rejectData.success, false);
         assert.ok(rejectData.message.includes('READ-ONLY'));
+
+        // 6. Verify Agent Authentication Contract (Heartbeat, Incidents, Alerts)
+        console.log('   - Testing Agent Authentication Contract (Missing Headers -> 401)...');
+        const missHeaderRes = await httpRequest({
+            host: '127.0.0.1',
+            port: testPort,
+            path: '/api/v1/agent/incidents',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        }, { some: 'payload' });
+        assert.strictEqual(missHeaderRes.statusCode, 401);
+        const missHeaderData = JSON.parse(missHeaderRes.data);
+        assert.strictEqual(missHeaderData.success, false);
+        assert.strictEqual(missHeaderData.status, 'UNAUTHORIZED');
+
+        console.log('   - Testing Agent Authentication Contract (Wrong Secret -> 401)...');
+        const wrongSecretRes = await httpRequest({
+            host: '127.0.0.1',
+            port: testPort,
+            path: '/api/v1/agent/incidents',
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Agent-Id': '1d422890-9370-45ed-9b2b-83fa904f7e7e',
+                'X-Agent-Secret': 'WRONG_SECRET'
+            }
+        }, { some: 'payload' });
+        assert.strictEqual(wrongSecretRes.statusCode, 401);
+        const wrongSecretData = JSON.parse(wrongSecretRes.data);
+        assert.strictEqual(wrongSecretData.success, false);
+        assert.strictEqual(wrongSecretData.status, 'UNAUTHORIZED');
+
+        console.log('   - Testing Agent Authentication Contract (Unknown Agent ID -> 403 INVALID_TOKEN)...');
+        const unknownAgentRes = await httpRequest({
+            host: '127.0.0.1',
+            port: testPort,
+            path: '/api/v1/agent/incidents',
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Agent-Id': '00000000-0000-0000-0000-000000000000',
+                'X-Agent-Secret': 'sec_testsecret123456'
+            }
+        }, { some: 'payload' });
+        assert.strictEqual(unknownAgentRes.statusCode, 403);
+        const unknownAgentData = JSON.parse(unknownAgentRes.data);
+        assert.strictEqual(unknownAgentData.success, false);
+        assert.strictEqual(unknownAgentData.status, 'INVALID_TOKEN');
+
+        console.log('   - Testing Agent Authentication Contract (Success Path -> 201)...');
+        const successAuthRes = await httpRequest({
+            host: '127.0.0.1',
+            port: testPort,
+            path: '/api/v1/agent/incidents',
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Agent-Id': '1d422890-9370-45ed-9b2b-83fa904f7e7e',
+                'X-Agent-Secret': 'sec_testsecret123456'
+            }
+        }, {
+            machine: {
+                hostname: 'vps-test',
+                machineId: 'vps-machine'
+            },
+            incident: {
+                incidentId: 42,
+                level: 'WARNING'
+            },
+            event: 'DETECTED'
+        });
+        assert.strictEqual(successAuthRes.statusCode, 201);
+        const successAuthData = JSON.parse(successAuthRes.data);
+        assert.strictEqual(successAuthData.received, true);
+
+        console.log('   - Testing Agent Heartbeat (Success Path -> 200)...');
+        const hbAuthRes = await httpRequest({
+            host: '127.0.0.1',
+            port: testPort,
+            path: '/api/v1/agent/heartbeat',
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Agent-Id': '1d422890-9370-45ed-9b2b-83fa904f7e7e',
+                'X-Agent-Secret': 'sec_testsecret123456'
+            }
+        }, {
+            agentId: '1d422890-9370-45ed-9b2b-83fa904f7e7e',
+            agentSecret: 'sec_testsecret123456',
+            hostname: 'vps-test',
+            version: '1.0.0',
+            status: 'ONLINE',
+            uptime: 100,
+            metrics: { cpuPct: 10, memoryPct: 20, diskPct: 30 },
+            health: { outboxPendingCount: 0, databaseHealthy: true, freqtradeHealthy: true }
+        });
+        assert.strictEqual(hbAuthRes.statusCode, 200);
+        const hbAuthData = JSON.parse(hbAuthRes.data);
+        assert.strictEqual(hbAuthData.success, true);
 
         console.log('🎉 ALL SERVER INTEGRATION TESTS PASSED SUCCESSFULLY!\n');
     } finally {
