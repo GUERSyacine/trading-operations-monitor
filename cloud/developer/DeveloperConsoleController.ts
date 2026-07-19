@@ -396,6 +396,43 @@ Reason:                          Persisted status remained ${updatedAgent.status
         };
     }
 
+    public async getAgentsStatus(): Promise<any[]> {
+        const agents = await prisma.agent.findMany({
+            orderBy: { lastHeartbeatAt: 'desc' }
+        });
+
+        const results = [];
+        for (const agent of agents) {
+            const hb = await prisma.agentHeartbeat.findFirst({
+                where: { agentId: agent.id },
+                orderBy: { timestamp: 'desc' }
+            });
+            results.push({
+                id: agent.id,
+                hostname: agent.hostname,
+                machineId: agent.machineId,
+                version: agent.version,
+                status: agent.status,
+                capabilities: agent.capabilities,
+                lastHeartbeatAt: agent.lastHeartbeatAt,
+                latestHeartbeat: hb ? {
+                    id: hb.id,
+                    agentVersion: hb.agentVersion,
+                    cpuPct: Number(hb.cpuPct),
+                    memoryPct: Number(hb.memoryPct),
+                    diskPct: Number(hb.diskPct),
+                    status: hb.status,
+                    uptime: Number(hb.uptime),
+                    outboxPending: hb.outboxPending,
+                    databaseHealthy: hb.databaseHealthy,
+                    freqtradeHealthy: hb.freqtradeHealthy,
+                    timestamp: hb.timestamp
+                } : null
+            });
+        }
+        return results;
+    }
+
     public getReadOnlyStatus(): boolean {
         return process.env.DEV_CONSOLE_READ_ONLY === 'true';
     }

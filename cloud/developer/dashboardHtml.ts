@@ -3,8 +3,8 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Execution Watchdog — Test Lab & Developer Console</title>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <title>Execution Watchdog — Operations QA Console</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg-base: #0f172a;
@@ -59,7 +59,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             display: flex;
             align-items: center;
             gap: 0.5rem;
-            background: linear-gradient(to right, #3b82f6, #8b5cf6);
+            background: linear-gradient(to right, #3b82f6, #10b981);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
@@ -83,25 +83,106 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             position: relative;
         }
 
-        /* Sidebar Navigation */
+        /* Sidebar Navigation folders */
         aside {
-            width: 260px;
+            width: 280px;
             background: rgba(15, 23, 42, 0.4);
             border-right: 1px solid var(--border-color);
-            padding: 2rem 1rem;
+            padding: 1.5rem 1rem;
             display: flex;
             flex-direction: column;
-            gap: 0.5rem;
+            gap: 1rem;
+        }
+
+        .sidebar-folder {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .sidebar-folder-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            padding: 0.5rem 0.75rem;
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            text-align: left;
+            cursor: pointer;
+            outline: none;
+            user-select: none;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+            margin-bottom: 0.25rem;
+        }
+
+        .sidebar-folder-header .folder-arrow {
+            transition: transform var(--transition-speed);
+            font-size: 0.75rem;
+            opacity: 0.5;
+        }
+
+        .sidebar-folder.collapsed .sidebar-folder-header .folder-arrow {
+            transform: rotate(-90deg);
+        }
+
+        .sidebar-folder-items {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+            padding-left: 0.5rem;
+            transition: max-height var(--transition-speed) ease-out, opacity var(--transition-speed);
+            overflow: hidden;
+        }
+
+        .sidebar-folder.collapsed .sidebar-folder-items {
+            max-height: 0 !important;
+            opacity: 0;
+            padding-top: 0;
+            padding-bottom: 0;
+            margin: 0;
+        }
+
+        /* Themed Accents */
+        .folder-internal .sidebar-folder-header {
+            color: var(--color-blue);
+        }
+        .folder-internal .tab-btn.active {
+            background: rgba(59, 130, 246, 0.1);
+            border-color: rgba(59, 130, 246, 0.2);
+            color: var(--color-blue);
+        }
+
+        .folder-distributed .sidebar-folder-header {
+            color: var(--color-green);
+        }
+        .folder-distributed .tab-btn.active {
+            background: rgba(16, 185, 129, 0.1);
+            border-color: rgba(16, 185, 129, 0.2);
+            color: var(--color-green);
+        }
+
+        .folder-admin .sidebar-folder-header {
+            color: var(--color-orange);
+        }
+        .folder-admin .tab-btn.active {
+            background: rgba(245, 158, 11, 0.1);
+            border-color: rgba(245, 158, 11, 0.2);
+            color: var(--color-orange);
         }
 
         .tab-btn {
             background: transparent;
             border: 1px solid transparent;
             color: var(--text-secondary);
-            padding: 0.75rem 1rem;
+            padding: 0.6rem 0.75rem;
             border-radius: 8px;
             text-align: left;
-            font-size: 0.95rem;
+            font-size: 0.9rem;
             font-weight: 500;
             cursor: pointer;
             display: flex;
@@ -193,16 +274,16 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             filter: brightness(1.1);
         }
 
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
         .btn-red { background: var(--color-red); }
         .btn-green { background: var(--color-green); }
         .btn-orange { background: var(--color-orange); }
         .btn-purple { background: var(--color-purple); }
         .btn-secondary { background: rgba(255, 255, 255, 0.08); color: var(--text-primary); }
-
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
 
         .form-group {
             margin-bottom: 1rem;
@@ -245,7 +326,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             height: 500px;
             overflow-y: auto;
             padding: 1rem;
-            font-family: 'Courier New', Courier, monospace;
+            font-family: 'Fira Code', monospace;
             font-size: 0.85rem;
             display: flex;
             flex-direction: column;
@@ -303,25 +384,190 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             justify-content: space-between;
             align-items: center;
         }
+
+        /* Dynamic QA card styling */
+        .qa-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .qa-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: transform var(--transition-speed);
+        }
+
+        .qa-card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(16, 185, 129, 0.3);
+        }
+
+        .qa-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 0.5rem;
+        }
+
+        .qa-card-title {
+            font-weight: 600;
+            font-size: 1.05rem;
+            color: var(--text-primary);
+        }
+
+        .qa-card-desc {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+            line-height: 1.4;
+        }
+
+        .qa-assertions-box {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 6px;
+            padding: 0.75rem;
+            font-size: 0.8rem;
+            font-family: 'Fira Code', monospace;
+            margin-bottom: 1rem;
+        }
+
+        .qa-assertion-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .qa-assertion-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .qa-status-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-top: 1rem;
+            border-top: 1px solid var(--border-color);
+            padding-top: 1rem;
+        }
+
+        .qa-console {
+            background: #090d16;
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 6px;
+            padding: 0.75rem;
+            margin-top: 0.75rem;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.75rem;
+            max-height: 150px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            color: #10b981;
+            display: none;
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            height: 6px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 999px;
+            overflow: hidden;
+            margin-top: 0.25rem;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: var(--color-green);
+            transition: width 0.3s ease;
+        }
+
+        /* Pulsing Online Badge */
+        .online-dot {
+            width: 8px;
+            height: 8px;
+            background-color: var(--color-green);
+            border-radius: 50%;
+            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+            animation: pulse-green 2s infinite;
+        }
+
+        @keyframes pulse-green {
+            0% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+            }
+            70% {
+                transform: scale(1);
+                box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+            }
+            100% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+            }
+        }
     </style>
 </head>
 <body>
     <header>
-        <h1>🛡️ Execution Watchdog <span class="sys-badge">Test Control Lab</span></h1>
+        <h1>🛡️ Execution Watchdog <span class="sys-badge" style="color:var(--color-green); background:rgba(16,185,129,0.15); border-color:rgba(16,185,129,0.3);">Operations QA Console</span></h1>
         <div id="read-only-badge" class="sys-badge" style="display:none; background:rgba(239, 68, 68, 0.15); border-color:rgba(239, 68, 68, 0.3); color:var(--color-red);">READ ONLY MODE</div>
     </header>
 
     <div class="container">
         <!-- Sidebar Navigation -->
         <aside>
-            <button class="tab-btn active" onclick="switchTab('dashboard')">📊 Dashboard</button>
-            <button class="tab-btn" onclick="switchTab('health')">❤️ Health Status</button>
-            <button class="tab-btn" onclick="switchTab('failures')">⚠️ Failure Injection</button>
-            <button class="tab-btn" onclick="switchTab('runtime')">🎛️ Runtime Controls</button>
-            <button class="tab-btn" onclick="switchTab('operations')">🔌 Operations Lab</button>
-            <button class="tab-btn" onclick="switchTab('replay')">🔄 Replay & Forensics</button>
-            <button class="tab-btn" onclick="switchTab('infra')">⚙️ Infrastructure</button>
-            <button class="tab-btn" onclick="switchTab('timeline')">📜 Event Timeline</button>
+            <button class="tab-btn active" style="margin-bottom: 0.5rem;" onclick="switchTab('dashboard')">📊 Dashboard</button>
+
+            <!-- Internal Validation -->
+            <div class="sidebar-folder folder-internal" id="folder-internal">
+                <button class="sidebar-folder-header" onclick="toggleFolder('internal')">
+                    <span>🧠 Internal Validation</span>
+                    <span class="folder-arrow">▼</span>
+                </button>
+                <div class="sidebar-folder-items">
+                    <button class="tab-btn" onclick="switchTab('health')">❤️ Health Status</button>
+                    <button class="tab-btn" onclick="switchTab('operations')">🔌 Operations Lab</button>
+                    <button class="tab-btn" onclick="switchTab('replay')">🔄 Replay & Forensics</button>
+                    <button class="tab-btn" onclick="switchTab('infra')">⚙️ Infrastructure</button>
+                    <button class="tab-btn" onclick="switchTab('timeline')">📜 Event Timeline</button>
+                </div>
+            </div>
+
+            <!-- Distributed Validation -->
+            <div class="sidebar-folder folder-distributed" id="folder-distributed">
+                <button class="sidebar-folder-header" onclick="toggleFolder('distributed')">
+                    <span>🌍 Distributed Validation</span>
+                    <span class="folder-arrow">▼</span>
+                </button>
+                <div class="sidebar-folder-items">
+                    <button class="tab-btn" onclick="switchTab('dist-status')">🟢 Distributed Status</button>
+                    <button class="tab-btn" onclick="switchTab('dist-identity')">🔑 Agent Identity</button>
+                    <button class="tab-btn" onclick="switchTab('dist-gateway')">☁️ Cloud Communication</button>
+                    <button class="tab-btn" onclick="switchTab('dist-sync')">🔄 Synchronization</button>
+                    <button class="tab-btn" onclick="switchTab('dist-smoke')">⚡ Smoke Tests</button>
+                </div>
+            </div>
+
+            <!-- Administration -->
+            <div class="sidebar-folder folder-admin" id="folder-admin">
+                <button class="sidebar-folder-header" onclick="toggleFolder('admin')">
+                    <span>⚙️ Administration</span>
+                    <span class="folder-arrow">▼</span>
+                </button>
+                <div class="sidebar-folder-items">
+                    <button class="tab-btn" onclick="switchTab('runtime')">🎛️ Runtime Controls</button>
+                    <button class="tab-btn" onclick="switchTab('failures')">⚠️ Failure Injection</button>
+                </div>
+            </div>
         </aside>
 
         <!-- Main Content -->
@@ -484,7 +730,6 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 <div style="margin-bottom: 2.5rem;">
                     <h3 style="font-size: 1.25rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; margin-bottom: 1.2rem; color: var(--color-green);">Expected Healthy Flows</h3>
                     <div class="failures-grid">
-                        <!-- Happy Entry & Exit -->
                         <div class="failure-card">
                             <div>
                                 <div class="flex-between" style="margin-bottom:0.5rem;">
@@ -502,7 +747,6 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                             <button class="btn btn-green" onclick="runOperationsScenario('ENTRY_EXECUTION')">Run Scenario</button>
                         </div>
 
-                        <!-- Cancelled Entry -->
                         <div class="failure-card">
                             <div>
                                 <div class="flex-between" style="margin-bottom:0.5rem;">
@@ -520,7 +764,6 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                             <button class="btn btn-green" onclick="runOperationsScenario('ORDER_CANCEL')">Run Scenario</button>
                         </div>
 
-                        <!-- Normal Exit -->
                         <div class="failure-card">
                             <div>
                                 <div class="flex-between" style="margin-bottom:0.5rem;">
@@ -544,7 +787,6 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 <div>
                     <h3 style="font-size: 1.25rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; margin-bottom: 1.2rem; color: var(--color-red);">Anomaly / Failure Scenarios</h3>
                     <div class="failures-grid">
-                        <!-- Open Order Timeout -->
                         <div class="failure-card">
                             <div>
                                 <div class="flex-between" style="margin-bottom:0.5rem;">
@@ -562,7 +804,6 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                             <button class="btn btn-orange" onclick="runOperationsScenario('OPEN_ORDER_TIMEOUT')">Run Scenario</button>
                         </div>
 
-                        <!-- Backward Transition -->
                         <div class="failure-card">
                             <div>
                                 <div class="flex-between" style="margin-bottom:0.5rem;">
@@ -580,7 +821,6 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                             <button class="btn btn-orange" onclick="runOperationsScenario('BACKWARD_TRANSITION')">Run Scenario</button>
                         </div>
 
-                        <!-- Duplicate Fill -->
                         <div class="failure-card">
                             <div>
                                 <div class="flex-between" style="margin-bottom:0.5rem;">
@@ -598,7 +838,6 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                             <button class="btn btn-blue" onclick="runOperationsScenario('DUPLICATE_FILL')">Run Scenario</button>
                         </div>
 
-                        <!-- Unexpected Fill -->
                         <div class="failure-card">
                             <div>
                                 <div class="flex-between" style="margin-bottom:0.5rem;">
@@ -616,7 +855,6 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                             <button class="btn btn-red" onclick="runOperationsScenario('UNEXPECTED_FILL')">Run Scenario</button>
                         </div>
 
-                        <!-- Cancel After Fill -->
                         <div class="failure-card">
                             <div>
                                 <div class="flex-between" style="margin-bottom:0.5rem;">
@@ -636,8 +874,6 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                     </div>
                 </div>
             </div>
-                </div>
-            </div>
 
             <!-- Panel: Replay & Forensics -->
             <div id="panel-replay" class="tab-panel">
@@ -647,7 +883,6 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 </p>
 
                 <div class="grid">
-                    <!-- Replay Engine Configuration -->
                     <div class="card">
                         <h2>Replay Engine Controller</h2>
                         <div class="flex-between" style="margin-bottom: 1rem;">
@@ -662,7 +897,6 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                         <button id="replay-toggle-btn" class="btn" style="width:100%" onclick="toggleReplayFlag()">Toggle Replay Engine</button>
                     </div>
 
-                    <!-- Simulation Control -->
                     <div class="card">
                         <h2>Simulation Ticks & Playback</h2>
                         <p style="font-size:0.8rem; color:var(--text-secondary); margin-bottom: 1rem;">
@@ -683,7 +917,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
 
                 <div class="card" style="max-width: 600px;">
                     <h2>Freqtrade Controls</h2>
-                    <div style="display:flex; gap:1rem;">
+                    <div style="display:flex; gap:1rem; margin-top: 1rem;">
                         <button class="btn btn-secondary" onclick="executeCommand('START_FREQTRADE')">▶️ Start Container</button>
                         <button class="btn btn-red" onclick="executeCommand('STOP_FREQTRADE')">🛑 Stop Container</button>
                         <button class="btn btn-orange" onclick="executeCommand('RESTART_FREQTRADE')">🔄 Restart Container</button>
@@ -697,6 +931,112 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 <p style="color:var(--text-secondary); margin-bottom:1.5rem;">Real-time feed maps internal events with severity color highlights.</p>
                 <div id="main-timeline" class="timeline-container"></div>
             </div>
+
+            <!-- PANEL: Distributed Status -->
+            <div id="panel-dist-status" class="tab-panel">
+                <h2>🟢 Distributed Status Monitor</h2>
+                <p style="color:var(--text-secondary); margin-bottom:1.5rem;">
+                    Real-time connectivity, latency, and system resource utilization of registered remote agents.
+                </p>
+                <div id="agents-status-container" style="display:flex; flex-direction:column; gap:1.5rem;">
+                    <!-- Dynamically populated -->
+                    <div class="card" style="text-align:center; padding: 3rem; color:var(--text-secondary);">
+                        🔍 No registered agents found. Connect an agent to begin monitoring.
+                    </div>
+                </div>
+            </div>
+
+            <!-- PANEL: Agent Identity -->
+            <div id="panel-dist-identity" class="tab-panel">
+                <h2>🔑 Agent Identity Protocol Validation</h2>
+                <p style="color:var(--text-secondary); margin-bottom:1.5rem;">
+                    Verify authentication boundaries, token parsing rules, and registration handshakes.
+                </p>
+                <div class="qa-grid" id="qa-identity-container"></div>
+            </div>
+
+            <!-- PANEL: Cloud Gateway -->
+            <div id="panel-dist-gateway" class="tab-panel">
+                <h2>☁️ Cloud Communication Protocol Validation</h2>
+                <p style="color:var(--text-secondary); margin-bottom:1.5rem;">
+                    Verify heartbeat ingestion routes, configuration endpoints, and update polling protocols.
+                </p>
+                <div class="qa-grid" id="qa-gateway-container"></div>
+            </div>
+
+            <!-- PANEL: Synchronization -->
+            <div id="panel-dist-sync" class="tab-panel">
+                <h2>🔄 Synchronization Protocol Validation</h2>
+                <p style="color:var(--text-secondary); margin-bottom:1.5rem;">
+                    Verify incident / alert ingestion, duplicate payload filters, and network offline resiliency.
+                </p>
+
+                <!-- Failure injection switch -->
+                <div class="card" style="margin-bottom: 2rem; border-color: rgba(245, 158, 11, 0.3); background: rgba(245,158,11,0.05);">
+                    <div class="flex-between">
+                        <div>
+                            <strong style="color: var(--color-orange); font-size: 1.05rem;">Simulate Cloud Gateway Offline (HTTP 500)</strong>
+                            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.25rem;">
+                                Forces incoming telemetry uploads to fail with internal errors. Use to test outbox buffering and recovery behavior.
+                            </p>
+                        </div>
+                        <button id="btn-offline-toggle" class="btn btn-orange" onclick="toggleOfflineSimulation()">
+                            Enable Offline Simulation
+                        </button>
+                    </div>
+                </div>
+
+                <div class="qa-grid" id="qa-sync-container"></div>
+            </div>
+
+            <!-- PANEL: Smoke Tests -->
+            <div id="panel-dist-smoke" class="tab-panel">
+                <h2>⚡ Distributed Smoke Tests</h2>
+                <p style="color:var(--text-secondary); margin-bottom:1.5rem;">
+                    Execute end-to-end integration flows to check overall platform health and protocol correctness.
+                </p>
+
+                <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-bottom: 2rem;">
+                    <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; gap:1rem;">
+                        <div>
+                            <h3>Identity Suite</h3>
+                            <p style="font-size:0.8rem; color:var(--text-secondary); margin-top:0.25rem;">Checks registration and wrong token rejection.</p>
+                        </div>
+                        <button class="btn btn-green" onclick="runSmokeSuite('identity')">Run Suite</button>
+                    </div>
+                    <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; gap:1rem;">
+                        <div>
+                            <h3>Gateway Suite</h3>
+                            <p style="font-size:0.8rem; color:var(--text-secondary); margin-top:0.25rem;">Checks config, update, and heartbeats.</p>
+                        </div>
+                        <button class="btn btn-green" onclick="runSmokeSuite('gateway')">Run Suite</button>
+                    </div>
+                    <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; gap:1rem;">
+                        <div>
+                            <h3>Sync Suite</h3>
+                            <p style="font-size:0.8rem; color:var(--text-secondary); margin-top:0.25rem;">Checks incident and alert ingestion.</p>
+                        </div>
+                        <button class="btn btn-green" onclick="runSmokeSuite('sync')">Run Suite</button>
+                    </div>
+                    <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; gap:1rem; border-color: var(--color-blue);">
+                        <div>
+                            <h3>Full Platform</h3>
+                            <p style="font-size:0.8rem; color:var(--text-secondary); margin-top:0.25rem;">Executes all validation checks in sequence.</p>
+                        </div>
+                        <button class="btn" style="background: var(--color-blue);" onclick="runSmokeSuite('full')">Run Full Smoke Test</button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="flex-between" style="margin-bottom: 1rem;">
+                        <h2>Test Results Output Log</h2>
+                        <button class="btn btn-secondary" onclick="clearSmokeTerminal()">Clear Log</button>
+                    </div>
+                    <div id="smoke-terminal" class="timeline-container" style="height: 350px; background: #070b12; border-color: rgba(255,255,255,0.05); color:#a7f3d0; font-family:'Fira Code', monospace; font-size:0.8rem; padding: 1.2rem; line-height: 1.5;">
+                        <div>Console ready. Select a suite to begin testing.</div>
+                    </div>
+                </div>
+            </div>
         </main>
     </div>
 
@@ -704,11 +1044,22 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
         let sseSource = null;
         let isReadOnlyMode = false;
 
+        // Collapsible Folders Toggle
+        function toggleFolder(folderId) {
+            const folder = document.getElementById('folder-' + folderId);
+            if (folder) {
+                folder.classList.toggle('collapsed');
+            }
+        }
+
         function switchTab(tabId) {
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
             document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
 
-            const activeBtn = Array.from(document.querySelectorAll('.tab-btn')).find(btn => btn.textContent.toLowerCase().includes(tabId));
+            const activeBtn = Array.from(document.querySelectorAll('.tab-btn')).find(btn => {
+                const onClickStr = btn.getAttribute('onclick') || '';
+                return onClickStr.includes(tabId);
+            });
             if (activeBtn) activeBtn.classList.add('active');
 
             const activePanel = document.getElementById('panel-' + tabId);
@@ -819,13 +1170,17 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
 
             // Append to main timeline
             const mainTimeline = document.getElementById('main-timeline');
-            mainTimeline.insertAdjacentHTML('beforeend', html);
-            mainTimeline.scrollTop = mainTimeline.scrollHeight;
+            if (mainTimeline) {
+                mainTimeline.insertAdjacentHTML('beforeend', html);
+                mainTimeline.scrollTop = mainTimeline.scrollHeight;
+            }
 
             // Append to dashboard brief timeline
             const dashTimeline = document.getElementById('dashboard-timeline');
-            dashTimeline.insertAdjacentHTML('beforeend', html);
-            dashTimeline.scrollTop = dashTimeline.scrollHeight;
+            if (dashTimeline) {
+                dashTimeline.insertAdjacentHTML('beforeend', html);
+                dashTimeline.scrollTop = dashTimeline.scrollHeight;
+            }
         }
 
         async function fetchRuntimeFlags() {
@@ -842,6 +1197,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
 
         function renderRuntimeFlags(flags) {
             const container = document.getElementById('runtime-controls-container');
+            if (!container) return;
             container.innerHTML = '';
             
             for (const [key, meta] of Object.entries(flags)) {
@@ -868,12 +1224,12 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 }
 
                 const statusHtml = meta.enabled 
-                    ? \`\<span id="badge-flag-\${key}" style="font-weight:600; color:var(--color-green); display:inline-flex; align-items:center;"><span class="indicator ind-green"></span>ENABLED</span>\`
-                    : \`\<span id="badge-flag-\${key}" style="font-weight:600; color:var(--color-red); display:inline-flex; align-items:center;"><span class="indicator ind-red"></span>DISABLED</span>\`;
+                    ? \`<span id="badge-flag-\${key}" style="font-weight:600; color:var(--color-green); display:inline-flex; align-items:center;"><span class="indicator ind-green"></span>ENABLED</span>\`
+                    : \`<span id="badge-flag-\${key}" style="font-weight:600; color:var(--color-red); display:inline-flex; align-items:center;"><span class="indicator ind-red"></span>DISABLED</span>\`;
                     
                 const buttonHtml = meta.enabled
-                    ? \`\<button id="btn-flag-\${key}" class="btn btn-red" style="padding:0.4rem 0.8rem; font-size:0.85rem;" onclick="setFeatureFlag('\${key}', false)">Disable</button>\`
-                    : \`\<button id="btn-flag-\${key}" class="btn btn-green" style="padding:0.4rem 0.8rem; font-size:0.85rem;" onclick="setFeatureFlag('\${key}', true)">Enable</button>\`;
+                    ? \`<button id="btn-flag-\${key}" class="btn btn-red" style="padding:0.4rem 0.8rem; font-size:0.85rem;" onclick="setFeatureFlag('\${key}', false)">Disable</button>\`
+                    : \`<button id="btn-flag-\${key}" class="btn btn-green" style="padding:0.4rem 0.8rem; font-size:0.85rem;" onclick="setFeatureFlag('\${key}', true)">Enable</button>\`;
                     
                 const cardHtml = \`
                     <div class="card" style="padding:1.5rem; display:flex; flex-direction:column; justify-content:space-between; gap:1rem;">
@@ -929,7 +1285,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 return;
             }
             try {
-                const res = await fetch('/api/v1/dev/lab/reset', {
+                const res = await fetch('/api/v1/qa/reset', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ correlationId: 'reset_' + Date.now() })
@@ -977,6 +1333,693 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             }
         }
 
+        // ==========================================
+        // DATA-DRIVEN DISTRIBUTED QA TEST SYSTEM
+        // ==========================================
+
+        const qaState = {
+            registeredAgentId: '',
+            registeredAgentSecret: '',
+            simulateCloudOffline: false
+        };
+
+        const QA_TESTS = [
+            // --- AGENT IDENTITY ---
+            {
+                id: 'register-success',
+                category: 'identity',
+                title: 'Agent Registration (Success)',
+                description: 'Verifies registration using a valid QA active registration token. Acquires Agent ID and Secret.',
+                method: 'POST',
+                path: '/api/v1/agent/register',
+                body: () => ({
+                    licenseToken: 'QA-LAB-TOKEN-999',
+                    machineId: 'qa-machine-' + Math.floor(Math.random() * 100000),
+                    hostname: 'qa-simulated-agent',
+                    version: '1.0.0',
+                    capabilities: ['TELEMETRY', 'DOCKER']
+                }),
+                assertions: [
+                    { label: 'HTTP Status is 200', check: (res, status) => status === 200 },
+                    { label: 'success is true', check: (res) => res.success === true },
+                    { label: 'agentId is present', check: (res) => typeof res.agentId === 'string' && res.agentId.length > 0 },
+                    { label: 'agentSecret is present', check: (res) => typeof res.agentSecret === 'string' && res.agentSecret.length > 0 }
+                ],
+                onSuccess: (res) => {
+                    qaState.registeredAgentId = res.agentId;
+                    qaState.registeredAgentSecret = res.agentSecret;
+                    logToSmokeTerminal(\`[STATE] Captured registered agentId: \${res.agentId.substring(0,8)}...\`);
+                }
+            },
+            {
+                id: 'register-missing-token',
+                category: 'identity',
+                title: 'Registration Rejected (Missing Token)',
+                description: 'Verifies that registering with an empty license token returns a 403 Forbidden or 400 Bad Request error.',
+                method: 'POST',
+                path: '/api/v1/agent/register',
+                body: () => ({
+                    licenseToken: '',
+                    machineId: 'qa-machine-' + Math.floor(Math.random() * 100000),
+                    hostname: 'qa-simulated-agent',
+                    version: '1.0.0',
+                    capabilities: ['TELEMETRY']
+                }),
+                assertions: [
+                    { label: 'HTTP Status is 403 or 400', check: (res, status) => status === 403 || status === 400 },
+                    { label: 'success is false', check: (res) => res.success === false },
+                    { label: 'code is INVALID_TOKEN or BAD_REQUEST', check: (res) => { const c = res.code || (res.error && res.error.code); return c === 'INVALID_TOKEN' || c === 'BAD_REQUEST'; } }
+                ]
+            },
+            {
+                id: 'register-invalid-token',
+                category: 'identity',
+                title: 'Registration Rejected (Invalid Token)',
+                description: 'Verifies that registering with an arbitrary invalid license token returns 403 Forbidden (INVALID_TOKEN).',
+                method: 'POST',
+                path: '/api/v1/agent/register',
+                body: () => ({
+                    licenseToken: 'INVALID-TOKEN-12345678',
+                    machineId: 'qa-machine-' + Math.floor(Math.random() * 100000),
+                    hostname: 'qa-simulated-agent',
+                    version: '1.0.0',
+                    capabilities: ['TELEMETRY']
+                }),
+                assertions: [
+                    { label: 'HTTP Status is 403', check: (res, status) => status === 403 },
+                    { label: 'success is false', check: (res) => res.success === false },
+                    { label: 'code is INVALID_TOKEN', check: (res) => { const c = res.code || (res.error && res.error.code); return c === 'INVALID_TOKEN'; } }
+                ]
+            },
+
+            // --- CLOUD GATEWAY ---
+            {
+                id: 'heartbeat-success',
+                category: 'gateway',
+                title: 'Agent Heartbeat (Success)',
+                description: 'Verifies that a heartbeat request with valid X-Agent-Id/Secret credentials returns 200 OK.',
+                method: 'POST',
+                path: '/api/v1/agent/heartbeat',
+                headers: () => ({
+                    'X-Agent-Id': qaState.registeredAgentId || '00000000-0000-0000-0000-000000000000',
+                    'X-Agent-Secret': qaState.registeredAgentSecret || 'dummy-secret'
+                }),
+                body: () => ({
+                    agentId: qaState.registeredAgentId || '00000000-0000-0000-0000-000000000000',
+                    agentSecret: qaState.registeredAgentSecret || 'dummy-secret',
+                    hostname: 'qa-simulated-agent',
+                    version: '1.0.0',
+                    status: 'ONLINE',
+                    uptime: 300,
+                    metrics: { cpuPct: 12.5, memoryPct: 44.2, diskPct: 18.0 },
+                    health: { outboxPendingCount: 0, databaseHealthy: true, freqtradeHealthy: true }
+                }),
+                assertions: [
+                    { label: 'HTTP Status is 200', check: (res, status) => status === 200 },
+                    { label: 'success is true', check: (res) => res.success === true },
+                    { label: 'status is SUCCESS', check: (res) => res.status === 'SUCCESS' }
+                ]
+            },
+            {
+                id: 'heartbeat-wrong-secret',
+                category: 'gateway',
+                title: 'Heartbeat Rejected (Wrong Secret)',
+                description: 'Verifies that a heartbeat submitted with an invalid/mismatched secret returns 401 Unauthorized.',
+                method: 'POST',
+                path: '/api/v1/agent/heartbeat',
+                headers: () => ({
+                    'X-Agent-Id': qaState.registeredAgentId || '00000000-0000-0000-0000-000000000000',
+                    'X-Agent-Secret': 'WRONG-SECRET'
+                }),
+                body: () => ({
+                    agentId: qaState.registeredAgentId || '00000000-0000-0000-0000-000000000000',
+                    agentSecret: 'WRONG-SECRET',
+                    hostname: 'qa-simulated-agent',
+                    version: '1.0.0',
+                    status: 'ONLINE',
+                    uptime: 300,
+                    metrics: { cpuPct: 12.5, memoryPct: 44.2, diskPct: 18.0 },
+                    health: { outboxPendingCount: 0, databaseHealthy: true, freqtradeHealthy: true }
+                }),
+                assertions: [
+                    { label: 'HTTP Status is 401', check: (res, status) => status === 401 },
+                    { label: 'success is false', check: (res) => res.success === false },
+                    { label: 'code is UNAUTHORIZED', check: (res) => { const c = res.code || (res.error && res.error.code); return c === 'UNAUTHORIZED'; } }
+                ]
+            },
+            {
+                id: 'heartbeat-unknown-agent',
+                category: 'gateway',
+                title: 'Heartbeat Rejected (Unknown Agent)',
+                description: 'Verifies that a heartbeat submitted for a non-existent agent UUID returns 403 Forbidden (INVALID_TOKEN).',
+                method: 'POST',
+                path: '/api/v1/agent/heartbeat',
+                headers: () => ({
+                    'X-Agent-Id': '11111111-1111-1111-1111-111111111111',
+                    'X-Agent-Secret': 'some-secret'
+                }),
+                body: () => ({
+                    agentId: '11111111-1111-1111-1111-111111111111',
+                    agentSecret: 'some-secret',
+                    hostname: 'qa-simulated-agent',
+                    version: '1.0.0',
+                    status: 'ONLINE',
+                    uptime: 300,
+                    metrics: { cpuPct: 12.5, memoryPct: 44.2, diskPct: 18.0 },
+                    health: { outboxPendingCount: 0, databaseHealthy: true, freqtradeHealthy: true }
+                }),
+                assertions: [
+                    { label: 'HTTP Status is 403', check: (res, status) => status === 403 },
+                    { label: 'success is false', check: (res) => res.success === false },
+                    { label: 'code is INVALID_TOKEN', check: (res) => { const c = res.code || (res.error && res.error.code); return c === 'INVALID_TOKEN'; } }
+                ]
+            },
+            {
+                id: 'get-config',
+                category: 'gateway',
+                title: 'Get Agent Config (Reserved)',
+                description: 'Checks GET /api/v1/agent/config to retrieve configuration overrides with valid headers.',
+                method: 'GET',
+                path: '/api/v1/agent/config',
+                headers: () => ({
+                    'X-Agent-Id': qaState.registeredAgentId || '00000000-0000-0000-0000-000000000000',
+                    'X-Agent-Secret': qaState.registeredAgentSecret || 'dummy-secret'
+                }),
+                assertions: [
+                    { label: 'HTTP Status is 200', check: (res, status) => status === 200 },
+                    { label: 'config object is present', check: (res) => res.config !== undefined }
+                ]
+            },
+            {
+                id: 'get-update',
+                category: 'gateway',
+                title: 'Get Agent Update (Reserved)',
+                description: 'Checks GET /api/v1/agent/update to retrieve update instructions with valid headers.',
+                method: 'GET',
+                path: '/api/v1/agent/update',
+                headers: () => ({
+                    'X-Agent-Id': qaState.registeredAgentId || '00000000-0000-0000-0000-000000000000',
+                    'X-Agent-Secret': qaState.registeredAgentSecret || 'dummy-secret'
+                }),
+                assertions: [
+                    { label: 'HTTP Status is 200', check: (res, status) => status === 200 },
+                    { label: 'updateAvailable field is boolean', check: (res) => typeof res.updateAvailable === 'boolean' }
+                ]
+            },
+
+            // --- SYNCHRONIZATION ---
+            {
+                id: 'sync-incident-success',
+                category: 'sync',
+                title: 'Ingest Incident (Success Path)',
+                description: 'Verifies that a valid incident transition enqueued by the agent is successfully received and parsed (201).',
+                method: 'POST',
+                path: '/api/v1/agent/incidents',
+                headers: () => {
+                    const headers = {
+                        'X-Agent-Id': qaState.registeredAgentId || '00000000-0000-0000-0000-000000000000',
+                        'X-Agent-Secret': qaState.registeredAgentSecret || 'dummy-secret'
+                    };
+                    if (qaState.simulateCloudOffline) {
+                        headers['X-Mock-Fail'] = 'true';
+                    }
+                    return headers;
+                },
+                body: () => ({
+                    schemaVersion: 1,
+                    type: 'INCIDENT',
+                    event: 'CREATED',
+                    incident: {
+                        incidentId: 8888,
+                        symbol: 'ETHUSDT',
+                        level: 'CRITICAL',
+                        source: 'WATCHDOG',
+                        reason: 'Simulated QA Outbox sync incident',
+                        detectedAt: Date.now()
+                    },
+                    machine: {
+                        machineId: 'qa-machine-local',
+                        hostname: 'qa-vps-test',
+                        arch: 'x64',
+                        platform: 'linux',
+                        cpuCores: 2
+                    }
+                }),
+                assertions: [
+                    { 
+                        label: 'HTTP Status matches online state (201) or offline simulation (500)', 
+                        check: (res, status) => qaState.simulateCloudOffline ? status === 500 : status === 201 
+                    },
+                    { 
+                        label: 'Response payload matches expectations', 
+                        check: (res) => qaState.simulateCloudOffline ? res.error !== undefined : res.received === true 
+                    }
+                ]
+            },
+            {
+                id: 'sync-alert-success',
+                category: 'sync',
+                title: 'Ingest Alert Log (Success Path)',
+                description: 'Verifies that a warning alert payload enqueued by the agent is successfully received and parsed (201).',
+                method: 'POST',
+                path: '/api/v1/agent/alerts',
+                headers: () => {
+                    const headers = {
+                        'X-Agent-Id': qaState.registeredAgentId || '00000000-0000-0000-0000-000000000000',
+                        'X-Agent-Secret': qaState.registeredAgentSecret || 'dummy-secret'
+                    };
+                    if (qaState.simulateCloudOffline) {
+                        headers['X-Mock-Fail'] = 'true';
+                    }
+                    return headers;
+                },
+                body: () => ({
+                    schemaVersion: 1,
+                    type: 'ALERT',
+                    alert: {
+                        level: 'WARNING',
+                        title: 'Telemetry Delay warning',
+                        message: 'Exchange DNS latency resolved, heartbeat delayed 12s.',
+                        entityId: 'alert_qa_' + Date.now(),
+                        timestamp: new Date().toISOString()
+                    },
+                    machine: {
+                        machineId: 'qa-machine-local',
+                        hostname: 'qa-vps-test'
+                    }
+                }),
+                assertions: [
+                    { 
+                        label: 'HTTP Status matches online state (201) or offline simulation (500)', 
+                        check: (res, status) => qaState.simulateCloudOffline ? status === 500 : status === 201 
+                    },
+                    { 
+                        label: 'Response payload matches expectations', 
+                        check: (res) => qaState.simulateCloudOffline ? res.error !== undefined : res.received === true 
+                    }
+                ]
+            }
+        ];
+
+        // Renders all QA cards dynamically
+        function renderQaCards() {
+            const containers = {
+                identity: document.getElementById('qa-identity-container'),
+                gateway: document.getElementById('qa-gateway-container'),
+                sync: document.getElementById('qa-sync-container')
+            };
+
+            for (const key in containers) {
+                if (containers[key]) containers[key].innerHTML = '';
+            }
+
+            QA_TESTS.forEach(test => {
+                const target = containers[test.category];
+                if (!target) return;
+
+                const assertionsHtml = test.assertions.map(a => \`
+                    <div class="qa-assertion-item">
+                        <span class="assert-bullet" style="color:var(--text-secondary);">&#9675;</span>
+                        <span>\${a.label}</span>
+                    </div>
+                \`).join('');
+
+                const cardHtml = \`
+                    <div class="qa-card" id="test-card-\${test.id}">
+                        <div>
+                            <div class="qa-card-header">
+                                <span class="qa-card-title">\${test.title}</span>
+                                <span class="sys-badge" style="font-size:0.7rem; padding:0.1rem 0.4rem; color:var(--text-secondary); border-color:var(--border-color); background:transparent;">
+                                    \${test.method}
+                                </span>
+                            </div>
+                            <p class="qa-card-desc">\${test.description}</p>
+                            
+                            <div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:0.4rem; font-weight:600;">Expected Assertions:</div>
+                            <div class="qa-assertions-box">
+                                \${assertionsHtml}
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="flex-between">
+                                <button class="btn btn-secondary" style="width:100%;" onclick="runSingleQaTest('\${test.id}')">Run Test</button>
+                            </div>
+                            
+                            <div class="qa-status-row" id="test-status-\${test.id}" style="display:none;">
+                                <span>Status: <strong class="test-http-status">-</strong></span>
+                                <span>Latency: <strong class="test-latency">-</strong></span>
+                                <span class="test-result-badge" style="font-weight:700;">-</span>
+                            </div>
+                            <div class="qa-console" id="test-console-\${test.id}"></div>
+                        </div>
+                    </div>
+                \`;
+                target.insertAdjacentHTML('beforeend', cardHtml);
+            });
+        }
+
+        // Unified Test Runner
+        async function runSingleQaTest(testId) {
+            const test = QA_TESTS.find(t => t.id === testId);
+            if (!test) return null;
+
+            const card = document.getElementById(\`test-card-\${testId}\`);
+            const statusRow = document.getElementById(\`test-status-\${testId}\`);
+            const consoleBox = document.getElementById(\`test-console-\${testId}\`);
+
+            if (statusRow) statusRow.style.display = 'flex';
+            if (consoleBox) {
+                consoleBox.style.display = 'block';
+                consoleBox.innerHTML = 'Executing request...';
+                consoleBox.style.color = 'var(--text-secondary)';
+            }
+
+            const isAuthSensitive = (testId === 'heartbeat-success' || test.category === 'sync' || testId.includes('get-'));
+            if (isAuthSensitive && !qaState.registeredAgentId) {
+                if (consoleBox) {
+                    consoleBox.innerHTML = '⚠️ WARNING: No registered agentId found in QA state. Register first or this request may fail due to authentication mismatch.';
+                    consoleBox.style.color = 'var(--color-orange)';
+                }
+            }
+
+            const startTime = performance.now();
+            let status = 0;
+            let responseJson = {};
+
+            try {
+                const headers = { 'Content-Type': 'application/json' };
+                if (test.headers) {
+                    const customHeaders = test.headers(qaState);
+                    Object.assign(headers, customHeaders);
+                }
+
+                const options = {
+                    method: test.method,
+                    headers: headers
+                };
+
+                if (test.method === 'POST' || test.method === 'PUT') {
+                    options.body = JSON.stringify(test.body ? test.body(qaState) : {});
+                }
+
+                const response = await fetch(test.path, options);
+                status = response.status;
+                responseJson = await response.json().catch(() => ({}));
+            } catch (err) {
+                status = 0;
+                responseJson = { error: err.message || 'Network connectivity error' };
+            }
+
+            const latency = Math.round(performance.now() - startTime);
+
+            // Assertions Check
+            let allPassed = true;
+            const assertionsResults = [];
+            test.assertions.forEach(assertion => {
+                const passed = assertion.check(responseJson, status);
+                if (!passed) allPassed = false;
+                assertionsResults.push({ label: assertion.label, passed });
+            });
+
+            // Update UI elements
+            if (statusRow) {
+                const httpStatusEl = statusRow.querySelector('.test-http-status');
+                const latencyEl = statusRow.querySelector('.test-latency');
+                const resultBadge = statusRow.querySelector('.test-result-badge');
+
+                httpStatusEl.textContent = status === 0 ? 'NETWORK_ERROR' : status;
+                latencyEl.textContent = latency + 'ms';
+                
+                if (allPassed) {
+                    resultBadge.textContent = 'PASS';
+                    resultBadge.style.color = 'var(--color-green)';
+                    card.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+                } else {
+                    resultBadge.textContent = 'FAIL';
+                    resultBadge.style.color = 'var(--color-red)';
+                    card.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+                }
+            }
+
+            if (consoleBox) {
+                consoleBox.style.display = 'block';
+                consoleBox.style.color = allPassed ? 'var(--color-green)' : 'var(--color-red)';
+                
+                let assertionLog = assertionsResults.map(a => 
+                    \`[\${a.passed ? '✓' : '✗'}] \${a.label}\`
+                ).join('\\n');
+
+                consoleBox.innerHTML = \`Assertions:\\n\${assertionLog}\\n\\nResponse:\\n\${JSON.stringify(responseJson, null, 2)}\`;
+            }
+
+            // Callback on success to bind state (e.g. register returns secret)
+            if (allPassed && test.onSuccess) {
+                test.onSuccess(responseJson);
+            }
+
+            return {
+                id: testId,
+                title: test.title,
+                status,
+                latency,
+                allPassed,
+                responseJson
+            };
+        }
+
+        // Toggle simulation headers
+        function toggleOfflineSimulation() {
+            qaState.simulateCloudOffline = !qaState.simulateCloudOffline;
+            const btn = document.getElementById('btn-offline-toggle');
+            if (btn) {
+                if (qaState.simulateCloudOffline) {
+                    btn.textContent = 'Disable Offline Simulation';
+                    btn.className = 'btn btn-red';
+                } else {
+                    btn.textContent = 'Enable Offline Simulation';
+                    btn.className = 'btn btn-orange';
+                }
+            }
+            // Rerender sync tests cards to update expectation descriptions
+            renderQaCards();
+        }
+
+        // ==========================================
+        // SMOKE TESTS SUITE RUNNER
+        // ==========================================
+        
+        function clearSmokeTerminal() {
+            const term = document.getElementById('smoke-terminal');
+            if (term) term.innerHTML = '<div>Console ready. Select a suite to begin testing.</div>';
+        }
+
+        function logToSmokeTerminal(text, type = 'info') {
+            const term = document.getElementById('smoke-terminal');
+            if (!term) return;
+
+            if (term.innerHTML.includes('Console ready.')) {
+                term.innerHTML = '';
+            }
+
+            let color = 'var(--text-primary)';
+            let prefix = '[INFO]';
+            if (type === 'pass') { color = 'var(--color-green)'; prefix = '[PASS]'; }
+            if (type === 'fail') { color = 'var(--color-red)'; prefix = '[FAIL]'; }
+            if (type === 'run') { color = 'var(--color-blue)'; prefix = '[RUN]'; }
+            if (type === 'state') { color = 'var(--color-purple)'; prefix = '[STATE]'; }
+
+            const row = \`<div style="color: \${color}; margin-bottom: 0.25rem;">
+                <span style="opacity: 0.5;">\${new Date().toLocaleTimeString()}</span> 
+                <strong>\${prefix}</strong> \${text}
+            </div>\`;
+            term.insertAdjacentHTML('beforeend', row);
+            term.scrollTop = term.scrollHeight;
+        }
+
+        async function runSmokeSuite(suite) {
+            logToSmokeTerminal(\`Initiating \${suite.toUpperCase()} smoke test suite...\`, 'run');
+            let testList = [];
+            if (suite === 'identity') {
+                testList = ['register-success', 'register-missing-token', 'register-invalid-token'];
+            } else if (suite === 'gateway') {
+                testList = ['heartbeat-success', 'heartbeat-wrong-secret', 'heartbeat-unknown-agent', 'get-config', 'get-update'];
+            } else if (suite === 'sync') {
+                testList = ['sync-incident-success', 'sync-alert-success'];
+            } else if (suite === 'full') {
+                testList = [
+                    'register-success', 'register-missing-token', 'register-invalid-token',
+                    'heartbeat-success', 'heartbeat-wrong-secret', 'heartbeat-unknown-agent',
+                    'get-config', 'get-update',
+                    'sync-incident-success', 'sync-alert-success'
+                ];
+            }
+
+            let passedCount = 0;
+            const startTime = Date.now();
+
+            for (const testId of testList) {
+                logToSmokeTerminal(\`Running test case: \${testId}...\`);
+                const result = await runSingleQaTest(testId);
+                if (result) {
+                    if (result.allPassed) {
+                        passedCount++;
+                        logToSmokeTerminal(\`\${result.title} — PASS (\${result.latency}ms)\`, 'pass');
+                    } else {
+                        logToSmokeTerminal(\`\${result.title} — FAIL (\${result.latency}ms). HTTP \${result.status}\`, 'fail');
+                    }
+                }
+                // small artificial delay to simulate real client progression
+                await new Promise(r => setTimeout(r, 400));
+            }
+
+            const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+            const overallPassed = passedCount === testList.length;
+            
+            if (overallPassed) {
+                logToSmokeTerminal(\`🎉 SUITE SUCCESSFUL! [\${passedCount}/\${testList.length}] passed in \${duration}s\`, 'pass');
+            } else {
+                logToSmokeTerminal(\`❌ SUITE FAILURE! [\${passedCount}/\${testList.length}] passed in \${duration}s\`, 'fail');
+            }
+        }
+
+        // ==========================================
+        // DYNAMIC AGENT STATUS POLLER
+        // ==========================================
+
+        async function pollAgentStatus() {
+            try {
+                const res = await fetch('/api/v1/qa/agents');
+                const json = await res.json();
+                if (json.success && json.data) {
+                    renderAgentsStatus(json.data);
+                }
+            } catch (err) {
+                console.error('Failed to poll agent status:', err);
+            }
+        }
+
+        function renderAgentsStatus(agents) {
+            const container = document.getElementById('agents-status-container');
+            if (!container) return;
+
+            if (agents.length === 0) {
+                container.innerHTML = \`
+                    <div class="card" style="text-align:center; padding: 3rem; color:var(--text-secondary);">
+                        🔍 No registered agents found. Connect an agent to begin monitoring.
+                    </div>
+                \`;
+                return;
+            }
+
+            container.innerHTML = '';
+            agents.forEach(agent => {
+                const hb = agent.latestHeartbeat;
+                const statusBadge = agent.status === 'ONLINE' 
+                    ? \`<span style="color:var(--color-green); display:inline-flex; align-items:center; gap:0.4rem; font-weight:600;"><span class="online-dot"></span>ONLINE</span>\`
+                    : \`<span style="color:var(--color-red); display:inline-flex; align-items:center; gap:0.4rem; font-weight:600;"><span class="indicator ind-red" style="margin:0;"></span>OFFLINE</span>\`;
+
+                const lastHbSec = agent.lastHeartbeatAt 
+                    ? Math.round((Date.now() - new Date(agent.lastHeartbeatAt).getTime()) / 1000)
+                    : null;
+                const hbDisplay = lastHbSec !== null 
+                    ? \`\${lastHbSec}s ago\`
+                    : 'Never';
+
+                // Format uptime
+                let uptimeDisplay = '0h 0m';
+                if (hb && hb.uptime) {
+                    const totalSec = Number(hb.uptime);
+                    const h = Math.floor(totalSec / 3600);
+                    const m = Math.floor((totalSec % 3600) / 60);
+                    uptimeDisplay = \`\${h}h \${m}m\`;
+                }
+
+                // Subsystem healths
+                const dbHealth = hb && hb.databaseHealthy
+                    ? \`<span style="color:var(--color-green); font-weight:600;">🟢 Healthy</span>\`
+                    : \`<span style="color:var(--color-red); font-weight:600;">🔴 Unhealthy</span>\`;
+                const ftHealth = hb && hb.freqtradeHealthy
+                    ? \`<span style="color:var(--color-green); font-weight:600;">🟢 Healthy</span>\`
+                    : \`<span style="color:var(--color-red); font-weight:600;">🔴 Unhealthy</span>\`;
+
+                const cpu = hb ? hb.cpuPct : 0;
+                const ram = hb ? hb.memoryPct : 0;
+                const disk = hb ? hb.diskPct : 0;
+                const outboxPending = hb ? hb.outboxPending : 0;
+
+                const cardHtml = \`
+                    <div class="card" style="border-left: 4px solid \${agent.status === 'ONLINE' ? 'var(--color-green)' : 'var(--color-red)'}">
+                        <div class="flex-between" style="border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem; margin-bottom: 1rem;">
+                            <div>
+                                <span style="font-weight:700; font-size:1.1rem; color:var(--text-primary);">\${agent.hostname}</span>
+                                <span style="font-size:0.75rem; font-family:'Fira Code', monospace; color:var(--text-secondary); margin-left:0.5rem;">(\\$\${agent.id})</span>
+                            </div>
+                            \${statusBadge}
+                        </div>
+
+                        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:1.5rem;">
+                            <!-- Identity Info -->
+                            <div>
+                                <div style="font-size:0.75rem; color:var(--text-secondary); text-transform:uppercase; font-weight:700; margin-bottom:0.5rem;">Identity & Info</div>
+                                <div style="display:flex; flex-direction:column; gap:0.4rem; font-size:0.85rem;">
+                                    <div class="flex-between"><span>Version:</span><strong>\${agent.version}</strong></div>
+                                    <div class="flex-between"><span>Machine ID:</span><span style="font-family:'Fira Code', monospace; font-size:0.75rem; color:var(--text-secondary);">\${agent.machineId}</span></div>
+                                    <div class="flex-between"><span>Capabilities:</span><strong>\${agent.capabilities.join(', ')}</strong></div>
+                                </div>
+                            </div>
+
+                            <!-- Heartbeat & Connection -->
+                            <div>
+                                <div style="font-size:0.75rem; color:var(--text-secondary); text-transform:uppercase; font-weight:700; margin-bottom:0.5rem;">Telemetry Metrics</div>
+                                <div style="display:flex; flex-direction:column; gap:0.4rem; font-size:0.85rem;">
+                                    <div class="flex-between"><span>Last Heartbeat:</span><strong>\${hbDisplay}</strong></div>
+                                    <div class="flex-between"><span>Uptime:</span><strong>\${uptimeDisplay}</strong></div>
+                                    <div class="flex-between"><span>DB Status:</span>\${dbHealth}</div>
+                                    <div class="flex-between"><span>Freqtrade:</span>\${ftHealth}</div>
+                                </div>
+                            </div>
+
+                            <!-- System Load -->
+                            <div>
+                                <div style="font-size:0.75rem; color:var(--text-secondary); text-transform:uppercase; font-weight:700; margin-bottom:0.5rem;">System Load</div>
+                                <div style="display:flex; flex-direction:column; gap:0.6rem; font-size:0.85rem;">
+                                    <div>
+                                        <div class="flex-between"><span>CPU Usage:</span><strong>\${cpu}%</strong></div>
+                                        <div class="progress-bar-container"><div class="progress-bar-fill" style="width: \${cpu}%; background:\${cpu > 80 ? 'var(--color-red)' : (cpu > 50 ? 'var(--color-orange)' : 'var(--color-green)')}"></div></div>
+                                    </div>
+                                    <div>
+                                        <div class="flex-between"><span>RAM Usage:</span><strong>\${ram}%</strong></div>
+                                        <div class="progress-bar-container"><div class="progress-bar-fill" style="width: \${ram}%; background:\${ram > 80 ? 'var(--color-red)' : (ram > 50 ? 'var(--color-orange)' : 'var(--color-green)')}"></div></div>
+                                    </div>
+                                    <div class="flex-between" style="margin-top:0.25rem;">
+                                        <span>Outbox Pending Queue:</span>
+                                        <span class="sys-badge" style="padding:0.15rem 0.5rem; background:\${outboxPending > 0 ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)'}; border-color:\${outboxPending > 0 ? 'rgba(245,158,11,0.3)' : 'rgba(16,185,129,0.3)'}; color:\${outboxPending > 0 ? 'var(--color-orange)' : 'var(--color-green)'}">
+                                            \${outboxPending} Pending
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                \`;
+                container.insertAdjacentHTML('beforeend', cardHtml);
+            });
+        }
+
+        // Initial setup
+        fetchHealth();
+        fetchFreqtradeStatus();
+        fetchRuntimeFlags();
+        setupSseStream();
+        renderQaCards();
+        pollAgentStatus();
+
+        // Intervals
+        setInterval(fetchHealth, 5000);
+        setInterval(fetchFreqtradeStatus, 8000);
+        setInterval(pollAgentStatus, 5000);
+
         function setupSseStream() {
             if (sseSource) sseSource.close();
             
@@ -989,9 +2032,11 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                     
                     // Dynamically keep track of ringbuffer size
                     const countEl = document.getElementById('ringbuffer-count');
-                    let currentCount = parseInt(countEl.textContent) || 0;
-                    if (currentCount < 100) currentCount++;
-                    countEl.textContent = currentCount;
+                    if (countEl) {
+                        let currentCount = parseInt(countEl.textContent) || 0;
+                        if (currentCount < 100) currentCount++;
+                        countEl.textContent = currentCount;
+                    }
 
                     // Dynamically inspect failure count
                     if (msg.type === 'FAILURE_INJECTED') {
@@ -1012,16 +2057,6 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 console.error('SSE Connection error, reconnecting...', err);
             };
         }
-
-        // Initial setup
-        fetchHealth();
-        fetchFreqtradeStatus();
-        fetchRuntimeFlags();
-        setupSseStream();
-
-        // Intervals
-        setInterval(fetchHealth, 5000);
-        setInterval(fetchFreqtradeStatus, 8000);
     </script>
 </body>
 </html>`;

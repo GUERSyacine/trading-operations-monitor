@@ -44,7 +44,31 @@ export class DeveloperConsoleServer {
         private host: string = process.env.WATCHDOG_DEV_CONSOLE_HOST || '127.0.0.1'
     ) {}
 
+    private async seedQaToken(): Promise<void> {
+        try {
+            const token = 'QA-LAB-TOKEN-999';
+            const existing = await prisma.registrationToken.findUnique({
+                where: { token }
+            });
+            if (!existing) {
+                await prisma.registrationToken.create({
+                    data: {
+                        token,
+                        maxAgents: 100,
+                        status: 'ACTIVE'
+                    }
+                });
+                console.log(`[DevConsole] Seeded default QA registration token: ${token}`);
+            }
+        } catch (error: any) {
+            console.error('[DevConsole] Failed to seed QA token:', error?.message || error);
+        }
+    }
+
     public start(): void {
+        if (process.env.NODE_ENV !== 'production') {
+            this.seedQaToken();
+        }
         this.server = http.createServer(async (req, res) => {
             const rawUrl = req.url || '';
             const method = req.method || 'GET';
@@ -182,6 +206,17 @@ export class DeveloperConsoleServer {
                     return;
                 }
                 this.sendJson(res, 200, { success: true, updateAvailable: false });
+                return;
+            }
+
+            // QA: Get Registered Agents list
+            if (pathname === '/api/v1/qa/agents') {
+                try {
+                    const agents = await this.controller.getAgentsStatus();
+                    this.sendJson(res, 200, { success: true, data: agents });
+                } catch (err: any) {
+                    this.sendError(res, 500, 'SERVER_ERROR', err.message);
+                }
                 return;
             }
         }
@@ -333,7 +368,7 @@ export class DeveloperConsoleServer {
             }
 
             // Admin: Run Operations Scenario
-            if (pathname === '/api/v1/admin/operations/run' || pathname === '/api/v1/admin/operations/run') {
+            if (pathname === '/api/v1/admin/operations/run' || pathname === '/api/v1/operations/run') {
                 const { scenario, tradeId, symbol, timestampOffset, correlationId } = payload;
                 if (!scenario) {
                     this.sendError(res, 400, 'BAD_REQUEST', 'Field scenario is required.');
@@ -353,7 +388,7 @@ export class DeveloperConsoleServer {
             }
 
             // Admin: Reset Operations Simulation Lab
-            if (pathname === '/api/v1/admin/operations/reset' || pathname === '/api/v1/admin/operations/reset' || pathname === '/api/v1/dev/lab/reset') {
+            if (pathname === '/api/v1/admin/operations/reset' || pathname === '/api/v1/dev/lab/reset' || pathname === '/api/v1/qa/reset') {
                 const { correlationId } = payload;
                 try {
                     await this.controller.resetSimulationLab(correlationId);
