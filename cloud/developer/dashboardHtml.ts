@@ -952,6 +952,17 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 <p style="color:var(--text-secondary); margin-bottom:1.5rem;">
                     Verify authentication boundaries, token parsing rules, and registration handshakes.
                 </p>
+                <div class="qa-active-agent-banner card" style="margin-bottom: 1.5rem; border-color: rgba(59, 130, 246, 0.3); background: rgba(59, 130, 246, 0.03); display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <span style="font-size: 0.85rem; color: var(--text-secondary);">Target Agent:</span>
+                        <strong class="active-qa-agent-display" style="font-family: 'Fira Code', monospace; color: var(--color-blue); font-size: 0.9rem;">None (Run Success Registration first or connect VM Agent)</strong>
+                    </div>
+                    <div class="active-qa-agent-select-container" style="display: none; align-items: center; gap: 0.5rem;">
+                        <span style="font-size: 0.85rem; color: var(--text-secondary);">Select Agent:</span>
+                        <select class="select-qa-agent input" style="padding: 0.25rem 0.5rem; font-size: 0.8rem; width: auto; background: var(--bg-surface); border-color: var(--border-color); color: var(--text-primary); border-radius: 4px;" onchange="changeQaAgent(this.value)">
+                        </select>
+                    </div>
+                </div>
                 <div class="qa-grid" id="qa-identity-container"></div>
             </div>
 
@@ -961,6 +972,17 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 <p style="color:var(--text-secondary); margin-bottom:1.5rem;">
                     Verify heartbeat ingestion routes, configuration endpoints, and update polling protocols.
                 </p>
+                <div class="qa-active-agent-banner card" style="margin-bottom: 1.5rem; border-color: rgba(59, 130, 246, 0.3); background: rgba(59, 130, 246, 0.03); display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <span style="font-size: 0.85rem; color: var(--text-secondary);">Target Agent:</span>
+                        <strong class="active-qa-agent-display" style="font-family: 'Fira Code', monospace; color: var(--color-blue); font-size: 0.9rem;">None (Run Success Registration first or connect VM Agent)</strong>
+                    </div>
+                    <div class="active-qa-agent-select-container" style="display: none; align-items: center; gap: 0.5rem;">
+                        <span style="font-size: 0.85rem; color: var(--text-secondary);">Select Agent:</span>
+                        <select class="select-qa-agent input" style="padding: 0.25rem 0.5rem; font-size: 0.8rem; width: auto; background: var(--bg-surface); border-color: var(--border-color); color: var(--text-primary); border-radius: 4px;" onchange="changeQaAgent(this.value)">
+                        </select>
+                    </div>
+                </div>
                 <div class="qa-grid" id="qa-gateway-container"></div>
             </div>
 
@@ -970,6 +992,17 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 <p style="color:var(--text-secondary); margin-bottom:1.5rem;">
                     Verify incident / alert ingestion, duplicate payload filters, and network offline resiliency.
                 </p>
+                <div class="qa-active-agent-banner card" style="margin-bottom: 1.5rem; border-color: rgba(59, 130, 246, 0.3); background: rgba(59, 130, 246, 0.03); display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <span style="font-size: 0.85rem; color: var(--text-secondary);">Target Agent:</span>
+                        <strong class="active-qa-agent-display" style="font-family: 'Fira Code', monospace; color: var(--color-blue); font-size: 0.9rem;">None (Run Success Registration first or connect VM Agent)</strong>
+                    </div>
+                    <div class="active-qa-agent-select-container" style="display: none; align-items: center; gap: 0.5rem;">
+                        <span style="font-size: 0.85rem; color: var(--text-secondary);">Select Agent:</span>
+                        <select class="select-qa-agent input" style="padding: 0.25rem 0.5rem; font-size: 0.8rem; width: auto; background: var(--bg-surface); border-color: var(--border-color); color: var(--text-primary); border-radius: 4px;" onchange="changeQaAgent(this.value)">
+                        </select>
+                    </div>
+                </div>
 
                 <!-- Failure injection switch -->
                 <div class="card" style="margin-bottom: 2rem; border-color: rgba(245, 158, 11, 0.3); background: rgba(245,158,11,0.05);">
@@ -995,6 +1028,17 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 <p style="color:var(--text-secondary); margin-bottom:1.5rem;">
                     Execute end-to-end integration flows to check overall platform health and protocol correctness.
                 </p>
+                <div class="qa-active-agent-banner card" style="margin-bottom: 1.5rem; border-color: rgba(59, 130, 246, 0.3); background: rgba(59, 130, 246, 0.03); display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <span style="font-size: 0.85rem; color: var(--text-secondary);">Target Agent:</span>
+                        <strong class="active-qa-agent-display" style="font-family: 'Fira Code', monospace; color: var(--color-blue); font-size: 0.9rem;">None (Run Success Registration first or connect VM Agent)</strong>
+                    </div>
+                    <div class="active-qa-agent-select-container" style="display: none; align-items: center; gap: 0.5rem;">
+                        <span style="font-size: 0.85rem; color: var(--text-secondary);">Select Agent:</span>
+                        <select class="select-qa-agent input" style="padding: 0.25rem 0.5rem; font-size: 0.8rem; width: auto; background: var(--bg-surface); border-color: var(--border-color); color: var(--text-primary); border-radius: 4px;" onchange="changeQaAgent(this.value)">
+                        </select>
+                    </div>
+                </div>
 
                 <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-bottom: 2rem;">
                     <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; gap:1rem;">
@@ -1369,6 +1413,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                     qaState.registeredAgentId = res.agentId;
                     qaState.registeredAgentSecret = res.agentSecret;
                     logToSmokeTerminal(\`[STATE] Captured registered agentId: \${res.agentId.substring(0,8)}...\`);
+                    pollAgentStatus();
                 }
             },
             {
@@ -1788,12 +1833,91 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             };
         }
 
-        // Toggle simulation headers
-        function toggleOfflineSimulation() {
-            qaState.simulateCloudOffline = !qaState.simulateCloudOffline;
+        // Active QA Target Agent selectors and session hydration
+        async function changeQaAgent(agentId) {
+            if (!agentId) {
+                qaState.registeredAgentId = '';
+                qaState.registeredAgentSecret = '';
+                updateActiveAgentDisplays('None (Select an agent to begin testing)');
+                return;
+            }
+            try {
+                const res = await fetch(\`/api/v1/qa/agent-session?id=\${agentId}\`);
+                const json = await res.json();
+                if (json.success) {
+                    qaState.registeredAgentId = json.agentId;
+                    qaState.registeredAgentSecret = json.agentSecret;
+                    
+                    const dropdown = document.querySelector('.select-qa-agent');
+                    let agentName = agentId;
+                    if (dropdown) {
+                        const opt = Array.from(dropdown.options).find(o => o.value === agentId);
+                        if (opt) agentName = opt.textContent;
+                    }
+                    updateActiveAgentDisplays(agentName);
+                }
+            } catch (err) {
+                console.error('Failed to change QA agent:', err);
+            }
+        }
+
+        function updateActiveAgentDisplays(text) {
+            document.querySelectorAll('.active-qa-agent-display').forEach(el => {
+                el.textContent = text;
+            });
+        }
+
+        function updateQaAgentDropdowns(agents) {
+            const dropdowns = document.querySelectorAll('.select-qa-agent');
+            const selectContainers = document.querySelectorAll('.active-qa-agent-select-container');
+            
+            if (agents.length === 0) {
+                selectContainers.forEach(c => c.style.display = 'none');
+                dropdowns.forEach(d => d.innerHTML = '<option value="">No agents found</option>');
+                if (qaState.registeredAgentId) {
+                    changeQaAgent('');
+                }
+                return;
+            }
+
+            selectContainers.forEach(c => c.style.display = 'flex');
+
+            dropdowns.forEach(d => {
+                const currentVal = d.value || qaState.registeredAgentId;
+                d.innerHTML = agents.map(agent => 
+                    \`<option value="\${agent.id}" \${agent.id === currentVal ? 'selected' : ''}>\${agent.hostname} (\${agent.status})</option>\`
+                ).join('');
+            });
+
+            const stillExists = agents.some(a => a.id === qaState.registeredAgentId);
+            if (!qaState.registeredAgentId || !stillExists) {
+                changeQaAgent(agents[0].id);
+            } else {
+                const currentAgent = agents.find(a => a.id === qaState.registeredAgentId);
+                if (currentAgent) {
+                    updateActiveAgentDisplays(\`\${currentAgent.hostname} (\${currentAgent.status})\`);
+                }
+            }
+        }
+
+        // Toggle simulation headers & backend state
+        async function fetchSimulationState() {
+            try {
+                const res = await fetch('/api/v1/qa/simulation');
+                const json = await res.json();
+                if (json.success && json.simulation) {
+                    qaState.simulateCloudOffline = json.simulation.cloudOffline;
+                    updateOfflineButtonUI(qaState.simulateCloudOffline);
+                }
+            } catch (err) {
+                console.error('Failed to fetch simulation state:', err);
+            }
+        }
+
+        function updateOfflineButtonUI(offline) {
             const btn = document.getElementById('btn-offline-toggle');
             if (btn) {
-                if (qaState.simulateCloudOffline) {
+                if (offline) {
                     btn.textContent = 'Disable Offline Simulation';
                     btn.className = 'btn btn-red';
                 } else {
@@ -1801,8 +1925,26 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                     btn.className = 'btn btn-orange';
                 }
             }
-            // Rerender sync tests cards to update expectation descriptions
-            renderQaCards();
+        }
+
+        async function toggleOfflineSimulation() {
+            const targetState = !qaState.simulateCloudOffline;
+            try {
+                const res = await fetch('/api/v1/qa/simulation', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cloudOffline: targetState })
+                });
+                const json = await res.json();
+                if (json.success && json.simulation) {
+                    qaState.simulateCloudOffline = json.simulation.cloudOffline;
+                    updateOfflineButtonUI(qaState.simulateCloudOffline);
+                    renderQaCards();
+                }
+            } catch (err) {
+                console.error('Failed to toggle offline simulation:', err);
+                alert('Failed to update simulation state on backend: ' + err.message);
+            }
         }
 
         // ==========================================
@@ -1893,6 +2035,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 const json = await res.json();
                 if (json.success && json.data) {
                     renderAgentsStatus(json.data);
+                    updateQaAgentDropdowns(json.data);
                 }
             } catch (err) {
                 console.error('Failed to poll agent status:', err);
@@ -2014,11 +2157,13 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
         setupSseStream();
         renderQaCards();
         pollAgentStatus();
+        fetchSimulationState();
 
         // Intervals
         setInterval(fetchHealth, 5000);
         setInterval(fetchFreqtradeStatus, 8000);
         setInterval(pollAgentStatus, 5000);
+        setInterval(fetchSimulationState, 5000);
 
         function setupSseStream() {
             if (sseSource) sseSource.close();

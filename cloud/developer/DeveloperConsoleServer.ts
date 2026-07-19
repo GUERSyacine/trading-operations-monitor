@@ -7,6 +7,7 @@ import { AgentStatusService } from './AgentStatusService';
 import { prisma } from '../../shared/prisma';
 import { Agent } from '@prisma/client';
 import { ErrorCode, ErrorResponse } from '../../shared/types/errors';
+import { QaSimulationService } from './QaSimulationService';
 
 import { EventPersistenceService } from '../../shared/services/EventPersistenceService';
 import { OperationsSimulationService } from './OperationsSimulationService';
@@ -22,6 +23,7 @@ export class DeveloperConsoleServer {
     private heartbeatTimer?: NodeJS.Timeout;
     private readonly startedAt = Date.now();
     private statusService = new AgentStatusService();
+    private qaSimService = QaSimulationService.getInstance();
 
     public static bootstrap(port?: number, host?: string): DeveloperConsoleServer {
         const persistence = new EventPersistenceService();
@@ -189,6 +191,7 @@ export class DeveloperConsoleServer {
 
             // Agent: Get Config (Reserved)
             if (pathname === '/api/v1/agent/config') {
+                if (await this.applySimulation(req, res)) return;
                 const authResult = await this.authenticateAgent(req);
                 if (!authResult.success) {
                     this.sendJson(res, authResult.statusCode, authResult.body);
@@ -200,6 +203,7 @@ export class DeveloperConsoleServer {
 
             // Agent: Get Update (Reserved)
             if (pathname === '/api/v1/agent/update') {
+                if (await this.applySimulation(req, res)) return;
                 const authResult = await this.authenticateAgent(req);
                 if (!authResult.success) {
                     this.sendJson(res, authResult.statusCode, authResult.body);
@@ -217,6 +221,42 @@ export class DeveloperConsoleServer {
                 } catch (err: any) {
                     this.sendError(res, 500, 'SERVER_ERROR', err.message);
                 }
+                return;
+            }
+
+            // QA: Get Agent Session Credentials
+            if (pathname === '/api/v1/qa/agent-session') {
+                const parsedUrl = new URL(rawUrl, `http://${req.headers.host || 'localhost'}`);
+                const agentId = parsedUrl.searchParams.get('id');
+                if (!agentId) {
+                    this.sendError(res, 400, 'BAD_REQUEST', 'Query parameter "id" is required.');
+                    return;
+                }
+                try {
+                    const agent = await prisma.agent.findUnique({
+                        where: { id: agentId }
+                    });
+                    if (!agent) {
+                        this.sendError(res, 404, 'NOT_FOUND', 'Agent not found.');
+                        return;
+                    }
+                    this.sendJson(res, 200, {
+                        success: true,
+                        agentId: agent.id,
+                        agentSecret: agent.agentSecret
+                    });
+                } catch (err: any) {
+                    this.sendError(res, 500, 'SERVER_ERROR', err.message);
+                }
+                return;
+            }
+
+            // QA: Get Simulation State
+            if (pathname === '/api/v1/qa/simulation') {
+                this.sendJson(res, 200, {
+                    success: true,
+                    simulation: this.qaSimService.getState()
+                });
                 return;
             }
         }
@@ -266,8 +306,23 @@ export class DeveloperConsoleServer {
                 return;
             }
 
+            // QA: Update Simulation State
+            if (pathname === '/api/v1/qa/simulation') {
+                const updated = this.qaSimService.updateState(payload);
+                this.sendJson(res, 200, {
+                    success: true,
+                    simulation: updated
+                });
+                return;
+            }
+
             // Agent: Register Agent
             if (pathname === '/api/v1/agent/register' || pathname === '/api/v1/agents/register') {
+                if (await this.applySimulation(req, res)) return;
+                if (this.qaSimService.shouldRejectAuthentication()) {
+                    this.sendError(res, 403, 'INVALID_TOKEN', 'Registration token is rejected by QA simulation.');
+                    return;
+                }
                 try {
                     const result = await this.controller.registerAgent(payload);
                     if (result.success) {
@@ -285,6 +340,11 @@ export class DeveloperConsoleServer {
 
             // Agent: Agent Heartbeat
             if (pathname === '/api/v1/agent/heartbeat' || pathname === '/api/v1/agents/heartbeat') {
+                if (await this.applySimulation(req, res)) return;
+                if (this.qaSimService.shouldRejectHeartbeat()) {
+                    this.sendError(res, 401, 'UNAUTHORIZED', 'Heartbeat rejected by QA simulation.');
+                    return;
+                }
                 const authResult = await this.authenticateAgent(req);
                 if (!authResult.success) {
                     this.sendJson(res, authResult.statusCode, authResult.body);
@@ -422,6 +482,7 @@ export class DeveloperConsoleServer {
 
             // Agent: Ingest Incidents
             if (pathname === '/api/v1/agent/incidents') {
+                if (await this.applySimulation(req, res)) return;
                 if (rawUrl.includes('fail=true') || req.headers['x-mock-fail'] === 'true') {
                     res.writeHead(500, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ error: 'Mock cloud gateway internal failure' }));
@@ -464,6 +525,7 @@ Transition : ${payload.event || 'unknown'}
     }
 
     private async handleAgentAlert(req: http.IncomingMessage, res: http.ServerResponse, payload: any): Promise<void> {
+        if (await this.applySimulation(req, res)) return;
         if (req.url?.includes('fail=true') || req.headers['x-mock-fail'] === 'true') {
             res.writeHead(500, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'Mock cloud gateway internal failure' }));
@@ -523,6 +585,21 @@ Title    : ${payload.alert.title || 'unknown'}
         });
     }
 
+    private async applySimulation(req: http.IncomingMessage, res: http.ServerResponse): Promise<boolean> {
+        if (this.qaSimService.isCloudOffline()) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Mock cloud gateway internal failure' }));
+            return true;
+        }
+
+        const latency = this.qaSimService.getArtificialLatency();
+        if (latency > 0) {
+            await new Promise(resolve => setTimeout(resolve, latency));
+        }
+
+        return false;
+    }
+
     private broadcastSseHeartbeat(): void {
         for (const client of this.sseClients) {
             client.write(':ping\n\n');
@@ -535,6 +612,23 @@ Title    : ${payload.alert.title || 'unknown'}
         | { success: true; agent: Agent }
         | { success: false; statusCode: number; body: ErrorResponse }
     > {
+        if (this.qaSimService.shouldRejectAuthentication()) {
+            console.warn(`[Authentication] Agent rejected due to authenticationReject simulation.`);
+            return {
+                success: false,
+                statusCode: 403,
+                body: {
+                    success: false,
+                    status: 'INVALID_TOKEN',
+                    message: 'Agent not found.',
+                    error: {
+                        code: 'INVALID_TOKEN',
+                        message: 'Agent not found.'
+                    }
+                }
+            };
+        }
+
         const headerAgentId = req.headers['x-agent-id'] as string | undefined;
         const headerSecret = req.headers['x-agent-secret'] as string | undefined;
 
