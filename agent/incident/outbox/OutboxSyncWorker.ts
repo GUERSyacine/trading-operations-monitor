@@ -14,7 +14,8 @@ export class OutboxSyncWorker {
         private readonly batchSize: number = MVP_CONFIG.CLOUD_SYNC.BATCH_SIZE,
         private readonly timeoutMs: number = MVP_CONFIG.CLOUD_SYNC.TIMEOUT_MS,
         private readonly getAgentId?: () => string | undefined,
-        private readonly getAgentSecret?: () => string | undefined
+        private readonly getAgentSecret?: () => string | undefined,
+        private readonly getAgentVersion?: () => string | undefined
     ) {}
 
     /**
@@ -112,6 +113,12 @@ export class OutboxSyncWorker {
                         if (agentSecret) {
                             headers['X-Agent-Secret'] = agentSecret;
                         }
+                    }
+                    const agentVersion = this.getAgentVersion ? this.getAgentVersion() : undefined;
+                    if (agentVersion) {
+                        headers['X-Agent-Version'] = agentVersion;
+                    } else {
+                        headers['X-Agent-Version'] = '1.0.0';
                     }
 
                     const response = await fetch(targetUrl, {

@@ -952,6 +952,26 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 <p style="color:var(--text-secondary); margin-bottom:1.5rem;">
                     Verify authentication boundaries, token parsing rules, and registration handshakes.
                 </p>
+
+                <!-- Version Policy Configuration Card -->
+                <div class="card" style="margin-bottom: 2rem; border-color: rgba(59, 130, 246, 0.3); background: rgba(59, 130, 246, 0.02);">
+                    <h3 style="margin-bottom: 0.75rem; color: var(--color-blue); font-size: 1.0rem; display: flex; align-items: center; gap: 0.5rem;">
+                        <span>⚙️ Version & Compatibility Policy</span>
+                    </h3>
+                    <div style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
+                        <div style="flex: 1; min-width: 200px;">
+                            <label style="display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.35rem;">Minimum Supported Version (Rejection)</label>
+                            <input id="input-min-version" type="text" class="input" style="width: 100%; padding: 0.4rem; background: var(--bg-surface); border-color: var(--border-color); color: var(--text-primary); border-radius: 4px;" value="1.2.0" onchange="updateVersionPolicy()" placeholder="e.g. 1.2.0">
+                        </div>
+                        <div style="flex: 1; min-width: 200px;">
+                            <label style="display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.35rem;">Deprecation Warning Version (Warning)</label>
+                            <input id="input-dep-version" type="text" class="input" style="width: 100%; padding: 0.4rem; background: var(--bg-surface); border-color: var(--border-color); color: var(--text-primary); border-radius: 4px;" value="1.4.0" onchange="updateVersionPolicy()" placeholder="e.g. 1.4.0">
+                        </div>
+                    </div>
+                    <p style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.65rem; line-height: 1.4;">
+                        Sets the compatibility rule on the gateway. Versions strictly below the minimum will be rejected (HTTP 426). Versions below deprecation but above/equal to minimum will register/heartbeat successfully but return a warning flag.
+                    </p>
+                </div>
                 <div class="qa-active-agent-banner card" style="margin-bottom: 1.5rem; border-color: rgba(59, 130, 246, 0.3); background: rgba(59, 130, 246, 0.03); display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem;">
                     <div style="display: flex; align-items: center; gap: 0.5rem;">
                         <span style="font-size: 0.85rem; color: var(--text-secondary);">Target Agent:</span>
@@ -1683,6 +1703,133 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                         check: (res) => qaState.simulateCloudOffline ? res.error !== undefined : res.received === true 
                     }
                 ]
+            },
+            // --- C4: VERSION NEGOTIATION TESTS ---
+            {
+                id: 'register-deprecated-version',
+                category: 'identity',
+                title: 'Agent Registration (Deprecated Version)',
+                description: 'Verifies registration succeeds with a warning when version is below deprecation but above/equal to minimum (e.g. 1.3.0).',
+                method: 'POST',
+                path: '/api/v1/agent/register',
+                headers: () => ({
+                    'X-Agent-Version': '1.3.0'
+                }),
+                body: () => ({
+                    licenseToken: 'QA-LAB-TOKEN-999',
+                    machineId: 'qa-machine-' + Math.floor(Math.random() * 100000),
+                    hostname: 'qa-simulated-agent',
+                    version: '1.3.0',
+                    capabilities: ['TELEMETRY']
+                }),
+                assertions: [
+                    { label: 'HTTP Status is 200', check: (res, status) => status === 200 },
+                    { label: 'success is true', check: (res) => res.success === true },
+                    { label: 'warning is DEPRECATED_VERSION', check: (res) => res.warning === 'DEPRECATED_VERSION' },
+                    { label: 'agentId is present', check: (res) => typeof res.agentId === 'string' && res.agentId.length > 0 }
+                ]
+            },
+            {
+                id: 'register-unsupported-version',
+                category: 'identity',
+                title: 'Registration Rejected (Unsupported Version)',
+                description: 'Verifies registration is rejected (HTTP 426) when version is below minimum supported version (e.g. 1.1.0).',
+                method: 'POST',
+                path: '/api/v1/agent/register',
+                headers: () => ({
+                    'X-Agent-Version': '1.1.0'
+                }),
+                body: () => ({
+                    licenseToken: 'QA-LAB-TOKEN-999',
+                    machineId: 'qa-machine-' + Math.floor(Math.random() * 100000),
+                    hostname: 'qa-simulated-agent',
+                    version: '1.1.0',
+                    capabilities: ['TELEMETRY']
+                }),
+                assertions: [
+                    { label: 'HTTP Status is 426', check: (res, status) => status === 426 },
+                    { label: 'success is false', check: (res) => res.success === false },
+                    { label: 'code is VERSION_REJECTED', check: (res) => { const c = res.code || (res.error && res.error.code); return c === 'VERSION_REJECTED'; } }
+                ]
+            },
+            {
+                id: 'register-missing-version-header',
+                category: 'identity',
+                title: 'Registration Rejected (Missing Version Header)',
+                description: 'Verifies registration is rejected (HTTP 426) when X-Agent-Version header is completely missing.',
+                method: 'POST',
+                path: '/api/v1/agent/register',
+                headers: () => ({
+                    'X-Agent-Version': undefined
+                }),
+                body: () => ({
+                    licenseToken: 'QA-LAB-TOKEN-999',
+                    machineId: 'qa-machine-' + Math.floor(Math.random() * 100000),
+                    hostname: 'qa-simulated-agent',
+                    version: '1.5.0',
+                    capabilities: ['TELEMETRY']
+                }),
+                assertions: [
+                    { label: 'HTTP Status is 426', check: (res, status) => status === 426 },
+                    { label: 'success is false', check: (res) => res.success === false },
+                    { label: 'code is VERSION_REJECTED', check: (res) => { const c = res.code || (res.error && res.error.code); return c === 'VERSION_REJECTED'; } }
+                ]
+            },
+            {
+                id: 'heartbeat-deprecated-version',
+                category: 'gateway',
+                title: 'Agent Heartbeat (Deprecated Version)',
+                description: 'Verifies heartbeat succeeds with warning (DEPRECATED_VERSION) when X-Agent-Version is 1.3.0.',
+                method: 'POST',
+                path: '/api/v1/agent/heartbeat',
+                headers: () => ({
+                    'X-Agent-Id': qaState.registeredAgentId || '00000000-0000-0000-0000-000000000000',
+                    'X-Agent-Secret': qaState.registeredAgentSecret || 'dummy-secret',
+                    'X-Agent-Version': '1.3.0'
+                }),
+                body: () => ({
+                    agentId: qaState.registeredAgentId || '00000000-0000-0000-0000-000000000000',
+                    agentSecret: qaState.registeredAgentSecret || 'dummy-secret',
+                    hostname: 'qa-simulated-agent',
+                    version: '1.3.0',
+                    status: 'ONLINE',
+                    uptime: 300,
+                    metrics: { cpuPct: 12.5, memoryPct: 44.2, diskPct: 18.0 },
+                    health: { outboxPendingCount: 0, databaseHealthy: true, freqtradeHealthy: true }
+                }),
+                assertions: [
+                    { label: 'HTTP Status is 200', check: (res, status) => status === 200 },
+                    { label: 'success is true', check: (res) => res.success === true },
+                    { label: 'warning is DEPRECATED_VERSION', check: (res) => res.warning === 'DEPRECATED_VERSION' }
+                ]
+            },
+            {
+                id: 'heartbeat-unsupported-version',
+                category: 'gateway',
+                title: 'Heartbeat Rejected (Unsupported Version)',
+                description: 'Verifies heartbeat is rejected (HTTP 426) when X-Agent-Version is 1.1.0.',
+                method: 'POST',
+                path: '/api/v1/agent/heartbeat',
+                headers: () => ({
+                    'X-Agent-Id': qaState.registeredAgentId || '00000000-0000-0000-0000-000000000000',
+                    'X-Agent-Secret': qaState.registeredAgentSecret || 'dummy-secret',
+                    'X-Agent-Version': '1.1.0'
+                }),
+                body: () => ({
+                    agentId: qaState.registeredAgentId || '00000000-0000-0000-0000-000000000000',
+                    agentSecret: qaState.registeredAgentSecret || 'dummy-secret',
+                    hostname: 'qa-simulated-agent',
+                    version: '1.1.0',
+                    status: 'ONLINE',
+                    uptime: 300,
+                    metrics: { cpuPct: 12.5, memoryPct: 44.2, diskPct: 18.0 },
+                    health: { outboxPendingCount: 0, databaseHealthy: true, freqtradeHealthy: true }
+                }),
+                assertions: [
+                    { label: 'HTTP Status is 426', check: (res, status) => status === 426 },
+                    { label: 'success is false', check: (res) => res.success === false },
+                    { label: 'code is VERSION_REJECTED', check: (res) => { const c = res.code || (res.error && res.error.code); return c === 'VERSION_REJECTED'; } }
+                ]
             }
         ];
 
@@ -1773,10 +1920,18 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             let responseJson = {};
 
             try {
-                const headers = { 'Content-Type': 'application/json' };
+                const headers = { 
+                    'Content-Type': 'application/json',
+                    'X-Agent-Version': '1.5.0' // Default to compatible version for QA tests
+                };
                 if (test.headers) {
                     const customHeaders = test.headers(qaState);
                     Object.assign(headers, customHeaders);
+                }
+                for (const key in headers) {
+                    if (headers[key] === undefined || headers[key] === null) {
+                        delete headers[key];
+                    }
                 }
 
                 const options = {
@@ -1947,9 +2102,40 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 if (json.success && json.simulation) {
                     qaState.simulateCloudOffline = json.simulation.cloudOffline;
                     updateOfflineButtonUI(qaState.simulateCloudOffline);
+
+                    // Sync version inputs if they are not actively focused
+                    const minInput = document.getElementById('input-min-version');
+                    const depInput = document.getElementById('input-dep-version');
+                    if (minInput && document.activeElement !== minInput) {
+                        minInput.value = json.simulation.minimumVersion || '1.2.0';
+                    }
+                    if (depInput && document.activeElement !== depInput) {
+                        depInput.value = json.simulation.deprecatedVersion || '1.4.0';
+                    }
                 }
             } catch (err) {
                 console.error('Failed to fetch simulation state:', err);
+            }
+        }
+
+        async function updateVersionPolicy() {
+            const minVersion = document.getElementById('input-min-version').value.trim();
+            const depVersion = document.getElementById('input-dep-version').value.trim();
+            try {
+                const res = await fetch('/api/v1/qa/simulation', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        minimumVersion: minVersion,
+                        deprecatedVersion: depVersion
+                    })
+                });
+                const json = await res.json();
+                if (json.success && json.simulation) {
+                    console.log('Version policy updated on backend:', json.simulation);
+                }
+            } catch (err) {
+                console.error('Failed to update version policy:', err);
             }
         }
 

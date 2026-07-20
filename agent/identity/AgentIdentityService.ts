@@ -2,6 +2,7 @@ import * as os from 'os';
 import { IdentityStore, AgentIdentity } from './IdentityStore';
 import { AgentApiClient } from './CloudAgentClient';
 import { AgentRegisterRequest } from '../../shared/types/registration';
+import { MVP_CONFIG } from '../../shared/mvpConfig';
 
 export class AgentIdentityService {
     private identity: AgentIdentity | null = null;
@@ -142,7 +143,7 @@ export class AgentIdentityService {
                     licenseToken: this.licenseToken,
                     machineId: machineId,
                     hostname: os.hostname(),
-                    version: '1.0.0',
+                    version: MVP_CONFIG.AGENT.VERSION,
                     capabilities: ['MONITORING', 'INCIDENTS', 'TELEMETRY']
                 };
 

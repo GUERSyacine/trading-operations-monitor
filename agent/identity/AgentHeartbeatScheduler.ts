@@ -4,6 +4,7 @@ import { prisma } from '../../shared/prisma';
 import { AgentIdentityService } from './AgentIdentityService';
 import { AgentApiClient } from './CloudAgentClient';
 import { AgentHeartbeatRequest } from '../../shared/types/registration';
+import { MVP_CONFIG } from '../../shared/mvpConfig';
 
 export class AgentHeartbeatScheduler {
     private startedAt = Date.now();
@@ -145,7 +146,7 @@ export class AgentHeartbeatScheduler {
                 agentId: identity.agentId,
                 agentSecret: identity.agentSecret,
                 hostname: os.hostname(),
-                version: '1.0.0',
+                version: MVP_CONFIG.AGENT.VERSION,
                 status: 'ONLINE',
                 uptime: uptimeSeconds,
                 metrics: {

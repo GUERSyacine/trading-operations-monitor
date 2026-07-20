@@ -67,7 +67,8 @@ export class CloudAgentClient implements AgentApiClient {
             const response = await this.fetchWithTimeout(url, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'X-Agent-Version': req.version || '1.0.0'
                 },
                 body: JSON.stringify(req)
             });
@@ -120,7 +121,8 @@ export class CloudAgentClient implements AgentApiClient {
                 headers: {
                     'Content-Type': 'application/json',
                     'X-Agent-Id': req.agentId,
-                    'X-Agent-Secret': req.agentSecret // Authorization Header
+                    'X-Agent-Secret': req.agentSecret, // Authorization Header
+                    'X-Agent-Version': req.version || '1.0.0'
                 },
                 body: JSON.stringify(req)
             });

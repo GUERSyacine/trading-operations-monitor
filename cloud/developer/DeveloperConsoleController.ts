@@ -5,6 +5,7 @@ import { OperationsSimulationService } from './OperationsSimulationService';
 import { FailureType, FailureScope, FeatureFlag, SystemCommand, OperationScenario, EventCategory, WatchdogEventType } from '../../shared/types/developer';
 import { prisma } from '../../shared/prisma';
 import { EventBus } from '../../shared/services/EventBus';
+import { QaSimulationService } from './QaSimulationService';
 
 export class DeveloperConsoleController {
     constructor(
@@ -146,8 +147,21 @@ export class DeveloperConsoleController {
         status: string;
         agentId?: string;
         agentSecret?: string;
+        warning?: string;
         message?: string;
     }> {
+        const versionResult = QaSimulationService.getInstance().checkVersion(payload.version);
+        if (versionResult.status === 'REJECTED') {
+            console.warn(`[Registration] Registration rejected: VERSION_REJECTED. Machine ID: ${payload.machineId}. Message: ${versionResult.message}`);
+            return {
+                success: false,
+                status: 'VERSION_REJECTED',
+                message: versionResult.message
+            };
+        }
+
+        const warning = versionResult.status === 'DEPRECATED' ? 'DEPRECATED_VERSION' : undefined;
+        const warningMessage = versionResult.status === 'DEPRECATED' ? versionResult.message : undefined;
         console.log(`======================================================
 REGISTRATION RECEIVED
 ======================================================
@@ -204,7 +218,9 @@ License Token: ${payload.licenseToken ? payload.licenseToken.substring(0, 8) + '
                 success: true,
                 status: 'SUCCESS',
                 agentId: agent.id,
-                agentSecret: agent.agentSecret
+                agentSecret: agent.agentSecret,
+                warning,
+                message: warningMessage
             };
         }
 
@@ -254,7 +270,9 @@ Agent secret generated successfully.
             success: true,
             status: 'SUCCESS',
             agentId: agent.id,
-            agentSecret
+            agentSecret,
+            warning,
+            message: warningMessage
         };
     }
 
@@ -282,8 +300,22 @@ Agent secret generated successfully.
         success: boolean;
         status: string;
         configOverrides?: Record<string, any>;
+        warning?: string;
         message?: string;
     }> {
+        const versionResult = QaSimulationService.getInstance().checkVersion(payload.version);
+        if (versionResult.status === 'REJECTED') {
+            console.warn(`[Heartbeat] Heartbeat rejected: VERSION_REJECTED. Agent ID: ${payload.agentId}. Message: ${versionResult.message}`);
+            return {
+                success: false,
+                status: 'VERSION_REJECTED',
+                message: versionResult.message
+            };
+        }
+
+        const warning = versionResult.status === 'DEPRECATED' ? 'DEPRECATED_VERSION' : undefined;
+        const warningMessage = versionResult.status === 'DEPRECATED' ? versionResult.message : undefined;
+
         // 1. Look up agent by body agentId
         const agent = await prisma.agent.findUnique({
             where: { id: payload.agentId }
@@ -392,7 +424,9 @@ Reason:                          Persisted status remained ${updatedAgent.status
         return {
             success: true,
             status: 'SUCCESS',
-            configOverrides
+            configOverrides,
+            warning,
+            message: warningMessage
         };
     }
 

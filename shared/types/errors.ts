@@ -5,7 +5,8 @@ export type ErrorCode =
     | 'FORBIDDEN'
     | 'NOT_FOUND'
     | 'SERVER_ERROR'
-    | 'UNPROCESSABLE_ENTITY';
+    | 'UNPROCESSABLE_ENTITY'
+    | 'VERSION_REJECTED';
 
 export interface ErrorResponse {
     success: false;

@@ -170,6 +170,20 @@ export class DeveloperConsoleServer {
         rawUrl: string,
         method: string
     ): Promise<void> {
+        const isAgentRoute = pathname.startsWith('/api/v1/agent/') || pathname.startsWith('/api/v1/agents/');
+        if (isAgentRoute) {
+            const versionHeader = req.headers['x-agent-version'] as string | undefined;
+            const checkResult = this.qaSimService.checkVersion(versionHeader);
+            if (checkResult.status === 'REJECTED') {
+                console.warn(`[Version Negotiation] Rejected: ${checkResult.message}`);
+                this.sendError(res, 426, 'VERSION_REJECTED', checkResult.message || 'Version rejected by compatibility policy');
+                return;
+            }
+            if (checkResult.status === 'DEPRECATED') {
+                res.setHeader('X-Agent-Warning', 'DEPRECATED_VERSION');
+            }
+        }
+
         if (method === 'GET') {
             // Dashboard: Get Feature Flags
             if (pathname === '/api/v1/dashboard/flags' || pathname === '/api/v1/flags') {
@@ -197,7 +211,14 @@ export class DeveloperConsoleServer {
                     this.sendJson(res, authResult.statusCode, authResult.body);
                     return;
                 }
-                this.sendJson(res, 200, { success: true, config: {} });
+                const versionHeader = req.headers['x-agent-version'] as string | undefined;
+                const checkResult = this.qaSimService.checkVersion(versionHeader);
+                const responsePayload: any = { success: true, config: {} };
+                if (checkResult.status === 'DEPRECATED') {
+                    responsePayload.warning = 'DEPRECATED_VERSION';
+                    responsePayload.message = checkResult.message;
+                }
+                this.sendJson(res, 200, responsePayload);
                 return;
             }
 
@@ -209,7 +230,14 @@ export class DeveloperConsoleServer {
                     this.sendJson(res, authResult.statusCode, authResult.body);
                     return;
                 }
-                this.sendJson(res, 200, { success: true, updateAvailable: false });
+                const versionHeader = req.headers['x-agent-version'] as string | undefined;
+                const checkResult = this.qaSimService.checkVersion(versionHeader);
+                const responsePayload: any = { success: true, updateAvailable: false };
+                if (checkResult.status === 'DEPRECATED') {
+                    responsePayload.warning = 'DEPRECATED_VERSION';
+                    responsePayload.message = checkResult.message;
+                }
+                this.sendJson(res, 200, responsePayload);
                 return;
             }
 
@@ -362,8 +390,8 @@ export class DeveloperConsoleServer {
                     if (result.success) {
                         this.sendJson(res, 200, result);
                     } else {
-                        const statusCode = result.status === 'INVALID_TOKEN' ? 403 : 400;
-                        const code: ErrorCode = result.status === 'INVALID_TOKEN' ? 'INVALID_TOKEN' : 'BAD_REQUEST';
+                        const statusCode = result.status === 'INVALID_TOKEN' ? 403 : (result.status === 'VERSION_REJECTED' ? 426 : 400);
+                        const code: ErrorCode = result.status === 'INVALID_TOKEN' ? 'INVALID_TOKEN' : (result.status === 'VERSION_REJECTED' ? 'VERSION_REJECTED' : 'BAD_REQUEST');
                         this.sendError(res, statusCode, code, result.message || 'Registration failed');
                     }
                 } catch (err: any) {
@@ -389,10 +417,11 @@ export class DeveloperConsoleServer {
                     if (result.success) {
                         this.sendJson(res, 200, result);
                     } else {
-                        const statusCode = result.status === 'UNAUTHORIZED' ? 401 : (result.status === 'INVALID_TOKEN' ? 403 : 400);
+                        const statusCode = result.status === 'UNAUTHORIZED' ? 401 : (result.status === 'INVALID_TOKEN' ? 403 : (result.status === 'VERSION_REJECTED' ? 426 : 400));
                         let code: ErrorCode = 'BAD_REQUEST';
                         if (result.status === 'UNAUTHORIZED') code = 'UNAUTHORIZED';
                         else if (result.status === 'INVALID_TOKEN') code = 'INVALID_TOKEN';
+                        else if (result.status === 'VERSION_REJECTED') code = 'VERSION_REJECTED';
                         this.sendError(res, statusCode, code, result.message || 'Heartbeat failed');
                     }
                 } catch (err: any) {

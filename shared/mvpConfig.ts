@@ -98,7 +98,8 @@ export const MVP_CONFIG = {
     },
     AGENT: {
         HEARTBEAT_INTERVAL_MS: envNumber(process.env.WATCHDOG_HEARTBEAT_INTERVAL_MS, 30_000),
-        LICENSE_TOKEN: process.env.WATCHDOG_LICENSE_TOKEN || 'DEFAULT-TOKEN-XYZ'
+        LICENSE_TOKEN: process.env.WATCHDOG_LICENSE_TOKEN || 'DEFAULT-TOKEN-XYZ',
+        VERSION: process.env.WATCHDOG_AGENT_VERSION || '1.0.0'
     },
     CLOUD: {
         BASE_URL: process.env.CLOUD_BASE_URL || 'http://127.0.0.1:3001',
