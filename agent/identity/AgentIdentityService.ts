@@ -171,6 +171,10 @@ export class AgentIdentityService {
                     this.identity = newIdentity;
                     console.log(`[AgentIdentityService] Registration successful! Agent ID: ${newIdentity.agentId}`);
 
+                    if (response.warning === 'DEPRECATED_VERSION') {
+                        console.warn(`\n======================================================\n⚠️ DEPRECATION WARNING: ${response.message || 'This agent software version is deprecated. Please upgrade immediately.'}\n======================================================\n`);
+                    }
+
                     // Trigger listeners
                     for (const cb of this.registrationCallbacks) {
                         try {

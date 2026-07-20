@@ -169,6 +169,9 @@ export class AgentHeartbeatScheduler {
 
             if (response.success) {
                 console.log(`[AgentHeartbeatScheduler] Heartbeat acknowledged successfully. Status: ${response.status}`);
+                if (response.warning === 'DEPRECATED_VERSION') {
+                    console.warn(`[AgentHeartbeatScheduler] ⚠️ DEPRECATION WARNING: ${response.message || 'This agent software version is deprecated.'}`);
+                }
                 if (response.configOverrides) {
                     console.log('[AgentHeartbeatScheduler] Received configuration overrides:', JSON.stringify(response.configOverrides));
                 }

@@ -14,6 +14,7 @@ export interface AgentRegisterResponse {
     agentId?: string;
     agentSecret?: string;
     message?: string;
+    warning?: string;
 }
 
 export interface AgentHeartbeatRequest {
@@ -40,4 +41,5 @@ export interface AgentHeartbeatResponse {
     status: AgentApiStatus;
     configOverrides?: Record<string, any>;
     message?: string;
+    warning?: string;
 }
