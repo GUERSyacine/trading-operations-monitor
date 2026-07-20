@@ -957,10 +957,15 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                         <span style="font-size: 0.85rem; color: var(--text-secondary);">Target Agent:</span>
                         <strong class="active-qa-agent-display" style="font-family: 'Fira Code', monospace; color: var(--color-blue); font-size: 0.9rem;">None (Run Success Registration first or connect VM Agent)</strong>
                     </div>
-                    <div class="active-qa-agent-select-container" style="display: none; align-items: center; gap: 0.5rem;">
-                        <span style="font-size: 0.85rem; color: var(--text-secondary);">Select Agent:</span>
-                        <select class="select-qa-agent input" style="padding: 0.25rem 0.5rem; font-size: 0.8rem; width: auto; background: var(--bg-surface); border-color: var(--border-color); color: var(--text-primary); border-radius: 4px;" onchange="changeQaAgent(this.value)">
-                        </select>
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <div class="active-qa-agent-select-container" style="display: none; align-items: center; gap: 0.5rem;">
+                            <span style="font-size: 0.85rem; color: var(--text-secondary);">Select Agent:</span>
+                            <select class="select-qa-agent input" style="padding: 0.25rem 0.5rem; font-size: 0.8rem; width: auto; background: var(--bg-surface); border-color: var(--border-color); color: var(--text-primary); border-radius: 4px;" onchange="changeQaAgent(this.value)">
+                            </select>
+                        </div>
+                        <button class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; border-color: rgba(239, 68, 68, 0.3); color: var(--color-red); background: rgba(239, 68, 68, 0.05); cursor: pointer;" onclick="purgeOfflineQaAgents(event)">
+                            Purge Offline QA Agents
+                        </button>
                     </div>
                 </div>
                 <div class="qa-grid" id="qa-identity-container"></div>
@@ -977,10 +982,15 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                         <span style="font-size: 0.85rem; color: var(--text-secondary);">Target Agent:</span>
                         <strong class="active-qa-agent-display" style="font-family: 'Fira Code', monospace; color: var(--color-blue); font-size: 0.9rem;">None (Run Success Registration first or connect VM Agent)</strong>
                     </div>
-                    <div class="active-qa-agent-select-container" style="display: none; align-items: center; gap: 0.5rem;">
-                        <span style="font-size: 0.85rem; color: var(--text-secondary);">Select Agent:</span>
-                        <select class="select-qa-agent input" style="padding: 0.25rem 0.5rem; font-size: 0.8rem; width: auto; background: var(--bg-surface); border-color: var(--border-color); color: var(--text-primary); border-radius: 4px;" onchange="changeQaAgent(this.value)">
-                        </select>
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <div class="active-qa-agent-select-container" style="display: none; align-items: center; gap: 0.5rem;">
+                            <span style="font-size: 0.85rem; color: var(--text-secondary);">Select Agent:</span>
+                            <select class="select-qa-agent input" style="padding: 0.25rem 0.5rem; font-size: 0.8rem; width: auto; background: var(--bg-surface); border-color: var(--border-color); color: var(--text-primary); border-radius: 4px;" onchange="changeQaAgent(this.value)">
+                            </select>
+                        </div>
+                        <button class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; border-color: rgba(239, 68, 68, 0.3); color: var(--color-red); background: rgba(239, 68, 68, 0.05); cursor: pointer;" onclick="purgeOfflineQaAgents(event)">
+                            Purge Offline QA Agents
+                        </button>
                     </div>
                 </div>
                 <div class="qa-grid" id="qa-gateway-container"></div>
@@ -997,10 +1007,15 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                         <span style="font-size: 0.85rem; color: var(--text-secondary);">Target Agent:</span>
                         <strong class="active-qa-agent-display" style="font-family: 'Fira Code', monospace; color: var(--color-blue); font-size: 0.9rem;">None (Run Success Registration first or connect VM Agent)</strong>
                     </div>
-                    <div class="active-qa-agent-select-container" style="display: none; align-items: center; gap: 0.5rem;">
-                        <span style="font-size: 0.85rem; color: var(--text-secondary);">Select Agent:</span>
-                        <select class="select-qa-agent input" style="padding: 0.25rem 0.5rem; font-size: 0.8rem; width: auto; background: var(--bg-surface); border-color: var(--border-color); color: var(--text-primary); border-radius: 4px;" onchange="changeQaAgent(this.value)">
-                        </select>
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <div class="active-qa-agent-select-container" style="display: none; align-items: center; gap: 0.5rem;">
+                            <span style="font-size: 0.85rem; color: var(--text-secondary);">Select Agent:</span>
+                            <select class="select-qa-agent input" style="padding: 0.25rem 0.5rem; font-size: 0.8rem; width: auto; background: var(--bg-surface); border-color: var(--border-color); color: var(--text-primary); border-radius: 4px;" onchange="changeQaAgent(this.value)">
+                            </select>
+                        </div>
+                        <button class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; border-color: rgba(239, 68, 68, 0.3); color: var(--color-red); background: rgba(239, 68, 68, 0.05); cursor: pointer;" onclick="purgeOfflineQaAgents(event)">
+                            Purge Offline QA Agents
+                        </button>
                     </div>
                 </div>
 
@@ -1033,10 +1048,15 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                         <span style="font-size: 0.85rem; color: var(--text-secondary);">Target Agent:</span>
                         <strong class="active-qa-agent-display" style="font-family: 'Fira Code', monospace; color: var(--color-blue); font-size: 0.9rem;">None (Run Success Registration first or connect VM Agent)</strong>
                     </div>
-                    <div class="active-qa-agent-select-container" style="display: none; align-items: center; gap: 0.5rem;">
-                        <span style="font-size: 0.85rem; color: var(--text-secondary);">Select Agent:</span>
-                        <select class="select-qa-agent input" style="padding: 0.25rem 0.5rem; font-size: 0.8rem; width: auto; background: var(--bg-surface); border-color: var(--border-color); color: var(--text-primary); border-radius: 4px;" onchange="changeQaAgent(this.value)">
-                        </select>
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <div class="active-qa-agent-select-container" style="display: none; align-items: center; gap: 0.5rem;">
+                            <span style="font-size: 0.85rem; color: var(--text-secondary);">Select Agent:</span>
+                            <select class="select-qa-agent input" style="padding: 0.25rem 0.5rem; font-size: 0.8rem; width: auto; background: var(--bg-surface); border-color: var(--border-color); color: var(--text-primary); border-radius: 4px;" onchange="changeQaAgent(this.value)">
+                            </select>
+                        </div>
+                        <button class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem; border-color: rgba(239, 68, 68, 0.3); color: var(--color-red); background: rgba(239, 68, 68, 0.05); cursor: pointer;" onclick="purgeOfflineQaAgents(event)">
+                            Purge Offline QA Agents
+                        </button>
                     </div>
                 </div>
 
@@ -1834,6 +1854,25 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
         }
 
         // Active QA Target Agent selectors and session hydration
+        async function purgeOfflineQaAgents(event) {
+            if (event) event.preventDefault();
+            if (!confirm('Are you sure you want to delete all offline simulated QA agents from the database?')) {
+                return;
+            }
+            try {
+                const res = await fetch('/api/v1/qa/purge', { method: 'POST' });
+                const json = await res.json();
+                if (json.success) {
+                    alert(\`Successfully purged \${json.purgedCount} offline QA agents.\`);
+                    pollAgentStatus();
+                } else {
+                    alert('Purge failed: ' + json.message);
+                }
+            } catch (err) {
+                alert('Purge failed: ' + err.message);
+            }
+        }
+
         async function changeQaAgent(agentId) {
             if (!agentId) {
                 qaState.registeredAgentId = '';

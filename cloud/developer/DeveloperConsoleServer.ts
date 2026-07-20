@@ -306,6 +306,40 @@ export class DeveloperConsoleServer {
                 return;
             }
 
+            // QA: Purge Offline QA Agents
+            if (pathname === '/api/v1/qa/purge') {
+                try {
+                    const offlineQaAgents = await prisma.agent.findMany({
+                        where: {
+                            registrationTokenId: 'QA-LAB-TOKEN-999',
+                            status: 'OFFLINE'
+                        },
+                        select: { id: true }
+                    });
+
+                    const qaAgentIds = offlineQaAgents.map(a => a.id);
+
+                    if (qaAgentIds.length > 0) {
+                        await prisma.agentHeartbeat.deleteMany({
+                            where: {
+                                agentId: { in: qaAgentIds }
+                            }
+                        });
+
+                        await prisma.agent.deleteMany({
+                            where: {
+                                id: { in: qaAgentIds }
+                            }
+                        });
+                    }
+
+                    this.sendJson(res, 200, { success: true, purgedCount: qaAgentIds.length });
+                } catch (err: any) {
+                    this.sendError(res, 500, 'SERVER_ERROR', err.message || 'Internal purge error');
+                }
+                return;
+            }
+
             // QA: Update Simulation State
             if (pathname === '/api/v1/qa/simulation') {
                 const updated = this.qaSimService.updateState(payload);
