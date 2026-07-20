@@ -180,6 +180,7 @@ export class DeveloperConsoleServer {
                 return;
             }
             if (checkResult.status === 'DEPRECATED') {
+                console.warn(`[Version Negotiation] Warning: Agent version ${versionHeader} is deprecated. X-Agent-Warning header injected.`);
                 res.setHeader('X-Agent-Warning', 'DEPRECATED_VERSION');
             }
         }

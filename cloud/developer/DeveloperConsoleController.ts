@@ -162,6 +162,9 @@ export class DeveloperConsoleController {
 
         const warning = versionResult.status === 'DEPRECATED' ? 'DEPRECATED_VERSION' : undefined;
         const warningMessage = versionResult.status === 'DEPRECATED' ? versionResult.message : undefined;
+        if (warning === 'DEPRECATED_VERSION') {
+            console.warn(`[Version Negotiation] Warning: Deprecated agent version ${payload.version} in registration body. Warning returned.`);
+        }
         console.log(`======================================================
 REGISTRATION RECEIVED
 ======================================================
@@ -315,6 +318,9 @@ Agent secret generated successfully.
 
         const warning = versionResult.status === 'DEPRECATED' ? 'DEPRECATED_VERSION' : undefined;
         const warningMessage = versionResult.status === 'DEPRECATED' ? versionResult.message : undefined;
+        if (warning === 'DEPRECATED_VERSION') {
+            console.warn(`[Version Negotiation] Warning: Deprecated agent version ${payload.version} in heartbeat body. Warning returned.`);
+        }
 
         // 1. Look up agent by body agentId
         const agent = await prisma.agent.findUnique({
