@@ -23,8 +23,8 @@ export class QaSimulationService {
         heartbeatReject: false,
         authenticationReject: false,
         artificialLatencyMs: 0,
-        minimumVersion: '1.0.0',
-        deprecatedVersion: '1.0.0'
+        minimumVersion: '1.2.0',
+        deprecatedVersion: '1.4.0'
     };
 
     public static getInstance(): QaSimulationService {
