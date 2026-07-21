@@ -160,7 +160,8 @@ export class WatchdogOrchestrator {
             undefined, // timeoutMs
             () => this.identityService?.getIdentity()?.agentId,
             () => this.identityService?.getIdentity()?.agentSecret,
-            () => MVP_CONFIG.AGENT.VERSION
+            () => MVP_CONFIG.AGENT.VERSION,
+            () => MVP_CONFIG.AGENT.CAPABILITIES
         );
     }
 

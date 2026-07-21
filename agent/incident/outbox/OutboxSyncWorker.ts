@@ -15,7 +15,8 @@ export class OutboxSyncWorker {
         private readonly timeoutMs: number = MVP_CONFIG.CLOUD_SYNC.TIMEOUT_MS,
         private readonly getAgentId?: () => string | undefined,
         private readonly getAgentSecret?: () => string | undefined,
-        private readonly getAgentVersion?: () => string | undefined
+        private readonly getAgentVersion?: () => string | undefined,
+        private readonly getAgentCapabilities?: () => string[] | undefined
     ) {}
 
     /**
@@ -119,6 +120,13 @@ export class OutboxSyncWorker {
                         headers['X-Agent-Version'] = agentVersion;
                     } else {
                         headers['X-Agent-Version'] = '1.0.0';
+                    }
+
+                    const capabilities = this.getAgentCapabilities ? this.getAgentCapabilities() : undefined;
+                    if (capabilities && capabilities.length > 0) {
+                        headers['X-Agent-Capabilities'] = capabilities.join(',');
+                    } else {
+                        headers['X-Agent-Capabilities'] = (MVP_CONFIG.AGENT.CAPABILITIES || ['MONITORING', 'INCIDENTS', 'TELEMETRY']).join(',');
                     }
 
                     const response = await fetch(targetUrl, {
