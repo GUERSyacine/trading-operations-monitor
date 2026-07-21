@@ -7,6 +7,7 @@ export interface AgentIdentity {
     machineId: string;
     agentId: string;
     agentSecret: string;
+    authorizedCapabilities?: string[];
 }
 
 export type IdentityLoadStatus = 'NOT_FOUND' | 'CORRUPTED' | 'INVALID_SCHEMA' | 'SUCCESS';
@@ -67,7 +68,8 @@ export class IdentityStore {
                         version: typeof data.version === 'number' ? data.version : 1,
                         machineId: data.machineId,
                         agentId: data.agentId,
-                        agentSecret: data.agentSecret
+                        agentSecret: data.agentSecret,
+                        authorizedCapabilities: Array.isArray(data.authorizedCapabilities) ? data.authorizedCapabilities : undefined
                     }
                 };
             }
@@ -96,7 +98,8 @@ export class IdentityStore {
                 version: identity.version || 1,
                 machineId: identity.machineId,
                 agentId: identity.agentId,
-                agentSecret: identity.agentSecret
+                agentSecret: identity.agentSecret,
+                authorizedCapabilities: identity.authorizedCapabilities
             };
             await fs.writeFile(this.filePath, JSON.stringify(data, null, 2), 'utf-8');
             console.log(`[IdentityStore] Identity successfully saved to ${this.filePath}`);

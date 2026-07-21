@@ -15,6 +15,7 @@ export interface AgentRegisterResponse {
     agentSecret?: string;
     message?: string;
     warning?: string;
+    authorizedCapabilities?: string[];
 }
 
 export interface AgentHeartbeatRequest {
@@ -34,6 +35,7 @@ export interface AgentHeartbeatRequest {
         databaseHealthy: boolean;
         freqtradeHealthy: boolean;
     };
+    capabilities?: string[];
 }
 
 export interface AgentHeartbeatResponse {
@@ -42,4 +44,5 @@ export interface AgentHeartbeatResponse {
     configOverrides?: Record<string, any>;
     message?: string;
     warning?: string;
+    authorizedCapabilities?: string[];
 }

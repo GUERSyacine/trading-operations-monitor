@@ -68,7 +68,8 @@ export class CloudAgentClient implements AgentApiClient {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-Agent-Version': req.version || '1.0.0'
+                    'X-Agent-Version': req.version || '1.0.0',
+                    'X-Agent-Capabilities': req.capabilities ? req.capabilities.join(',') : ''
                 },
                 body: JSON.stringify(req)
             });
@@ -116,15 +117,17 @@ export class CloudAgentClient implements AgentApiClient {
     public async heartbeat(req: AgentHeartbeatRequest): Promise<AgentHeartbeatResponse> {
         const url = `${this.baseUrl}/api/v1/agent/heartbeat`;
         try {
+            const { capabilities, ...bodyWithoutCapabilities } = req;
             const response = await this.fetchWithTimeout(url, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-Agent-Id': req.agentId,
                     'X-Agent-Secret': req.agentSecret, // Authorization Header
-                    'X-Agent-Version': req.version || '1.0.0'
+                    'X-Agent-Version': req.version || '1.0.0',
+                    'X-Agent-Capabilities': req.capabilities ? req.capabilities.join(',') : ''
                 },
-                body: JSON.stringify(req)
+                body: JSON.stringify(bodyWithoutCapabilities)
             });
 
             if (!response.ok) {

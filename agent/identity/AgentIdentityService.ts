@@ -89,6 +89,13 @@ export class AgentIdentityService {
         return this.identity;
     }
 
+    public async updateAuthorizedCapabilities(capabilities: string[]): Promise<void> {
+        if (this.identity) {
+            this.identity.authorizedCapabilities = capabilities;
+            await this.store.save(this.identity);
+        }
+    }
+
     /**
      * Check registration status.
      */
@@ -144,7 +151,7 @@ export class AgentIdentityService {
                     machineId: machineId,
                     hostname: os.hostname(),
                     version: MVP_CONFIG.AGENT.VERSION,
-                    capabilities: ['MONITORING', 'INCIDENTS', 'TELEMETRY']
+                    capabilities: MVP_CONFIG.AGENT.CAPABILITIES
                 };
 
                 console.log(`[AgentIdentityService] Register attempt ${attempt + 1} with machineId ${machineId}...`);
@@ -163,7 +170,8 @@ export class AgentIdentityService {
                         version: 1,
                         machineId,
                         agentId: response.agentId,
-                        agentSecret: response.agentSecret
+                        agentSecret: response.agentSecret,
+                        authorizedCapabilities: response.authorizedCapabilities
                     };
 
                     // Save local persistence before triggering subscribers

@@ -149,6 +149,7 @@ export class DeveloperConsoleController {
         agentSecret?: string;
         warning?: string;
         message?: string;
+        authorizedCapabilities?: string[];
     }> {
         const versionResult = QaSimulationService.getInstance().checkVersion(payload.version);
         if (versionResult.status === 'REJECTED') {
@@ -205,17 +206,41 @@ License Token: ${payload.licenseToken ? payload.licenseToken.substring(0, 8) + '
             };
         }
 
+        // Calculate authorized capabilities
+        const capCheckResult = QaSimulationService.getInstance().checkCapabilities(payload.capabilities.join(','));
+        if (!capCheckResult.success) {
+            console.warn(`[Registration] Registration rejected: CAPABILITY_REJECTED. Machine ID: ${payload.machineId}. Message: ${capCheckResult.message}`);
+            return {
+                success: false,
+                status: 'CAPABILITY_REJECTED',
+                message: capCheckResult.message || 'Capabilities validation failed.'
+            };
+        }
+        const authorizedCapabilities = capCheckResult.authorizedCapabilities;
+
         // 2. Check for existing agent with same machineId (idempotency)
         let agent = await prisma.agent.findUnique({
             where: { machineId: payload.machineId }
         });
 
         if (agent) {
-            console.log(`[Registration] Agent already registered. Reusing credentials.
+            console.log(`[Registration] Agent already registered. Reusing credentials and updating capabilities.
   Agent ID:           ${agent.id}
   Hostname:           ${agent.hostname}
   Machine ID:         ${payload.machineId}
-  Capabilities:       ${JSON.stringify(agent.capabilities)}`);
+  Capabilities:       ${JSON.stringify(authorizedCapabilities)}`);
+            
+            agent = await prisma.agent.update({
+                where: { id: agent.id },
+                data: {
+                    hostname: payload.hostname,
+                    version: payload.version,
+                    capabilities: authorizedCapabilities,
+                    status: 'ONLINE',
+                    lastHeartbeatAt: new Date()
+                }
+            });
+
             // Already registered - return existing credentials
             return {
                 success: true,
@@ -223,7 +248,8 @@ License Token: ${payload.licenseToken ? payload.licenseToken.substring(0, 8) + '
                 agentId: agent.id,
                 agentSecret: agent.agentSecret,
                 warning,
-                message: warningMessage
+                message: warningMessage,
+                authorizedCapabilities
             };
         }
 
@@ -251,7 +277,7 @@ License Token: ${payload.licenseToken ? payload.licenseToken.substring(0, 8) + '
                 hostname: payload.hostname,
                 version: payload.version,
                 status: 'ONLINE',
-                capabilities: payload.capabilities,
+                capabilities: authorizedCapabilities,
                 agentSecret,
                 registrationTokenId: token.token,
                 lastHeartbeatAt: new Date()
@@ -264,7 +290,7 @@ REGISTRATION SUCCESSFUL
 Agent ID:           ${agent.id}
 Hostname:           ${agent.hostname}
 Machine ID:         ${agent.machineId}
-Capabilities:       ${payload.capabilities.join(', ')}
+Capabilities:       ${authorizedCapabilities.join(', ')}
 Heartbeat Interval: 30s
 Agent secret generated successfully.
 ======================================================`);
@@ -275,7 +301,8 @@ Agent secret generated successfully.
             agentId: agent.id,
             agentSecret,
             warning,
-            message: warningMessage
+            message: warningMessage,
+            authorizedCapabilities
         };
     }
 
@@ -298,13 +325,15 @@ Agent secret generated successfully.
                 freqtradeHealthy: boolean;
             };
         },
-        headerSecret?: string
+        headerSecret?: string,
+        capabilitiesHeader?: string
     ): Promise<{
         success: boolean;
         status: string;
         configOverrides?: Record<string, any>;
         warning?: string;
         message?: string;
+        authorizedCapabilities?: string[];
     }> {
         const versionResult = QaSimulationService.getInstance().checkVersion(payload.version);
         if (versionResult.status === 'REJECTED') {
@@ -346,6 +375,14 @@ Agent secret generated successfully.
             };
         }
 
+        // Resolve capabilities from header
+        const capCheckResult = QaSimulationService.getInstance().checkCapabilities(capabilitiesHeader);
+        const authorizedCapabilities = capCheckResult.authorizedCapabilities;
+
+        const dbCapabilities = Array.isArray(agent.capabilities) ? (agent.capabilities as string[]) : [];
+        const capChanged = dbCapabilities.length !== authorizedCapabilities.length ||
+            !dbCapabilities.every((c: string) => authorizedCapabilities.includes(c));
+
         // 3. Update agent status & lastHeartbeatAt
         const prevStatus = agent.status;
         const prevHeartbeat = agent.lastHeartbeatAt;
@@ -357,7 +394,8 @@ Agent secret generated successfully.
                 status: 'ONLINE',
                 lastHeartbeatAt: now,
                 hostname: payload.hostname,
-                version: payload.version
+                version: payload.version,
+                ...(capChanged ? { capabilities: authorizedCapabilities } : {})
             }
         });
 
@@ -432,7 +470,8 @@ Reason:                          Persisted status remained ${updatedAgent.status
             status: 'SUCCESS',
             configOverrides,
             warning,
-            message: warningMessage
+            message: warningMessage,
+            ...(capChanged ? { authorizedCapabilities } : {})
         };
     }
 

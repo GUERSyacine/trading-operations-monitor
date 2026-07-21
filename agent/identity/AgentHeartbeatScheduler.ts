@@ -158,7 +158,8 @@ export class AgentHeartbeatScheduler {
                     outboxPendingCount,
                     databaseHealthy,
                     freqtradeHealthy
-                }
+                },
+                capabilities: MVP_CONFIG.AGENT.CAPABILITIES
             };
 
             console.log(`[AgentHeartbeatScheduler] Sending heartbeat. CPU: ${cpuPct}%, RAM: ${memoryPct}%, Disk: ${diskPct}%, DB Healthy: ${databaseHealthy}, FT Healthy: ${freqtradeHealthy}, Outbox size: ${outboxPendingCount}`);
@@ -169,6 +170,17 @@ export class AgentHeartbeatScheduler {
 
             if (response.success) {
                 console.log(`[AgentHeartbeatScheduler] Heartbeat acknowledged successfully. Status: ${response.status}`);
+                
+                if (response.authorizedCapabilities) {
+                    const currentCaps = identity.authorizedCapabilities || [];
+                    const newCaps = response.authorizedCapabilities;
+                    const hasChanged = currentCaps.length !== newCaps.length || !currentCaps.every(c => newCaps.includes(c));
+                    if (hasChanged) {
+                        console.log(`[AgentHeartbeatScheduler] 🛡️ Capability Negotiation updated: ${JSON.stringify(currentCaps)} -> ${JSON.stringify(newCaps)}`);
+                        await this.identityService.updateAuthorizedCapabilities(newCaps);
+                    }
+                }
+
                 if (response.warning === 'DEPRECATED_VERSION') {
                     console.warn(`[AgentHeartbeatScheduler] ⚠️ DEPRECATION WARNING: ${response.message || 'This agent software version is deprecated.'}`);
                 }

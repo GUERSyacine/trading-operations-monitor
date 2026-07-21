@@ -183,6 +183,26 @@ export class DeveloperConsoleServer {
                 console.warn(`[Version Negotiation] Warning: Agent version ${versionHeader} is deprecated. X-Agent-Warning header injected.`);
                 res.setHeader('X-Agent-Warning', 'DEPRECATED_VERSION');
             }
+
+            const capabilitiesHeader = req.headers['x-agent-capabilities'] as string | undefined;
+            const capCheckResult = this.qaSimService.checkCapabilities(capabilitiesHeader);
+            if (!capCheckResult.success) {
+                console.warn(`[Capability Negotiation] Rejected: ${capCheckResult.message} Header: ${capabilitiesHeader || 'none'}. Missing: ${JSON.stringify(capCheckResult.missing)}. Forbidden: ${JSON.stringify(capCheckResult.forbidden)}`);
+                this.sendError(
+                    res,
+                    400,
+                    'CAPABILITY_REJECTED',
+                    capCheckResult.message || 'Capabilities validation failed.',
+                    {
+                        missing: capCheckResult.missing,
+                        forbidden: capCheckResult.forbidden
+                    }
+                );
+                return;
+            }
+
+            // Stash authorizedCapabilities on request object for controllers to use
+            (req as any).authorizedCapabilities = capCheckResult.authorizedCapabilities;
         }
 
         if (method === 'GET') {
@@ -391,8 +411,8 @@ export class DeveloperConsoleServer {
                     if (result.success) {
                         this.sendJson(res, 200, result);
                     } else {
-                        const statusCode = result.status === 'INVALID_TOKEN' ? 403 : (result.status === 'VERSION_REJECTED' ? 426 : 400);
-                        const code: ErrorCode = result.status === 'INVALID_TOKEN' ? 'INVALID_TOKEN' : (result.status === 'VERSION_REJECTED' ? 'VERSION_REJECTED' : 'BAD_REQUEST');
+                        const statusCode = result.status === 'INVALID_TOKEN' ? 403 : (result.status === 'VERSION_REJECTED' ? 426 : (result.status === 'CAPABILITY_REJECTED' ? 400 : 400));
+                        const code: ErrorCode = result.status === 'INVALID_TOKEN' ? 'INVALID_TOKEN' : (result.status === 'VERSION_REJECTED' ? 'VERSION_REJECTED' : (result.status === 'CAPABILITY_REJECTED' ? 'CAPABILITY_REJECTED' : 'BAD_REQUEST'));
                         this.sendError(res, statusCode, code, result.message || 'Registration failed');
                     }
                 } catch (err: any) {
@@ -414,7 +434,8 @@ export class DeveloperConsoleServer {
                     return;
                 }
                 try {
-                    const result = await this.controller.receiveHeartbeat(payload, authResult.agent.agentSecret);
+                    const capabilitiesHeader = req.headers['x-agent-capabilities'] as string | undefined;
+                    const result = await this.controller.receiveHeartbeat(payload, authResult.agent.agentSecret, capabilitiesHeader);
                     if (result.success) {
                         this.sendJson(res, 200, result);
                     } else {

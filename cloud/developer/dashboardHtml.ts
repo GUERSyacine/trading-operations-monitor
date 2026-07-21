@@ -972,6 +972,27 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                         Sets the compatibility rule on the gateway. Versions strictly below the minimum will be rejected (HTTP 426). Versions below deprecation but above/equal to minimum will register/heartbeat successfully but return a warning flag.
                     </p>
                 </div>
+
+                <!-- Capability Policy Configuration Card -->
+                <div class="card" style="margin-bottom: 2rem; border-color: rgba(16, 185, 129, 0.3); background: rgba(16, 185, 129, 0.02);">
+                    <h3 style="margin-bottom: 0.75rem; color: var(--color-green); font-size: 1.0rem; display: flex; align-items: center; gap: 0.5rem;">
+                        <span>🛡️ Capability Negotiation Policy</span>
+                    </h3>
+                    <div style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
+                        <div style="flex: 1; min-width: 200px;">
+                            <label style="display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.35rem;">Required Capabilities (Comma Separated)</label>
+                            <input id="input-required-caps" type="text" class="input" style="width: 100%; padding: 0.4rem; background: var(--bg-surface); border-color: var(--border-color); color: var(--text-primary); border-radius: 4px;" value="TELEMETRY" onchange="updateCapabilityPolicy()" placeholder="e.g. TELEMETRY">
+                        </div>
+                        <div style="flex: 1; min-width: 200px;">
+                            <label style="display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.35rem;">Allowed Capabilities (Comma Separated)</label>
+                            <input id="input-allowed-caps" type="text" class="input" style="width: 100%; padding: 0.4rem; background: var(--bg-surface); border-color: var(--border-color); color: var(--text-primary); border-radius: 4px;" value="MONITORING, INCIDENTS, TELEMETRY, DOCKER, INCIDENT_SYNC" onchange="updateCapabilityPolicy()" placeholder="e.g. MONITORING, INCIDENTS">
+                        </div>
+                    </div>
+                    <p style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.65rem; line-height: 1.4;">
+                        Sets the capability negotiation rules on the gateway. Agents requesting capabilities not in the allowed list, or omitting capabilities in the required list, will be rejected (HTTP 400 with details). Successful agents are granted the intersection of their requested set and the allowed set.
+                    </p>
+                </div>
+
                 <div class="qa-active-agent-banner card" style="margin-bottom: 1.5rem; border-color: rgba(59, 130, 246, 0.3); background: rgba(59, 130, 246, 0.03); display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem;">
                     <div style="display: flex; align-items: center; gap: 0.5rem;">
                         <span style="font-size: 0.85rem; color: var(--text-secondary);">Target Agent:</span>
@@ -1440,7 +1461,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                     licenseToken: 'QA-LAB-TOKEN-999',
                     machineId: 'qa-machine-' + Math.floor(Math.random() * 100000),
                     hostname: 'qa-simulated-agent',
-                    version: '1.0.0',
+                    version: '1.5.0',
                     capabilities: ['TELEMETRY', 'DOCKER']
                 }),
                 assertions: [
@@ -1467,7 +1488,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                     licenseToken: '',
                     machineId: 'qa-machine-' + Math.floor(Math.random() * 100000),
                     hostname: 'qa-simulated-agent',
-                    version: '1.0.0',
+                    version: '1.5.0',
                     capabilities: ['TELEMETRY']
                 }),
                 assertions: [
@@ -1487,7 +1508,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                     licenseToken: 'INVALID-TOKEN-12345678',
                     machineId: 'qa-machine-' + Math.floor(Math.random() * 100000),
                     hostname: 'qa-simulated-agent',
-                    version: '1.0.0',
+                    version: '1.5.0',
                     capabilities: ['TELEMETRY']
                 }),
                 assertions: [
@@ -1513,7 +1534,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                     agentId: qaState.registeredAgentId || '00000000-0000-0000-0000-000000000000',
                     agentSecret: qaState.registeredAgentSecret || 'dummy-secret',
                     hostname: 'qa-simulated-agent',
-                    version: '1.0.0',
+                    version: '1.5.0',
                     status: 'ONLINE',
                     uptime: 300,
                     metrics: { cpuPct: 12.5, memoryPct: 44.2, diskPct: 18.0 },
@@ -1540,7 +1561,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                     agentId: qaState.registeredAgentId || '00000000-0000-0000-0000-000000000000',
                     agentSecret: 'WRONG-SECRET',
                     hostname: 'qa-simulated-agent',
-                    version: '1.0.0',
+                    version: '1.5.0',
                     status: 'ONLINE',
                     uptime: 300,
                     metrics: { cpuPct: 12.5, memoryPct: 44.2, diskPct: 18.0 },
@@ -1567,7 +1588,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                     agentId: '11111111-1111-1111-1111-111111111111',
                     agentSecret: 'some-secret',
                     hostname: 'qa-simulated-agent',
-                    version: '1.0.0',
+                    version: '1.5.0',
                     status: 'ONLINE',
                     uptime: 300,
                     metrics: { cpuPct: 12.5, memoryPct: 44.2, diskPct: 18.0 },
@@ -1830,6 +1851,181 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                     { label: 'success is false', check: (res) => res.success === false },
                     { label: 'code is VERSION_REJECTED', check: (res) => { const c = res.code || (res.error && res.error.code); return c === 'VERSION_REJECTED'; } }
                 ]
+            },
+            {
+                id: 'register-missing-required-capabilities',
+                category: 'identity',
+                title: 'Register Rejected (Missing Required Caps)',
+                description: 'Verifies registration is rejected (HTTP 400) if requested capabilities omit required ones (e.g., TELEMETRY).',
+                method: 'POST',
+                path: '/api/v1/agent/register',
+                headers: () => ({
+                    'X-Agent-Version': '1.5.0',
+                    'X-Agent-Capabilities': 'DOCKER'
+                }),
+                body: () => ({
+                    licenseToken: 'QA-LAB-TOKEN-999',
+                    machineId: 'qa-machine-' + Math.floor(Math.random() * 100000),
+                    hostname: 'qa-simulated-agent',
+                    version: '1.5.0',
+                    capabilities: ['DOCKER']
+                }),
+                assertions: [
+                    { label: 'HTTP Status is 400', check: (res, status) => status === 400 },
+                    { label: 'success is false', check: (res) => res.success === false },
+                    { label: 'code is CAPABILITY_REJECTED', check: (res) => { const c = res.code || (res.error && res.error.code); return c === 'CAPABILITY_REJECTED'; } }
+                ]
+            },
+            {
+                id: 'register-forbidden-capabilities',
+                category: 'identity',
+                title: 'Register Rejected (Forbidden Caps)',
+                description: 'Verifies registration is rejected (HTTP 400) if requested capabilities contain forbidden ones (e.g., ROOT_ACCESS).',
+                method: 'POST',
+                path: '/api/v1/agent/register',
+                headers: () => ({
+                    'X-Agent-Version': '1.5.0',
+                    'X-Agent-Capabilities': 'TELEMETRY, ROOT_ACCESS'
+                }),
+                body: () => ({
+                    licenseToken: 'QA-LAB-TOKEN-999',
+                    machineId: 'qa-machine-' + Math.floor(Math.random() * 100000),
+                    hostname: 'qa-simulated-agent',
+                    version: '1.5.0',
+                    capabilities: ['TELEMETRY', 'ROOT_ACCESS']
+                }),
+                assertions: [
+                    { label: 'HTTP Status is 400', check: (res, status) => status === 400 },
+                    { label: 'success is false', check: (res) => res.success === false },
+                    { label: 'code is CAPABILITY_REJECTED', check: (res) => { const c = res.code || (res.error && res.error.code); return c === 'CAPABILITY_REJECTED'; } }
+                ]
+            },
+            {
+                id: 'register-negotiated-capabilities',
+                category: 'identity',
+                title: 'Register Negotiated (Intersection Caps)',
+                description: 'Verifies registration succeeds (HTTP 200) and returns the intersection of allowed capabilities (e.g., requested: TELEMETRY, DOCKER, MONITORING; allowed: TELEMETRY, DOCKER; returns: TELEMETRY, DOCKER).',
+                method: 'POST',
+                path: '/api/v1/agent/register',
+                headers: () => ({
+                    'X-Agent-Version': '1.5.0',
+                    'X-Agent-Capabilities': 'TELEMETRY, DOCKER, MONITORING'
+                }),
+                body: () => ({
+                    licenseToken: 'QA-LAB-TOKEN-999',
+                    machineId: 'qa-machine-' + Math.floor(Math.random() * 100000),
+                    hostname: 'qa-simulated-agent',
+                    version: '1.5.0',
+                    capabilities: ['TELEMETRY', 'DOCKER', 'MONITORING']
+                }),
+                assertions: [
+                    { label: 'HTTP Status is 200', check: (res, status) => status === 200 },
+                    { label: 'success is true', check: (res) => res.success === true },
+                    { label: 'authorizedCapabilities intersection is correct', check: (res) => {
+                        const caps = res.authorizedCapabilities || [];
+                        return caps.includes('TELEMETRY') && caps.includes('DOCKER') && !caps.includes('MONITORING');
+                    }}
+                ],
+                onBefore: async () => {
+                    await fetch('/api/v1/qa/simulation', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ allowedCapabilities: ['TELEMETRY', 'DOCKER'] })
+                    });
+                },
+                onComplete: async () => {
+                    await fetch('/api/v1/qa/simulation', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ allowedCapabilities: ['MONITORING', 'INCIDENTS', 'TELEMETRY', 'DOCKER', 'INCIDENT_SYNC'] })
+                    });
+                }
+            },
+            {
+                id: 'heartbeat-missing-required-capabilities',
+                category: 'gateway',
+                title: 'Heartbeat Rejected (Missing Required Caps)',
+                description: 'Verifies heartbeat is rejected (HTTP 400) if agent lacks a required capability (e.g. required is TELEMETRY, requested is DOCKER).',
+                method: 'POST',
+                path: '/api/v1/agent/heartbeat',
+                headers: () => ({
+                    'X-Agent-Id': qaState.registeredAgentId || '00000000-0000-0000-0000-000000000000',
+                    'X-Agent-Secret': qaState.registeredAgentSecret || 'dummy-secret',
+                    'X-Agent-Version': '1.5.0',
+                    'X-Agent-Capabilities': 'DOCKER'
+                }),
+                body: () => ({
+                    agentId: qaState.registeredAgentId || '00000000-0000-0000-0000-000000000000',
+                    agentSecret: qaState.registeredAgentSecret || 'dummy-secret',
+                    hostname: 'qa-simulated-agent',
+                    version: '1.5.0',
+                    status: 'ONLINE',
+                    uptime: 300,
+                    metrics: { cpuPct: 12.5, memoryPct: 44.2, diskPct: 18.0 },
+                    health: { outboxPendingCount: 0, databaseHealthy: true, freqtradeHealthy: true }
+                }),
+                assertions: [
+                    { label: 'HTTP Status is 400', check: (res, status) => status === 400 },
+                    { label: 'success is false', check: (res) => res.success === false },
+                    { label: 'code is CAPABILITY_REJECTED', check: (res) => { const c = res.code || (res.error && res.error.code); return c === 'CAPABILITY_REJECTED'; } }
+                ]
+            },
+            {
+                id: 'heartbeat-forbidden-capabilities',
+                category: 'gateway',
+                title: 'Heartbeat Rejected (Forbidden Caps)',
+                description: 'Verifies heartbeat is rejected (HTTP 400) if agent sends forbidden capabilities (e.g. ROOT_ACCESS).',
+                method: 'POST',
+                path: '/api/v1/agent/heartbeat',
+                headers: () => ({
+                    'X-Agent-Id': qaState.registeredAgentId || '00000000-0000-0000-0000-000000000000',
+                    'X-Agent-Secret': qaState.registeredAgentSecret || 'dummy-secret',
+                    'X-Agent-Version': '1.5.0',
+                    'X-Agent-Capabilities': 'TELEMETRY, ROOT_ACCESS'
+                }),
+                body: () => ({
+                    agentId: qaState.registeredAgentId || '00000000-0000-0000-0000-000000000000',
+                    agentSecret: qaState.registeredAgentSecret || 'dummy-secret',
+                    hostname: 'qa-simulated-agent',
+                    version: '1.5.0',
+                    status: 'ONLINE',
+                    uptime: 300,
+                    metrics: { cpuPct: 12.5, memoryPct: 44.2, diskPct: 18.0 },
+                    health: { outboxPendingCount: 0, databaseHealthy: true, freqtradeHealthy: true }
+                }),
+                assertions: [
+                    { label: 'HTTP Status is 400', check: (res, status) => status === 400 },
+                    { label: 'success is false', check: (res) => res.success === false },
+                    { label: 'code is CAPABILITY_REJECTED', check: (res) => { const c = res.code || (res.error && res.error.code); return c === 'CAPABILITY_REJECTED'; } }
+                ]
+            },
+            {
+                id: 'heartbeat-negotiate-and-adapt',
+                category: 'gateway',
+                title: 'Heartbeat Adaptive Negotiation',
+                description: 'Verifies heartbeat dynamic capability adaptation: succeeds with HTTP 200.',
+                method: 'POST',
+                path: '/api/v1/agent/heartbeat',
+                headers: () => ({
+                    'X-Agent-Id': qaState.registeredAgentId || '00000000-0000-0000-0000-000000000000',
+                    'X-Agent-Secret': qaState.registeredAgentSecret || 'dummy-secret',
+                    'X-Agent-Version': '1.5.0',
+                    'X-Agent-Capabilities': 'TELEMETRY, DOCKER'
+                }),
+                body: () => ({
+                    agentId: qaState.registeredAgentId || '00000000-0000-0000-0000-000000000000',
+                    agentSecret: qaState.registeredAgentSecret || 'dummy-secret',
+                    hostname: 'qa-simulated-agent',
+                    version: '1.5.0',
+                    status: 'ONLINE',
+                    uptime: 300,
+                    metrics: { cpuPct: 12.5, memoryPct: 44.2, diskPct: 18.0 },
+                    health: { outboxPendingCount: 0, databaseHealthy: true, freqtradeHealthy: true }
+                }),
+                assertions: [
+                    { label: 'HTTP Status is 200', check: (res, status) => status === 200 },
+                    { label: 'success is true', check: (res) => res.success === true }
+                ]
             }
         ];
 
@@ -1915,6 +2111,14 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 }
             }
 
+            if (test.onBefore) {
+                try {
+                    await test.onBefore(qaState);
+                } catch (err) {
+                    console.error('Failed to run test.onBefore hook:', err);
+                }
+            }
+
             const startTime = performance.now();
             let status = 0;
             let responseJson = {};
@@ -1922,7 +2126,8 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             try {
                 const headers = { 
                     'Content-Type': 'application/json',
-                    'X-Agent-Version': '1.5.0' // Default to compatible version for QA tests
+                    'X-Agent-Version': '1.5.0', // Default to compatible version for QA tests
+                    'X-Agent-Capabilities': 'TELEMETRY, DOCKER'
                 };
                 if (test.headers) {
                     const customHeaders = test.headers(qaState);
@@ -1996,6 +2201,14 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             // Callback on success to bind state (e.g. register returns secret)
             if (allPassed && test.onSuccess) {
                 test.onSuccess(responseJson);
+            }
+
+            if (test.onComplete) {
+                try {
+                    await test.onComplete(qaState);
+                } catch (err) {
+                    console.error('Failed to run test.onComplete hook:', err);
+                }
             }
 
             return {
@@ -2112,6 +2325,16 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                     if (depInput && document.activeElement !== depInput) {
                         depInput.value = json.simulation.deprecatedVersion || '1.4.0';
                     }
+
+                    // Sync capability inputs if they are not actively focused
+                    const reqCapsInput = document.getElementById('input-required-caps');
+                    const allCapsInput = document.getElementById('input-allowed-caps');
+                    if (reqCapsInput && document.activeElement !== reqCapsInput) {
+                        reqCapsInput.value = (json.simulation.requiredCapabilities || []).join(', ');
+                    }
+                    if (allCapsInput && document.activeElement !== allCapsInput) {
+                        allCapsInput.value = (json.simulation.allowedCapabilities || []).join(', ');
+                    }
                 }
             } catch (err) {
                 console.error('Failed to fetch simulation state:', err);
@@ -2136,6 +2359,29 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 }
             } catch (err) {
                 console.error('Failed to update version policy:', err);
+            }
+        }
+
+        async function updateCapabilityPolicy() {
+            const reqVal = document.getElementById('input-required-caps').value;
+            const allVal = document.getElementById('input-allowed-caps').value;
+            const reqCaps = reqVal.split(',').map(s => s.trim()).filter(Boolean);
+            const allCaps = allVal.split(',').map(s => s.trim()).filter(Boolean);
+            try {
+                const res = await fetch('/api/v1/qa/simulation', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        requiredCapabilities: reqCaps,
+                        allowedCapabilities: allCaps
+                    })
+                });
+                const json = await res.json();
+                if (json.success && json.simulation) {
+                    console.log('Capability policy updated on backend:', json.simulation);
+                }
+            } catch (err) {
+                console.error('Failed to update capability policy:', err);
             }
         }
 
@@ -2208,16 +2454,23 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             logToSmokeTerminal(\`Initiating \${suite.toUpperCase()} smoke test suite...\`, 'run');
             let testList = [];
             if (suite === 'identity') {
-                testList = ['register-success', 'register-missing-token', 'register-invalid-token'];
+                testList = [
+                    'register-success', 'register-missing-token', 'register-invalid-token',
+                    'register-missing-required-capabilities', 'register-forbidden-capabilities', 'register-negotiated-capabilities'
+                ];
             } else if (suite === 'gateway') {
-                testList = ['heartbeat-success', 'heartbeat-wrong-secret', 'heartbeat-unknown-agent', 'get-config', 'get-update'];
+                testList = [
+                    'heartbeat-success', 'heartbeat-wrong-secret', 'heartbeat-unknown-agent', 'get-config', 'get-update',
+                    'heartbeat-missing-required-capabilities', 'heartbeat-forbidden-capabilities', 'heartbeat-negotiate-and-adapt'
+                ];
             } else if (suite === 'sync') {
                 testList = ['sync-incident-success', 'sync-alert-success'];
             } else if (suite === 'full') {
                 testList = [
                     'register-success', 'register-missing-token', 'register-invalid-token',
-                    'heartbeat-success', 'heartbeat-wrong-secret', 'heartbeat-unknown-agent',
-                    'get-config', 'get-update',
+                    'register-missing-required-capabilities', 'register-forbidden-capabilities', 'register-negotiated-capabilities',
+                    'heartbeat-success', 'heartbeat-wrong-secret', 'heartbeat-unknown-agent', 'get-config', 'get-update',
+                    'heartbeat-missing-required-capabilities', 'heartbeat-forbidden-capabilities', 'heartbeat-negotiate-and-adapt',
                     'sync-incident-success', 'sync-alert-success'
                 ];
             }
@@ -2333,7 +2586,12 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                                 <div style="display:flex; flex-direction:column; gap:0.4rem; font-size:0.85rem;">
                                     <div class="flex-between"><span>Version:</span><strong>\${agent.version}</strong></div>
                                     <div class="flex-between"><span>Machine ID:</span><span style="font-family:'Fira Code', monospace; font-size:0.75rem; color:var(--text-secondary);">\${agent.machineId}</span></div>
-                                    <div class="flex-between"><span>Capabilities:</span><strong>\${agent.capabilities.join(', ')}</strong></div>
+                                    <div class="flex-between">
+                                        <span>Capabilities:</span>
+                                        <div style="display:flex; gap:0.25rem; flex-wrap:wrap; justify-content:flex-end; max-width: 60%;">
+                                            \${(agent.capabilities || []).map(cap => \`<span class="sys-badge" style="font-size:0.7rem; padding:0.1rem 0.3rem; margin:0; border-color: rgba(59,130,246,0.3); color: var(--color-blue); background: rgba(59,130,246,0.05); font-weight: 600;">\${cap}</span>\`).join('')}
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 

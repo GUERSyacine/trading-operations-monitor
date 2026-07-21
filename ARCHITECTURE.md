@@ -64,3 +64,19 @@ When introducing a new file, module, or helper, refer to this checklist to deter
   &rarr; Place it in **`cloud/`** (e.g., developer console controllers, HTML templates, simulated incident triggers).
 * **Is it a contract, database client instance, DTO type definition, system configuration file, event persistence service, or utility function used by both domains?**
   &rarr; Place it in **`shared/`** (e.g., types, prisma instance, configuration schemas, failure injection structures). *Remember: Shared must contain no domain-specific business logic.*
+
+---
+
+## 6. Capability & Version Negotiation Protocols
+
+To ensure forward compatibility, security, and smooth feature rollout, the Cloud Gateway enforces strict version policy and capability negotiation rules:
+
+### Version Policy
+* **Requirement**: Agent client implementations must supply both the `X-Agent-Version` HTTP header and the `version` field in the request payload (e.g., during registration and heartbeat).
+* **Policy Constraints**: The payload version must satisfy the policy engine's configured `minimumVersion`. If an agent's version falls below `minimumVersion`, the request is rejected with an upgrade required error. If the version is above `minimumVersion` but below `deprecatedVersion`, the request succeeds but returns warning indicators of impending deprecation.
+
+### Capability Negotiation
+* **X-Agent-Capabilities Header**: Agents must request their supported capabilities via the `X-Agent-Capabilities` header (comma-separated).
+* **Forbidden Capabilities (Non-Standard)**: Any requested capability that is not part of the standard capabilities list (e.g., `ROOT_ACCESS`, `SUPERPOWERS`) is treated as forbidden. Requests containing forbidden capabilities are immediately rejected (HTTP 400).
+* **Negotiated Capabilities (Standard but Unallowed)**: If an agent requests standard capabilities (e.g., `MONITORING`, `TELEMETRY`, `DOCKER`, `INCIDENTS`, `INCIDENT_SYNC`) that are not permitted under the cloud's current `allowedCapabilities` simulation policy, the request is NOT rejected. Instead, the server performs an intersection, filters out the unallowed standard capabilities, and returns a successful response (HTTP 200) containing the authorized subset in the `authorizedCapabilities` list.
+
