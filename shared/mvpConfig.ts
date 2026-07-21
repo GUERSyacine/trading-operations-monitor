@@ -8,6 +8,28 @@ function envNumber(value: string | undefined, fallback: number): number {
     return value !== undefined ? Number(value) : fallback;
 }
 
+/** Safe boolean env reader — defaults to true unless explicitly 'false'. */
+function envBool(value: string | undefined, defaultValue = true): boolean {
+    if (value === undefined) return defaultValue;
+    return value.toLowerCase() === 'true';
+}
+
+function getCapabilitiesFromEnv(): string[] {
+    if (process.env.WATCHDOG_AGENT_CAPABILITIES) {
+        return process.env.WATCHDOG_AGENT_CAPABILITIES.split(',').map(s => s.trim().toUpperCase());
+    }
+
+    const list: string[] = [];
+    if (envBool(process.env.WATCHDOG_CAP_MONITORING)) list.push('MONITORING');
+    if (envBool(process.env.WATCHDOG_CAP_INCIDENTS)) list.push('INCIDENTS');
+    if (envBool(process.env.WATCHDOG_CAP_TELEMETRY)) list.push('TELEMETRY');
+    if (envBool(process.env.WATCHDOG_CAP_DOCKER)) list.push('DOCKER');
+    if (envBool(process.env.WATCHDOG_CAP_INCIDENT_SYNC)) list.push('INCIDENT_SYNC');
+
+    return list;
+}
+
+
 /** Readable time-unit helpers. */
 const SECOND = 1_000;
 const MINUTE = 60 * SECOND;
@@ -100,9 +122,7 @@ export const MVP_CONFIG = {
         HEARTBEAT_INTERVAL_MS: envNumber(process.env.WATCHDOG_HEARTBEAT_INTERVAL_MS, 30_000),
         LICENSE_TOKEN: process.env.WATCHDOG_LICENSE_TOKEN || 'DEFAULT-TOKEN-XYZ',
         VERSION: process.env.WATCHDOG_AGENT_VERSION || '1.5.0',
-        CAPABILITIES: process.env.WATCHDOG_AGENT_CAPABILITIES
-            ? process.env.WATCHDOG_AGENT_CAPABILITIES.split(',').map(s => s.trim())
-            : ['MONITORING', 'INCIDENTS', 'TELEMETRY']
+        CAPABILITIES: getCapabilitiesFromEnv()
     },
     CLOUD: {
         BASE_URL: process.env.CLOUD_BASE_URL || 'http://127.0.0.1:3001',
