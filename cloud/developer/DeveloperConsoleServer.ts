@@ -262,6 +262,7 @@ export class DeveloperConsoleServer {
                     responsePayload.warning = 'DEPRECATED_VERSION';
                     responsePayload.message = checkResult.message;
                 }
+                console.log(`[Config Request] Agent ${authResult.agent.id} (Version: ${versionHeader || 'unknown'}) fetched configuration. Revision: ${configurationRevision}, Not Modified: ${responsePayload.notModified}`);
                 this.sendJson(res, 200, responsePayload);
                 return;
             }
@@ -304,6 +305,7 @@ export class DeveloperConsoleServer {
                     }
                 }
 
+                console.log(`[Update Request] Agent ${authResult.agent.id} (Version: ${versionHeader || 'unknown'}) checked for updates. Available: ${isOutdated}, Mandatory: ${isBelowMin}, Latest: ${state.latestVersion}`);
                 this.sendJson(res, 200, responsePayload);
                 return;
             }

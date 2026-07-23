@@ -1613,7 +1613,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 }),
                 assertions: [
                     { label: 'HTTP Status is 200', check: (res, status) => status === 200 },
-                    { label: 'config object is present', check: (res) => res.config !== undefined }
+                    { label: 'config object is present', check: (res) => res.configuration !== undefined }
                 ]
             },
             {
