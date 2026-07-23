@@ -3,13 +3,19 @@ import {
     AgentRegisterResponse,
     AgentHeartbeatRequest,
     AgentHeartbeatResponse,
-    AgentApiStatus
+    AgentApiStatus,
+    AgentConfigRequest,
+    AgentConfigResponse,
+    AgentUpdateRequest,
+    AgentUpdateResponse
 } from '../../shared/types/registration';
 import { MVP_CONFIG } from '../../shared/mvpConfig';
 
 export interface AgentApiClient {
     register(req: AgentRegisterRequest): Promise<AgentRegisterResponse>;
     heartbeat(req: AgentHeartbeatRequest): Promise<AgentHeartbeatResponse>;
+    getConfig(req: AgentConfigRequest): Promise<AgentConfigResponse>;
+    getUpdate(req: AgentUpdateRequest): Promise<AgentUpdateResponse>;
 }
 
 export class CloudAgentClient implements AgentApiClient {
@@ -163,6 +169,110 @@ export class CloudAgentClient implements AgentApiClient {
                 message: isTimeout
                     ? `Heartbeat timed out after ${this.timeoutMs}ms`
                     : `Network error during heartbeat: ${error?.message || error}`
+            };
+        }
+    }
+
+    /**
+     * GET /api/v1/agent/config
+     */
+    public async getConfig(req: AgentConfigRequest): Promise<AgentConfigResponse> {
+        const url = `${this.baseUrl}/api/v1/agent/config`;
+        const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+            'X-Agent-Id': req.agentId,
+            'X-Agent-Secret': req.agentSecret,
+            'X-Agent-Version': req.version,
+            'X-Agent-Capabilities': req.capabilities.join(',')
+        };
+        if (req.configurationRevision !== undefined) {
+            headers['X-Configuration-Revision'] = String(req.configurationRevision);
+        }
+
+        try {
+            const response = await this.fetchWithTimeout(url, {
+                method: 'GET',
+                headers
+            });
+
+            if (!response.ok) {
+                const text = await response.text();
+                let parsed: any = null;
+                try { parsed = JSON.parse(text); } catch {}
+                const rawStatus = parsed?.error?.code || this.mapHttpStatusToStatus(response.status);
+                const status: AgentApiStatus = ['SUCCESS', 'NETWORK_ERROR', 'SERVER_ERROR', 'UNAUTHORIZED', 'INVALID_TOKEN', 'TIMEOUT'].includes(rawStatus)
+                    ? (rawStatus as AgentApiStatus)
+                    : this.mapHttpStatusToStatus(response.status);
+
+                return {
+                    success: false,
+                    status,
+                    message: parsed?.error?.message || parsed?.message || `Config fetch failed with status ${response.status}: ${text}`,
+                    configurationRevision: 0
+                };
+            }
+
+            return (await response.json()) as AgentConfigResponse;
+        } catch (error: any) {
+            const isTimeout = error?.name === 'AbortError';
+            return {
+                success: false,
+                status: isTimeout ? 'TIMEOUT' : 'NETWORK_ERROR',
+                message: isTimeout
+                    ? `Config fetch timed out after ${this.timeoutMs}ms`
+                    : `Network error during config fetch: ${error?.message || error}`,
+                configurationRevision: 0
+            };
+        }
+    }
+
+    /**
+     * GET /api/v1/agent/update
+     */
+    public async getUpdate(req: AgentUpdateRequest): Promise<AgentUpdateResponse> {
+        const url = `${this.baseUrl}/api/v1/agent/update`;
+        const caps = req.capabilities || MVP_CONFIG.AGENT.CAPABILITIES || [];
+        const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+            'X-Agent-Id': req.agentId,
+            'X-Agent-Secret': req.agentSecret,
+            'X-Agent-Version': req.version,
+            'X-Agent-Capabilities': caps.join(',')
+        };
+
+        try {
+            const response = await this.fetchWithTimeout(url, {
+                method: 'GET',
+                headers
+            });
+
+            if (!response.ok) {
+                const text = await response.text();
+                let parsed: any = null;
+                try { parsed = JSON.parse(text); } catch {}
+                const rawStatus = parsed?.error?.code || this.mapHttpStatusToStatus(response.status);
+                const status: AgentApiStatus = ['SUCCESS', 'NETWORK_ERROR', 'SERVER_ERROR', 'UNAUTHORIZED', 'INVALID_TOKEN', 'TIMEOUT'].includes(rawStatus)
+                    ? (rawStatus as AgentApiStatus)
+                    : this.mapHttpStatusToStatus(response.status);
+
+                return {
+                    success: false,
+                    status,
+                    updateAvailable: false,
+                    message: parsed?.error?.message || parsed?.message || `Update check failed with status ${response.status}: ${text}`
+                };
+            }
+
+            return (await response.json()) as AgentUpdateResponse;
+        } catch (error: any) {
+            const isTimeout = error?.name === 'AbortError';
+            return {
+                success: false,
+                status: isTimeout ? 'TIMEOUT' : 'NETWORK_ERROR',
+                updateAvailable: false,
+                message: isTimeout
+                    ? `Update check timed out after ${this.timeoutMs}ms`
+                    : `Network error during update check: ${error?.message || error}`
             };
         }
     }

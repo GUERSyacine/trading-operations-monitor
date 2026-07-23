@@ -5,6 +5,10 @@ export interface QaSimulationState {
     artificialLatencyMs: number;
     minimumVersion: string;
     deprecatedVersion: string;
+    latestVersion: string;
+    downloadUrl: string;
+    checksum: string;
+    releaseNotes: string;
     requiredCapabilities: string[];
     allowedCapabilities: string[];
 }
@@ -35,6 +39,10 @@ export class QaSimulationService {
         artificialLatencyMs: 0,
         minimumVersion: '1.2.0',
         deprecatedVersion: '1.4.0',
+        latestVersion: '1.6.0',
+        downloadUrl: 'https://updates.watchdog.io/agents/latest.tar.gz',
+        checksum: 'sha256:d3a1f87b8d4f4e24ef5476a26df855ad3eb9a9a3b8d4f4e24ef5476a26df855ad',
+        releaseNotes: 'C7 Software Update Capability Release. Adds update protocol verification.',
         requiredCapabilities: ['TELEMETRY'],
         allowedCapabilities: ['MONITORING', 'INCIDENTS', 'TELEMETRY', 'DOCKER', 'INCIDENT_SYNC']
     };

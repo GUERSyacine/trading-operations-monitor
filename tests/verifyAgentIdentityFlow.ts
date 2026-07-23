@@ -1,10 +1,13 @@
 import { prisma } from '../shared/prisma';
 import { promises as fs } from 'fs';
 import * as path from 'path';
+import { MVP_CONFIG } from '../shared/mvpConfig';
 import { IdentityStore } from '../agent/identity/IdentityStore';
 import { CloudAgentClient } from '../agent/identity/CloudAgentClient';
 import { AgentIdentityService } from '../agent/identity/AgentIdentityService';
 import { AgentHeartbeatScheduler } from '../agent/identity/AgentHeartbeatScheduler';
+import { AgentConfigurationManager } from '../agent/identity/AgentConfigurationManager';
+import { AgentConfigurationScheduler } from '../agent/identity/AgentConfigurationScheduler';
 import { DeveloperConsoleController } from '../cloud/developer/DeveloperConsoleController';
 import { DeveloperConsoleGateway } from '../cloud/developer/DeveloperConsoleGateway';
 import { DeveloperConsoleServer } from '../cloud/developer/DeveloperConsoleServer';
@@ -166,7 +169,7 @@ async function runIdentityIntegrationSuite() {
             throw new Error('Assertion Failed: AgentHeartbeat record not found.');
         }
 
-        if (hb.agentVersion !== '1.0.0') {
+        if (hb.agentVersion !== MVP_CONFIG.AGENT.VERSION) {
             throw new Error(`Assertion Failed: Invalid heartbeat version: ${hb.agentVersion}`);
         }
         if (Number(hb.cpuPct) < 0 || Number(hb.cpuPct) > 100) {
@@ -184,7 +187,8 @@ async function runIdentityIntegrationSuite() {
             agentId: thirdServiceInstance.getIdentity()!.agentId,
             agentSecret: 'WRONG-SECRET',
             hostname: 'rogue-host',
-            version: '1.0.0',
+            version: MVP_CONFIG.AGENT.VERSION,
+            capabilities: MVP_CONFIG.AGENT.CAPABILITIES,
             status: 'ONLINE',
             uptime: 120,
             metrics: { cpuPct: 10, memoryPct: 15, diskPct: 20 },
@@ -225,7 +229,8 @@ async function runIdentityIntegrationSuite() {
             agentId: thirdServiceInstance.getIdentity()!.agentId,
             agentSecret: thirdServiceInstance.getIdentity()!.agentSecret,
             hostname: 'recovered-host',
-            version: '1.0.0',
+            version: MVP_CONFIG.AGENT.VERSION,
+            capabilities: MVP_CONFIG.AGENT.CAPABILITIES,
             status: 'ONLINE',
             uptime: 150,
             metrics: { cpuPct: 12, memoryPct: 18, diskPct: 22 },
@@ -252,6 +257,134 @@ async function runIdentityIntegrationSuite() {
             throw new Error(`Assertion Failed: Expected heartbeatIntervalMs 5000, got ${configOverrideResponse.configOverrides.heartbeatIntervalMs}`);
         }
         console.log('✅ Config overrides received by agent successfully:', JSON.stringify(configOverrideResponse.configOverrides));
+        delete process.env.MOCK_CONFIG_OVERRIDES;
+
+        // C6 Configuration Subsystem Integration Tests
+        console.log('[TestConfigSubsystem] Verifying configuration endpoint and scheduler...');
+        
+        // Ensure mock config overrides environment variable is set
+        process.env.MOCK_CONFIG_OVERRIDES = '{"heartbeatIntervalMs": 10000, "logLevel": "DEBUG"}';
+
+        // 1. Initial configuration fetch
+        const configReq = {
+            agentId: thirdServiceInstance.getIdentity()!.agentId,
+            agentSecret: thirdServiceInstance.getIdentity()!.agentSecret,
+            version: MVP_CONFIG.AGENT.VERSION,
+            capabilities: MVP_CONFIG.AGENT.CAPABILITIES
+        };
+        const initialConfigRes = await client.getConfig(configReq);
+        if (!initialConfigRes.success) {
+            throw new Error(`Assertion Failed: getConfig failed: ${initialConfigRes.message}`);
+        }
+        if (initialConfigRes.configurationRevision !== 1) {
+            throw new Error(`Assertion Failed: Expected initial revision 1, got ${initialConfigRes.configurationRevision}`);
+        }
+        if (initialConfigRes.notModified) {
+            throw new Error('Assertion Failed: Expected notModified to be false on initial call.');
+        }
+        if (initialConfigRes.configuration?.heartbeatIntervalMs !== 10000) {
+            throw new Error(`Assertion Failed: Expected config value heartbeatIntervalMs 10000, got ${initialConfigRes.configuration?.heartbeatIntervalMs}`);
+        }
+        console.log('✅ C6: Initial config fetch and revision 1 verified.');
+
+        // 2. Fetch config again with same revision -> notModified: true
+        const cachedRevision = initialConfigRes.configurationRevision;
+        const conditionalConfigRes = await client.getConfig({
+            ...configReq,
+            configurationRevision: cachedRevision
+        });
+        if (!conditionalConfigRes.success) {
+            throw new Error(`Assertion Failed: conditional getConfig failed: ${conditionalConfigRes.message}`);
+        }
+        if (!conditionalConfigRes.notModified) {
+            throw new Error('Assertion Failed: Expected notModified: true for same revision.');
+        }
+        if (conditionalConfigRes.configuration) {
+            throw new Error('Assertion Failed: Expected configuration to be undefined/empty when notModified is true.');
+        }
+        console.log('✅ C6: Conditional fetch (304 Not Modified simulation) verified.');
+
+        // 3. Update configuration -> revision increments monotonically
+        process.env.MOCK_CONFIG_OVERRIDES = '{"heartbeatIntervalMs": 20000, "logLevel": "INFO"}';
+        const updatedConfigRes = await client.getConfig({
+            ...configReq,
+            configurationRevision: cachedRevision
+        });
+        if (!updatedConfigRes.success) {
+            throw new Error(`Assertion Failed: updated getConfig failed: ${updatedConfigRes.message}`);
+        }
+        if (updatedConfigRes.configurationRevision !== 2) {
+            throw new Error(`Assertion Failed: Expected configurationRevision to increment to 2, got ${updatedConfigRes.configurationRevision}`);
+        }
+        if (updatedConfigRes.notModified) {
+            throw new Error('Assertion Failed: Expected notModified: false after revision change.');
+        }
+        if (updatedConfigRes.configuration?.heartbeatIntervalMs !== 20000) {
+            throw new Error(`Assertion Failed: Expected config value heartbeatIntervalMs 20000, got ${updatedConfigRes.configuration?.heartbeatIntervalMs}`);
+        }
+        console.log('✅ C6: Monotonic revision increment and conditional update retrieval verified.');
+
+        // 4. Verify AgentConfigurationManager state management and AgentConfigurationScheduler loop
+        const configManager = AgentConfigurationManager.getInstance();
+        const configScheduler = new AgentConfigurationScheduler(thirdServiceInstance, client, 5000);
+        
+        // Mark as running so syncConfig executes, but DO NOT start the background loops/timers
+        (configScheduler as any).isRunning = true;
+        // Manually trigger configuration synchronization
+        await configScheduler.syncConfig();
+
+        const activeConfig = configManager.getAppliedConfig();
+        const activeRevision = configManager.getRevision();
+        const activeStatus = configManager.getSyncStatus();
+
+        if (activeRevision !== 2) {
+            throw new Error(`Assertion Failed: Expected Manager revision 2, got ${activeRevision}`);
+        }
+        if (activeConfig.heartbeatIntervalMs !== 20000) {
+            throw new Error(`Assertion Failed: Expected Manager config heartbeatIntervalMs 20000, got ${activeConfig.heartbeatIntervalMs}`);
+        }
+        if (activeStatus.syncStatus !== 'SUCCESS') {
+            throw new Error(`Assertion Failed: Expected Manager syncStatus SUCCESS, got ${activeStatus.syncStatus}`);
+        }
+        if (!activeStatus.lastSuccessfulSync || !activeStatus.lastUpdated) {
+            throw new Error('Assertion Failed: Expected lastSuccessfulSync and lastUpdated to be populated.');
+        }
+        if (activeStatus.consecutiveFailures !== 0) {
+            throw new Error(`Assertion Failed: Expected 0 consecutive failures, got ${activeStatus.consecutiveFailures}`);
+        }
+        console.log('✅ C6: AgentConfigurationManager integration and active status verified.');
+
+        // 5. Test consecutive failures on network/server failure
+        // Stop server temporarily
+        configScheduler.stop();
+        await server.stop();
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        const failingScheduler = new AgentConfigurationScheduler(thirdServiceInstance, client, 1000);
+        // Mark as running so syncConfig executes, but DO NOT start the background loops/timers
+        (failingScheduler as any).isRunning = true;
+        await failingScheduler.syncConfig();
+
+        const failingStatus = configManager.getSyncStatus();
+        if (failingStatus.syncStatus !== 'ERROR') {
+            throw new Error(`Assertion Failed: Expected Manager syncStatus ERROR, got ${failingStatus.syncStatus}`);
+        }
+        if (failingStatus.consecutiveFailures !== 1) {
+            throw new Error(`Assertion Failed: Expected 1 consecutive failure, got ${failingStatus.consecutiveFailures}`);
+        }
+        if (!failingStatus.errorMessage) {
+            throw new Error('Assertion Failed: Expected error message to be set.');
+        }
+
+        failingScheduler.stop();
+        console.log('✅ C6: Sync error handling and consecutive failure tracking verified.');
+
+        // Restart server for the remainder of the test suite
+        server = new DeveloperConsoleServer(controller, gateway, testPort, '127.0.0.1');
+        server.start();
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        
+        // Clean up environment override
         delete process.env.MOCK_CONFIG_OVERRIDES;
 
         // 11. Offline Status Scan Daemon Check

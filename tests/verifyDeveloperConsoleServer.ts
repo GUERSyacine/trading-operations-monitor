@@ -336,7 +336,11 @@ async function runTests() {
             port: testPort,
             path: '/api/v1/agent/incidents',
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Agent-Version': '1.5.0',
+                'X-Agent-Capabilities': 'TELEMETRY'
+            }
         }, { some: 'payload' });
         assert.strictEqual(missHeaderRes.statusCode, 401);
         const missHeaderData = JSON.parse(missHeaderRes.data);
@@ -354,7 +358,9 @@ async function runTests() {
             headers: {
                 'Content-Type': 'application/json',
                 'X-Agent-Id': '1d422890-9370-45ed-9b2b-83fa904f7e7e',
-                'X-Agent-Secret': 'WRONG_SECRET'
+                'X-Agent-Secret': 'WRONG_SECRET',
+                'X-Agent-Version': '1.5.0',
+                'X-Agent-Capabilities': 'TELEMETRY'
             }
         }, { some: 'payload' });
         assert.strictEqual(wrongSecretRes.statusCode, 401);
@@ -373,7 +379,9 @@ async function runTests() {
             headers: {
                 'Content-Type': 'application/json',
                 'X-Agent-Id': '00000000-0000-0000-0000-000000000000',
-                'X-Agent-Secret': 'sec_testsecret123456'
+                'X-Agent-Secret': 'sec_testsecret123456',
+                'X-Agent-Version': '1.5.0',
+                'X-Agent-Capabilities': 'TELEMETRY'
             }
         }, { some: 'payload' });
         assert.strictEqual(unknownAgentRes.statusCode, 403);
@@ -392,7 +400,9 @@ async function runTests() {
             headers: {
                 'Content-Type': 'application/json',
                 'X-Agent-Id': '1d422890-9370-45ed-9b2b-83fa904f7e7e',
-                'X-Agent-Secret': 'sec_testsecret123456'
+                'X-Agent-Secret': 'sec_testsecret123456',
+                'X-Agent-Version': '1.5.0',
+                'X-Agent-Capabilities': 'TELEMETRY'
             }
         }, {
             machine: {
@@ -418,13 +428,15 @@ async function runTests() {
             headers: {
                 'Content-Type': 'application/json',
                 'X-Agent-Id': '1d422890-9370-45ed-9b2b-83fa904f7e7e',
-                'X-Agent-Secret': 'sec_testsecret123456'
+                'X-Agent-Secret': 'sec_testsecret123456',
+                'X-Agent-Version': '1.5.0',
+                'X-Agent-Capabilities': 'TELEMETRY'
             }
         }, {
             agentId: '1d422890-9370-45ed-9b2b-83fa904f7e7e',
             agentSecret: 'sec_testsecret123456',
             hostname: 'vps-test',
-            version: '1.0.0',
+            version: '1.5.0',
             status: 'ONLINE',
             uptime: 100,
             metrics: { cpuPct: 10, memoryPct: 20, diskPct: 30 },
@@ -472,7 +484,11 @@ async function runTests() {
             host: '127.0.0.1',
             port: testPort,
             path: '/api/v1/agent/config',
-            method: 'GET'
+            method: 'GET',
+            headers: {
+                'X-Agent-Version': '1.5.0',
+                'X-Agent-Capabilities': 'TELEMETRY'
+            }
         });
         assert.strictEqual(configUnauthRes.statusCode, 401);
         const configUnauthData = JSON.parse(configUnauthRes.data);
@@ -487,20 +503,26 @@ async function runTests() {
             method: 'GET',
             headers: {
                 'X-Agent-Id': '1d422890-9370-45ed-9b2b-83fa904f7e7e',
-                'X-Agent-Secret': 'sec_testsecret123456'
+                'X-Agent-Secret': 'sec_testsecret123456',
+                'X-Agent-Version': '1.5.0',
+                'X-Agent-Capabilities': 'TELEMETRY'
             }
         });
         assert.strictEqual(configAuthRes.statusCode, 200);
         const configAuthData = JSON.parse(configAuthRes.data);
         assert.strictEqual(configAuthData.success, true);
-        assert.deepStrictEqual(configAuthData.config, {});
+        assert.deepStrictEqual(configAuthData.configuration, {});
 
         console.log('   - Testing GET /api/v1/agent/update (Unauthenticated -> 401)...');
         const updateUnauthRes = await httpRequest({
             host: '127.0.0.1',
             port: testPort,
             path: '/api/v1/agent/update',
-            method: 'GET'
+            method: 'GET',
+            headers: {
+                'X-Agent-Version': '1.5.0',
+                'X-Agent-Capabilities': 'TELEMETRY'
+            }
         });
         assert.strictEqual(updateUnauthRes.statusCode, 401);
         const updateUnauthData = JSON.parse(updateUnauthRes.data);
@@ -515,13 +537,21 @@ async function runTests() {
             method: 'GET',
             headers: {
                 'X-Agent-Id': '1d422890-9370-45ed-9b2b-83fa904f7e7e',
-                'X-Agent-Secret': 'sec_testsecret123456'
+                'X-Agent-Secret': 'sec_testsecret123456',
+                'X-Agent-Version': '1.5.0',
+                'X-Agent-Capabilities': 'TELEMETRY'
             }
         });
         assert.strictEqual(updateAuthRes.statusCode, 200);
         const updateAuthData = JSON.parse(updateAuthRes.data);
         assert.strictEqual(updateAuthData.success, true);
-        assert.strictEqual(updateAuthData.updateAvailable, false);
+        assert.strictEqual(updateAuthData.updateAvailable, true); // 1.5.0 < 1.6.0 (latestVersion)
+        assert.strictEqual(updateAuthData.latestVersion, '1.6.0');
+        assert.strictEqual(updateAuthData.minVersion, '1.2.0');
+        assert.strictEqual(updateAuthData.mandatory, false); // 1.5.0 >= 1.2.0 (minVersion)
+        assert.strictEqual(updateAuthData.downloadUrl, 'https://updates.watchdog.io/agents/latest.tar.gz');
+        assert.strictEqual(updateAuthData.checksum, 'sha256:d3a1f87b8d4f4e24ef5476a26df855ad3eb9a9a3b8d4f4e24ef5476a26df855ad');
+        assert.strictEqual(updateAuthData.releaseNotes, 'C7 Software Update Capability Release. Adds update protocol verification.');
 
         console.log('🎉 ALL SERVER INTEGRATION TESTS PASSED SUCCESSFULLY!\n');
     } finally {

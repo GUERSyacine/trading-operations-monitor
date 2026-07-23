@@ -32,7 +32,18 @@ async function runHeartbeatSchedulerSuite() {
                 status: 'SUCCESS',
                 configOverrides: { heartbeatIntervalMs: 15000 }
             };
-        }
+        },
+        getConfig: async () => ({
+            success: true,
+            status: 'SUCCESS',
+            configurationRevision: 1,
+            configuration: {}
+        }),
+        getUpdate: async () => ({
+            success: true,
+            status: 'SUCCESS',
+            updateAvailable: false
+        })
     };
 
     // 2. Setup real/mock store

@@ -174,7 +174,9 @@ export class DeveloperConsoleServer {
         if (isAgentRoute) {
             const versionHeader = req.headers['x-agent-version'] as string | undefined;
             const checkResult = this.qaSimService.checkVersion(versionHeader);
-            if (checkResult.status === 'REJECTED') {
+            const isUpdateRoute = pathname === '/api/v1/agent/update';
+
+            if (checkResult.status === 'REJECTED' && !isUpdateRoute) {
                 console.warn(`[Version Negotiation] Rejected: ${checkResult.message}`);
                 this.sendError(res, 426, 'VERSION_REJECTED', checkResult.message || 'Version rejected by compatibility policy');
                 return;
@@ -182,6 +184,9 @@ export class DeveloperConsoleServer {
             if (checkResult.status === 'DEPRECATED') {
                 console.warn(`[Version Negotiation] Warning: Agent version ${versionHeader} is deprecated. X-Agent-Warning header injected.`);
                 res.setHeader('X-Agent-Warning', 'DEPRECATED_VERSION');
+            } else if (checkResult.status === 'REJECTED' && isUpdateRoute) {
+                console.warn(`[Version Negotiation] Warning: Agent version ${versionHeader} is unsupported but querying update. X-Agent-Warning header injected.`);
+                res.setHeader('X-Agent-Warning', 'UNSUPPORTED_VERSION');
             }
 
             const capabilitiesHeader = req.headers['x-agent-capabilities'] as string | undefined;
@@ -224,7 +229,7 @@ export class DeveloperConsoleServer {
                 return;
             }
 
-            // Agent: Get Config (Reserved)
+            // Agent: Get Config
             if (pathname === '/api/v1/agent/config') {
                 if (await this.applySimulation(req, res)) return;
                 const authResult = await this.authenticateAgent(req);
@@ -234,7 +239,25 @@ export class DeveloperConsoleServer {
                 }
                 const versionHeader = req.headers['x-agent-version'] as string | undefined;
                 const checkResult = this.qaSimService.checkVersion(versionHeader);
-                const responsePayload: any = { success: true, config: {} };
+                
+                const clientRevisionHeader = req.headers['x-configuration-revision'] as string | undefined;
+                const clientRevision = clientRevisionHeader ? parseInt(clientRevisionHeader, 10) : undefined;
+
+                const { configurationRevision, configuration } = this.controller.getConfig(authResult.agent.id);
+
+                const responsePayload: any = { 
+                    success: true, 
+                    status: 'SUCCESS',
+                    configurationRevision
+                };
+
+                if (clientRevision !== undefined && clientRevision === configurationRevision) {
+                    responsePayload.notModified = true;
+                } else {
+                    responsePayload.configuration = configuration;
+                    responsePayload.notModified = false;
+                }
+
                 if (checkResult.status === 'DEPRECATED') {
                     responsePayload.warning = 'DEPRECATED_VERSION';
                     responsePayload.message = checkResult.message;
@@ -243,7 +266,7 @@ export class DeveloperConsoleServer {
                 return;
             }
 
-            // Agent: Get Update (Reserved)
+            // Agent: Get Update
             if (pathname === '/api/v1/agent/update') {
                 if (await this.applySimulation(req, res)) return;
                 const authResult = await this.authenticateAgent(req);
@@ -251,13 +274,36 @@ export class DeveloperConsoleServer {
                     this.sendJson(res, authResult.statusCode, authResult.body);
                     return;
                 }
+
                 const versionHeader = req.headers['x-agent-version'] as string | undefined;
-                const checkResult = this.qaSimService.checkVersion(versionHeader);
-                const responsePayload: any = { success: true, updateAvailable: false };
-                if (checkResult.status === 'DEPRECATED') {
-                    responsePayload.warning = 'DEPRECATED_VERSION';
-                    responsePayload.message = checkResult.message;
+                const state = this.qaSimService.getState();
+
+                const isOutdated = versionHeader ? (this.qaSimService.compareVersions(versionHeader, state.latestVersion) < 0) : false;
+                const isBelowMin = versionHeader ? (this.qaSimService.compareVersions(versionHeader, state.minimumVersion) < 0) : false;
+
+                const responsePayload: any = {
+                    success: true,
+                    status: 'SUCCESS',
+                    updateAvailable: isOutdated,
+                    latestVersion: state.latestVersion,
+                    minVersion: state.minimumVersion,
+                    mandatory: isBelowMin,
+                    downloadUrl: state.downloadUrl,
+                    checksum: state.checksum,
+                    releaseNotes: state.releaseNotes
+                };
+
+                if (versionHeader) {
+                    const checkResult = this.qaSimService.checkVersion(versionHeader);
+                    if (checkResult.status === 'DEPRECATED') {
+                        responsePayload.warning = 'DEPRECATED_VERSION';
+                        responsePayload.message = checkResult.message;
+                    } else if (checkResult.status === 'REJECTED') {
+                        responsePayload.warning = 'UNSUPPORTED_VERSION';
+                        responsePayload.message = checkResult.message;
+                    }
                 }
+
                 this.sendJson(res, 200, responsePayload);
                 return;
             }

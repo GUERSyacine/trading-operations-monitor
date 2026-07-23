@@ -31,6 +31,7 @@ import { IdentityStore } from './identity/IdentityStore';
 import { CloudAgentClient } from './identity/CloudAgentClient';
 import { AgentIdentityService } from './identity/AgentIdentityService';
 import { AgentHeartbeatScheduler } from './identity/AgentHeartbeatScheduler';
+import { AgentConfigurationScheduler } from './identity/AgentConfigurationScheduler';
 
 export class WatchdogOrchestrator {
     private alertingService: AlertingService;
@@ -51,6 +52,7 @@ export class WatchdogOrchestrator {
     // Agent Identity & Heartbeat Services
     private identityService: AgentIdentityService;
     private heartbeatScheduler: AgentHeartbeatScheduler;
+    private configScheduler: AgentConfigurationScheduler;
 
     // Concurrency flags
     private infraRunning = false;
@@ -134,6 +136,11 @@ export class WatchdogOrchestrator {
             this.identityService,
             cloudAgentClient,
             MVP_CONFIG.AGENT.HEARTBEAT_INTERVAL_MS
+        );
+        this.configScheduler = new AgentConfigurationScheduler(
+            this.identityService,
+            cloudAgentClient,
+            MVP_CONFIG.AGENT.CONFIG_SYNC_INTERVAL_MS
         );
 
         this.runtimeService = new RuntimeMonitorService(this.alertingService);
@@ -229,6 +236,9 @@ export class WatchdogOrchestrator {
         console.log('[Orchestrator] Starting Agent Heartbeat Scheduler...');
         this.heartbeatScheduler.start();
 
+        console.log('[Orchestrator] Starting Agent Configuration Scheduler...');
+        this.configScheduler.start();
+
         console.log('[Orchestrator] Launching scheduler intervals...');
 
         // 1. Infrastructure checks (Default: 60s)
@@ -267,6 +277,9 @@ export class WatchdogOrchestrator {
 
         console.log('[Orchestrator] Stopping Agent Heartbeat Scheduler...');
         this.heartbeatScheduler.stop();
+
+        console.log('[Orchestrator] Stopping Agent Configuration Scheduler...');
+        this.configScheduler.stop();
 
         console.log('[Orchestrator] Stopping Agent Identity Service...');
         this.identityService.stop();

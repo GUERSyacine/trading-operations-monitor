@@ -6,6 +6,7 @@ import { FailureType, FailureScope, FeatureFlag, SystemCommand, OperationScenari
 import { prisma } from '../../shared/prisma';
 import { EventBus } from '../../shared/services/EventBus';
 import { QaSimulationService } from './QaSimulationService';
+import { ConfigurationService } from './ConfigurationService';
 
 export class DeveloperConsoleController {
     constructor(
@@ -510,6 +511,10 @@ Reason:                          Persisted status remained ${updatedAgent.status
             });
         }
         return results;
+    }
+
+    public getConfig(agentId: string) {
+        return ConfigurationService.getInstance().getConfig(agentId);
     }
 
     public getReadOnlyStatus(): boolean {

@@ -46,3 +46,42 @@ export interface AgentHeartbeatResponse {
     warning?: string;
     authorizedCapabilities?: string[];
 }
+
+export interface AgentConfigRequest {
+    agentId: string;
+    agentSecret: string;
+    version: string;
+    capabilities: string[];
+    configurationRevision?: number;
+}
+
+export interface AgentConfigResponse {
+    success: boolean;
+    status: AgentApiStatus;
+    configurationRevision: number;
+    configuration?: Record<string, any>;
+    notModified?: boolean;
+    message?: string;
+    warning?: string;
+}
+
+export interface AgentUpdateRequest {
+    agentId: string;
+    agentSecret: string;
+    version: string;
+    capabilities?: string[];
+}
+
+export interface AgentUpdateResponse {
+    success: boolean;
+    status: AgentApiStatus;
+    updateAvailable: boolean;
+    latestVersion?: string;
+    minVersion?: string;
+    mandatory?: boolean;
+    downloadUrl?: string;
+    checksum?: string;
+    releaseNotes?: string;
+    message?: string;
+    warning?: string;
+}
