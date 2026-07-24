@@ -1445,7 +1445,8 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
         const qaState = {
             registeredAgentId: '',
             registeredAgentSecret: '',
-            simulateCloudOffline: false
+            simulateCloudOffline: false,
+            cachedConfigurationRevision: undefined
         };
 
         const QA_TESTS = [
@@ -1473,6 +1474,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 onSuccess: (res) => {
                     qaState.registeredAgentId = res.agentId;
                     qaState.registeredAgentSecret = res.agentSecret;
+                    qaState.cachedConfigurationRevision = undefined;
                     logToSmokeTerminal(\`[STATE] Captured registered agentId: \${res.agentId.substring(0,8)}...\`);
                     pollAgentStatus();
                 }
@@ -1607,14 +1609,35 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 description: 'Checks GET /api/v1/agent/config to retrieve configuration overrides with valid headers.',
                 method: 'GET',
                 path: '/api/v1/agent/config',
-                headers: () => ({
-                    'X-Agent-Id': qaState.registeredAgentId || '00000000-0000-0000-0000-000000000000',
-                    'X-Agent-Secret': qaState.registeredAgentSecret || 'dummy-secret'
-                }),
+                headers: () => {
+                    const headers = {
+                        'X-Agent-Id': qaState.registeredAgentId || '00000000-0000-0000-0000-000000000000',
+                        'X-Agent-Secret': qaState.registeredAgentSecret || 'dummy-secret'
+                    };
+                    if (qaState.cachedConfigurationRevision !== undefined) {
+                        headers['X-Configuration-Revision'] = String(qaState.cachedConfigurationRevision);
+                    }
+                    return headers;
+                },
                 assertions: [
                     { label: 'HTTP Status is 200', check: (res, status) => status === 200 },
-                    { label: 'config object is present', check: (res) => res.configuration !== undefined }
-                ]
+                    {
+                        label: 'Response configuration matches revision status',
+                        check: (res) => {
+                            if (res.notModified === true) {
+                                return res.configuration === undefined;
+                            } else {
+                                return res.configuration !== undefined;
+                            }
+                        }
+                    }
+                ],
+                onSuccess: (res) => {
+                    if (res.configurationRevision !== undefined) {
+                        qaState.cachedConfigurationRevision = res.configurationRevision;
+                        logToSmokeTerminal(\`[STATE] Cached configuration revision: \${res.configurationRevision}\`);
+                    }
+                }
             },
             {
                 id: 'get-update',
@@ -2245,6 +2268,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             if (!agentId) {
                 qaState.registeredAgentId = '';
                 qaState.registeredAgentSecret = '';
+                qaState.cachedConfigurationRevision = undefined;
                 updateActiveAgentDisplays('None (Select an agent to begin testing)');
                 return;
             }
@@ -2254,6 +2278,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                 if (json.success) {
                     qaState.registeredAgentId = json.agentId;
                     qaState.registeredAgentSecret = json.agentSecret;
+                    qaState.cachedConfigurationRevision = undefined;
                     
                     const dropdown = document.querySelector('.select-qa-agent');
                     let agentName = agentId;
