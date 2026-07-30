@@ -1,22 +1,78 @@
-# Architectural Guidelines & Dependency Rules
+# System Architecture Overview
 
-This document outlines the architectural contract governing the separation of concerns between the **Agent**, **Cloud**, and **Shared** domains. Developers must adhere to these rules when introducing new modules or refactoring existing ones.
-
----
-
-## 1. Domain Directory Structure
-
-The codebase is split into three primary namespaces:
-
-1. **`shared/`**: Genuinely cross-cutting, stateless utilities, data models, persistence adapters, and contracts. It contains no domain-specific business logic or service runners.
-2. **`agent/`**: The background monitoring daemon. It handles real-time telemetry observation, detection loops, alerting triggers, and incident management.
-3. **`cloud/`**: The developer console dashboard and administration API. It exposes web servers, control panels, command runners, and simulation tools.
+This document introduces the architectural principles, system topology, responsibility boundaries, and security invariants that govern the Execution Watchdog platform.
 
 ---
 
-## 2. Dependency Rules (The Contract)
+## 1. System Vision
 
-To maintain a Directed Acyclic Graph (DAG) and prevent circular dependencies, import boundaries are strictly enforced:
+The Execution Watchdog is an edge-native monitoring and protection platform for algorithmic trading. Instead of acting as a passive stream log aggregator, the system runs as a localized reasoning service co-located directly with the trading engine. It observes real-time system state, diagnoses issues on the fly, and can trigger local, fail-closed safety isolation steps without relying on remote network availability.
+
+---
+
+## 2. Core Philosophies & Invariants
+
+The design of the Watchdog is governed by two fundamental system invariants:
+
+> [!IMPORTANT]
+> **Architectural Invariant 1: Edge-Native Reasoning**
+> *"Process data where it is produced. Transmit only decisions, not raw telemetry."*
+>
+> The Client Agent acts as a local evaluator. Rather than continuously uploading thousands of raw CPU spikes, connection heartbeats, or log lines to the cloud, the Agent evaluates telemetry locally, resolves issues using rule engines, and transmits only high-level status alerts and consolidated Incident reports. This keeps bandwidth low, protects operational privacy, and ensures the system operates efficiently even with thousands of concurrent edge installations.
+
+> [!WARNING]
+> **Architectural Invariant 2: Zero-Inbound Network Footprint**
+> *"The Cloud Gateway never initiates connections to Agent instances. Agents expose no public management API and accept no inbound control traffic from the Internet. All communication is client-initiated outbound over HTTPS/WSS."*
+>
+> To safeguard edge VPS trading hosts, the Agent opens no listening ports to the WAN and accepts no remote execution payloads. Consequently, the Cloud Gateway cannot execute arbitrary code or initiate management operations on client Agents. If the Cloud Gateway is compromised, the attacker has no network route to access or run code on client trading platforms. Command syncs and configuration updates are pulled asynchronously by the Agent using outbound requests.
+
+---
+
+## 3. High-Level Topology
+
+The physical layout places the reasoning agent alongside the trading components, using outbound communication routes to upload diagnostic status updates to the Central Cloud:
+
+```
+                  Cloud Gateway
+                        │
+                        ▼ (Outbound HTTPS/WSS)
+       ───────────────────────────────────────────────────
+       Edge VM Host (Deployment & Execution Boundary)
+       ───────────────────────────────────────────────────
+       systemd (Service Supervision)
+           │
+           ▼ (Process Monitoring)
+       Watchdog Client Agent (Edge Node.js Daemon)
+           │
+           ├────► Trading Platform (Loopback LAN Trust Zone)
+           │
+           └────► Local Persistence Service (PostgreSQL DB)
+```
+
+---
+
+## 4. Distributed Split of Responsibilities
+
+The system is split into two primary operational areas:
+
+### The Client Agent (Intelligence Plane)
+Owns all data ingestion, heuristic processing, state tracking, and local protective measures:
+```
+  Observe       ──►       Detect       ──►       Assess       ──►      Incident      ──►      Outbox      ──►     Sync
+(Log / API)          (Rule Engines)         (Heuristics)          (Aggregation)         (DB Queue)        (Outbound)
+```
+
+### The Cloud Gateway (Operations Plane)
+Provides fleet management, customer licensing, notification routing, and configuration services:
+```
+Receive Incident ──► Store & Audit ──► Sync Config ──► Dashboard ──► Notification Dispatch (Telegram/SMS)
+```
+
+---
+
+## 5. Codebase Directory Structure & Dependency Rules
+
+To maintain codebase health and prevent circular dependency loops, imports between namespaces are strictly constrained to a Directed Acyclic Graph (DAG):
 
 ```
           shared
@@ -25,58 +81,47 @@ To maintain a Directed Acyclic Graph (DAG) and prevent circular dependencies, im
     agent      cloud
 ```
 
-### Allowed Imports
-* `agent/` &rarr; `shared/` &nbsp; ✔
-* `cloud/` &rarr; `shared/` &nbsp; ✔
-* `tests/` &rarr; any directory &nbsp; ✔
-* `scratch/` &rarr; any directory &nbsp; ✔
+### Namespace Directories
+1.  **`shared/`**: Genuinely cross-cutting, stateless models, DB clients, and configuration contracts. Contains no runtime business logic.
+2.  **`agent/`**: The local edge daemon code. Contains sensors, incident engines, outbox writers, and local loopback adapters.
+3.  **`cloud/`**: The Central console api, dashboards, licensing services, and alert dispatchers.
 
-### Prohibited Imports
-* `shared/` &rarr; `agent/` &nbsp; ✘ (Shared must remain entirely independent)
-* `shared/` &rarr; `cloud/` &nbsp; ✘ (Shared must remain entirely independent)
-* `cloud/` &rarr; `agent/` &nbsp; ✘ (No compile-time coupling between console and daemon)
-* `agent/` &rarr; `cloud/` &nbsp; ✘ (The agent must remain lightweight and deployable without web assets)
-
----
-
-## 3. Temporary Adaptations & Cleanups
-
-* **Legacy Compatibility Cleanup**: During Phase 4 / Step 9, all direct dependencies on old type files were successfully migrated to reference `shared/types/telemetry.ts` directly, and the legacy compatibility re-export file `agent/detectors/types.ts` was deleted. Import boundaries are now clean and direct.
+### Import Rules
+*   `agent/` &rarr; `shared/` &nbsp; ✔
+*   `cloud/` &rarr; `shared/` &nbsp; ✔
+*   `shared/` &rarr; `agent/` or `cloud/` &nbsp; ✘ (Shared must remain entirely independent)
+*   `agent/` &rarr; `cloud/` or vice versa &nbsp; ✘ (No compile-time imports across agent and cloud)
 
 ---
 
-## 4. Runtime Decoupling Model
+## 6. Architecture Manual Reference Index
 
-* **Compile-Time Isolation**: No TypeScript imports cross the `agent` <&rarr;> `cloud` boundary.
-* **Runtime Communication**: 
-  * **Current Implementation**: Interactions are mediated asynchronously through the database (PostgreSQL via Prisma) and event states. There are currently no direct RPC, HTTP, or WebSocket connections between the Agent and the Cloud Console. The Agent logs telemetry events and status states to `DecisionAudit`, and inserts outgoing system incidents into `IncidentOutbox`. The Cloud Developer Console reads these records to construct dashboard views, and writes control configurations (Feature Flags, Failure Injections) back to the database.
-  * **Future Scale**: In a production SaaS setup, future interfaces (such as licensing, authentication, updates, or remote heartbeats) may expose direct HTTPS connections to a Cloud API. This is permissible provided it does not tightly couple the codebase's domain logic.
+For deep-dives into specific subsystems, refer to the **Architecture Manual** chapters located in [`docs/architecture/`](file:///home/kaito_y69/Desktop/freelance_mvp/execution-watchdog/docs/architecture/):
 
----
+### Foundation
+*   **[Chapter I: Agent Lifecycle](file:///home/kaito_y69/Desktop/freelance_mvp/execution-watchdog/docs/architecture/01-agent-lifecycle.md)** — Core orchestrator, startup steps, operational loops, and shutdown sequences.
+*   **[Chapter II: Communication Model](file:///home/kaito_y69/Desktop/freelance_mvp/execution-watchdog/docs/architecture/02-communication-model.md)** — Message formats, outbound REST/WS patterns, and WAN payloads.
+*   **[Chapter III: Request Matrix](file:///home/kaito_y69/Desktop/freelance_mvp/execution-watchdog/docs/architecture/03-request-matrix.md)** — Network protocol routing matrix, request/response models, and error behaviors.
+*   **[Chapter IV: Metadata Contracts](file:///home/kaito_y69/Desktop/freelance_mvp/execution-watchdog/docs/architecture/04-metadata-contracts.md)** — Structure, serialization, and lifecycle mappings of state metadata.
 
-## 5. How to Classify New Code
+### Protocols
+*   **[Chapter V: Configuration Protocol](file:///home/kaito_y69/Desktop/freelance_mvp/execution-watchdog/docs/architecture/05-configuration-protocol.md)** — Fetching, validating, and activating runtime configs from the Cloud.
+*   **[Chapter VI: Update Protocol](file:///home/kaito_y69/Desktop/freelance_mvp/execution-watchdog/docs/architecture/06-update-protocol.md)** — Version checks, deprecation rules, and integrity validation pipelines.
 
-When introducing a new file, module, or helper, refer to this checklist to determine the appropriate namespace:
+### Resilience
+*   **[Chapter VII: Failure Recovery](file:///home/kaito_y69/Desktop/freelance_mvp/execution-watchdog/docs/architecture/07-failure-recovery.md)** — Incident queueing, exponential backoffs, and outbox buffering policies during outages.
 
-* **Does this execute watchdog monitoring, health-checking, real-time alerting, or trade protection logic?**
-  &rarr; Place it in **`agent/`** (e.g., detectors, notification gateways, active trading adapters).
-* **Does this expose a UI, dashboard, management server, simulation API, or administrative CLI?**
-  &rarr; Place it in **`cloud/`** (e.g., developer console controllers, HTML templates, simulated incident triggers).
-* **Is it a contract, database client instance, DTO type definition, system configuration file, event persistence service, or utility function used by both domains?**
-  &rarr; Place it in **`shared/`** (e.g., types, prisma instance, configuration schemas, failure injection structures). *Remember: Shared must contain no domain-specific business logic.*
+### Runtime
+*   **[Chapter VIII: Scheduler Architecture](file:///home/kaito_y69/Desktop/freelance_mvp/execution-watchdog/docs/architecture/08-scheduler-architecture.md)** — Loop timing coordinates, re-entrancy protection, and queue task managers.
+*   **[Chapter IX: Runtime State Management](file:///home/kaito_y69/Desktop/freelance_mvp/execution-watchdog/docs/architecture/09-runtime-state-management.md)** — Health aggregation planes, status consolidation, and in-memory states.
+*   **[Chapter X: Monitoring & Detection](file:///home/kaito_y69/Desktop/freelance_mvp/execution-watchdog/docs/architecture/10-monitoring-detection-architecture.md)** — Telemetry sensor ingestion, evaluation phases, and watchdog heuristics.
+*   **[Chapter XI: Alerting Architecture](file:///home/kaito_y69/Desktop/freelance_mvp/execution-watchdog/docs/architecture/11-alerting-architecture.md)** — Routing alerts, suppression cooldown checks, and transport channels.
 
----
+### Data
+*   **[Chapter XII: Persistence Architecture](file:///home/kaito_y69/Desktop/freelance_mvp/execution-watchdog/docs/architecture/12-persistence-architecture.md)** — DB structures, database write limits, and Outbox database transaction rules.
 
-## 6. Capability & Version Negotiation Protocols
+### Security
+*   **[Chapter XIII: Security Architecture](file:///home/kaito_y69/Desktop/freelance_mvp/execution-watchdog/docs/architecture/13-security-architecture.md)** — Trust boundaries, credential tiers, key rotations, and edge isolation.
 
-To ensure forward compatibility, security, and smooth feature rollout, the Cloud Gateway enforces strict version policy and capability negotiation rules:
-
-### Version Policy
-* **Requirement**: Agent client implementations must supply both the `X-Agent-Version` HTTP header and the `version` field in the request payload (e.g., during registration and heartbeat).
-* **Policy Constraints**: The payload version must satisfy the policy engine's configured `minimumVersion`. If an agent's version falls below `minimumVersion`, the request is rejected with an upgrade required error. If the version is above `minimumVersion` but below `deprecatedVersion`, the request succeeds but returns warning indicators of impending deprecation.
-
-### Capability Negotiation
-* **X-Agent-Capabilities Header**: Agents must request their supported capabilities via the `X-Agent-Capabilities` header (comma-separated).
-* **Forbidden Capabilities (Non-Standard)**: Any requested capability that is not part of the standard capabilities list (e.g., `ROOT_ACCESS`, `SUPERPOWERS`) is treated as forbidden. Requests containing forbidden capabilities are immediately rejected (HTTP 400).
-* **Negotiated Capabilities (Standard but Unallowed)**: If an agent requests standard capabilities (e.g., `MONITORING`, `TELEMETRY`, `DOCKER`, `INCIDENTS`, `INCIDENT_SYNC`) that are not permitted under the cloud's current `allowedCapabilities` simulation policy, the request is NOT rejected. Instead, the server performs an intersection, filters out the unallowed standard capabilities, and returns a successful response (HTTP 200) containing the authorized subset in the `authorizedCapabilities` list.
-
+### Deployment
+*   **[Chapter XIV: Deployment Architecture](file:///home/kaito_y69/Desktop/freelance_mvp/execution-watchdog/docs/architecture/14-deployment-architecture.md)** — Physical VM layout, systemd background runners, build vs. deploy divisions, and user container limits.
