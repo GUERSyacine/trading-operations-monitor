@@ -1,22 +1,7 @@
 import { prisma } from '../../../shared/prisma';
 import { Incident, IncidentGroup, DecisionAudit } from '@prisma/client';
+import { Evidence } from '../../../shared/types/telemetry';
 
-export interface Evidence {
-    id: string;
-    groupId: number;
-    sequence: number;
-    category: 'INCIDENT' | 'AUDIT' | 'GROUP';
-    source: string;
-    event: 'DETECTED' | 'RESOLVED' | 'CREATED' | 'OBSERVED';
-    timestamp: number;
-    origin: 'OBSERVATION' | 'ASSESSMENT' | 'SYSTEM';
-    entityId?: string;
-    severity?: 'INFO' | 'LOW' | 'MEDIUM' | 'HIGH' | 'WARNING' | 'CRITICAL';
-    symbol?: string;
-    correlationKey?: string;
-    message?: string;
-    metadata?: Record<string, unknown>;
-}
 
 export class EvidenceCollector {
     public async collectEvidence(groupId: number): Promise<Evidence[]> {

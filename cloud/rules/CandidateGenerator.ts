@@ -1,5 +1,5 @@
 import { Timeline, TimelineEvent } from '../analysis/TimelineReconstructor';
-import { IncidentClassifier } from '../analysis/IncidentClassifier';
+import { isInfrastructureSource } from '../../shared/types/telemetry';
 
 export type EvaluationHintId =
     | 'DOCKER_FAILED_FIRST'
@@ -142,11 +142,11 @@ export class TimelineQuery {
     }
 
     public findFirstInfrastructureIncident(): TimelineEvent | undefined {
-        return this.findByCategory('INCIDENT').find(e => e.event === 'DETECTED' && IncidentClassifier.isInfrastructure(e.source));
+        return this.findByCategory('INCIDENT').find(e => e.event === 'DETECTED' && isInfrastructureSource(e.source));
     }
 
     public findFirstOperationsIncident(): TimelineEvent | undefined {
-        return this.findByCategory('INCIDENT').find(e => e.event === 'DETECTED' && !IncidentClassifier.isInfrastructure(e.source));
+        return this.findByCategory('INCIDENT').find(e => e.event === 'DETECTED' && !isInfrastructureSource(e.source));
     }
 
     public areConcurrent(e1: TimelineEvent, e2: TimelineEvent): boolean {

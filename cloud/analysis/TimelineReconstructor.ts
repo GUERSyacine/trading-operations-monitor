@@ -1,6 +1,5 @@
-import { Evidence } from './EvidenceCollector';
-import { IncidentClassifier } from './IncidentClassifier';
-import { MVP_CONFIG } from '../../../shared/mvpConfig';
+import { Evidence, isInfrastructureSource } from '../../shared/types/telemetry';
+import { MVP_CONFIG } from '../../shared/mvpConfig';
 
 export interface TimelineEvent {
     id: string;
@@ -101,7 +100,7 @@ export class TimelineReconstructor {
                 if (!firstIncidentId) {
                     firstIncidentId = ev.id;
                 }
-                if (IncidentClassifier.isInfrastructure(ev.source)) {
+                if (isInfrastructureSource(ev.source)) {
                     if (!firstInfraIncidentId) {
                         firstInfraIncidentId = ev.id;
                     }
@@ -202,7 +201,7 @@ export class TimelineReconstructor {
                     if (firstIncidentAt === undefined) firstIncidentAt = te.timestamp;
                     lastIncidentAt = te.timestamp;
                 }
-                const isInfra = IncidentClassifier.isInfrastructure(te.source);
+                const isInfra = isInfrastructureSource(te.source);
                 if (isInfra) {
                     infraCount++;
                 } else {

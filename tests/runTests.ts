@@ -15,10 +15,10 @@ import { WatchdogOrchestrator } from '../agent/WatchdogOrchestrator';
 import { EventPersistenceService } from '../shared/services/EventPersistenceService';
 import { MVP_CONFIG } from '../shared/mvpConfig';
 import { EvidenceCollector } from '../agent/incident/analysis/EvidenceCollector';
-import { TimelineReconstructor } from '../agent/incident/analysis/TimelineReconstructor';
-import { CandidateGenerator, RootCauseCandidate } from '../agent/incident/rules/CandidateGenerator';
-import { DockerRule, TelemetryRule, VMRule, NetworkRule, ExchangeRule, LifecycleRule } from '../agent/incident/rules/CandidateRules';
-import { RootCauseScoringEngine } from '../agent/incident/analysis/RootCauseScoringEngine';
+import { TimelineReconstructor } from '../cloud/analysis/TimelineReconstructor';
+import { CandidateGenerator, RootCauseCandidate } from '../cloud/rules/CandidateGenerator';
+import { DockerRule, TelemetryRule, VMRule, NetworkRule, ExchangeRule, LifecycleRule } from '../cloud/rules/CandidateRules';
+import { RootCauseScoringEngine } from '../cloud/analysis/RootCauseScoringEngine';
 import {
     SupportingEvidenceRule,
     ContradictionRule,
@@ -28,7 +28,7 @@ import {
     FirstOccurrenceRule,
     LifecycleDurationRule,
     EvaluationHintRule
-} from '../agent/incident/rules/ScoringRules';
+} from '../cloud/rules/ScoringRules';
 
 async function runTests() {
     console.log('====================================================');

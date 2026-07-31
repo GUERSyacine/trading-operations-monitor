@@ -1,8 +1,8 @@
-import { Evidence } from '../agent/incident/analysis/EvidenceCollector';
-import { TimelineReconstructor } from '../agent/incident/analysis/TimelineReconstructor';
-import { CandidateGenerator } from '../agent/incident/rules/CandidateGenerator';
-import { DockerRule } from '../agent/incident/rules/CandidateRules';
-import { RootCauseScoringEngine } from '../agent/incident/analysis/RootCauseScoringEngine';
+import { Evidence } from '../shared/types/telemetry';
+import { TimelineReconstructor } from '../cloud/analysis/TimelineReconstructor';
+import { CandidateGenerator } from '../cloud/rules/CandidateGenerator';
+import { DockerRule } from '../cloud/rules/CandidateRules';
+import { RootCauseScoringEngine } from '../cloud/analysis/RootCauseScoringEngine';
 import {
     SupportingEvidenceRule,
     ContradictionRule,
@@ -12,7 +12,7 @@ import {
     FirstOccurrenceRule,
     LifecycleDurationRule,
     EvaluationHintRule
-} from '../agent/incident/rules/ScoringRules';
+} from '../cloud/rules/ScoringRules';
 import { MVP_CONFIG } from '../shared/mvpConfig';
 
 function runPipelineForEvidence(title: string, mockEvidence: Evidence[]) {

@@ -3,7 +3,7 @@ import { prisma } from '../../../shared/prisma';
 import { AlertingService } from '../../notification/AlertingService';
 import { IncidentSeverity as PrismaSeverity, IncidentTransitionType, IncidentActor, IncidentGroupType } from '@prisma/client';
 import { MVP_CONFIG } from '../../../shared/mvpConfig';
-import { IncidentClassifier } from '../analysis/IncidentClassifier';
+import { isInfrastructureSource } from '../../../shared/types/telemetry';
 import { IncidentPublisher } from '../../../shared/contracts/types';
 import { EventBus } from '../../../shared/services/EventBus';
 import { WatchdogEventType } from '../../../shared/types/developer';
@@ -264,7 +264,7 @@ export class IncidentManager {
     }
 
     private getGroupTypeAndCorrelationKey(symbol: string | null, source: string): { groupType: IncidentGroupType; correlationKey: string } {
-        if (IncidentClassifier.isInfrastructure(source)) {
+        if (isInfrastructureSource(source)) {
             return {
                 groupType: 'INFRASTRUCTURE',
                 correlationKey: 'INFRA:GLOBAL'

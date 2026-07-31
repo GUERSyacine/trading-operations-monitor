@@ -160,3 +160,34 @@ export const SOURCE_CAPABILITIES: Record<LifecycleSource, SourceCapabilities> = 
         ]
     }
 };
+
+export interface Evidence {
+    id: string;
+    groupId: number;
+    sequence: number;
+    category: 'INCIDENT' | 'AUDIT' | 'GROUP';
+    source: string;
+    event: 'DETECTED' | 'RESOLVED' | 'CREATED' | 'OBSERVED';
+    timestamp: number;
+    origin: 'OBSERVATION' | 'ASSESSMENT' | 'SYSTEM';
+    entityId?: string;
+    severity?: 'INFO' | 'LOW' | 'MEDIUM' | 'HIGH' | 'WARNING' | 'CRITICAL';
+    symbol?: string;
+    correlationKey?: string;
+    message?: string;
+    metadata?: Record<string, unknown>;
+}
+
+export const INFRASTRUCTURE_SOURCE_PREFIXES = [
+    'CPU', 'MEMORY', 'DISK', 'DOCKER_CONTAINER', 
+    'DNS', 'NETWORK', 'FREQTRADE_API', 'EXCHANGE_REACHABILITY',
+    'VM', 'DOCKER', 'FREQTRADE'
+];
+
+export function isInfrastructureSource(source: string): boolean {
+    for (const prefix of INFRASTRUCTURE_SOURCE_PREFIXES) {
+        if (source.startsWith(prefix)) return true;
+    }
+    return source === 'INFRASTRUCTURE';
+}
+
