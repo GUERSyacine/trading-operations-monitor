@@ -13,14 +13,8 @@ import { MVP_CONFIG } from '../shared/mvpConfig';
 
 // Developer Console Core Imports
 import { EventBus } from '../shared/services/EventBus';
-import { CommandRunner } from '../cloud/developer/CommandRunner';
-import { InfrastructureController } from '../cloud/developer/InfrastructureController';
 import { FailureInjectionService } from '../shared/services/FailureInjectionService';
 import { FeatureFlagService } from '../shared/services/FeatureFlagService';
-import { DeveloperConsoleGateway } from '../cloud/developer/DeveloperConsoleGateway';
-import { DeveloperConsoleController } from '../cloud/developer/DeveloperConsoleController';
-import { DeveloperConsoleServer } from '../cloud/developer/DeveloperConsoleServer';
-import { OperationsSimulationService } from '../cloud/developer/OperationsSimulationService';
 
 import { DefaultMachineInfoProvider } from '../shared/contracts/DefaultMachineInfoProvider';
 import { OutboxPublisher } from './incident/outbox/OutboxPublisher';
@@ -46,8 +40,6 @@ export class WatchdogOrchestrator {
     private anomalyDetector: LifecycleAnomalyDetector;
     private startedAt = Date.now();
 
-    // Developer Console Server
-    private devConsoleServer: DeveloperConsoleServer;
 
     // Agent Identity & Heartbeat Services
     private identityService: AgentIdentityService;
@@ -70,15 +62,11 @@ export class WatchdogOrchestrator {
 
     constructor() {
         const persistence = new EventPersistenceService();
-        const operationsSimulationService = new OperationsSimulationService(persistence);
 
         // Instantiate Developer Console Services first for constructor injection
         const eventBus = EventBus.getInstance();
-        const cmdRunner = new CommandRunner();
-        const infraController = new InfrastructureController(cmdRunner, eventBus);
         const failureService = new FailureInjectionService(eventBus);
         const featureFlagService = new FeatureFlagService(eventBus);
-        const devConsoleGateway = new DeveloperConsoleGateway(eventBus);
 
         const machineProvider = new DefaultMachineInfoProvider(
             () => this.identityService?.getIdentity()?.machineId || this.identityService?.getActiveMachineId()
@@ -113,16 +101,6 @@ export class WatchdogOrchestrator {
             featureFlagService
         );
 
-        const devConsoleController = new DeveloperConsoleController(
-            failureService,
-            featureFlagService,
-            infraController,
-            operationsSimulationService
-        );
-        this.devConsoleServer = new DeveloperConsoleServer(
-            devConsoleController,
-            devConsoleGateway
-        );
 
         // Instantiate Agent Identity & Heartbeat
         const identityStore = new IdentityStore();
@@ -217,13 +195,6 @@ export class WatchdogOrchestrator {
         console.log('[Orchestrator] Starting Freqtrade WebSocket Ingestion Adapter...');
         this.freqtradeWsAdapter.connect();
 
-        const startConsole = process.env.WATCHDOG_START_DEV_CONSOLE !== 'false';
-        if (startConsole) {
-            console.log('[Orchestrator] Starting Developer Control Console...');
-            this.devConsoleServer.start();
-        } else {
-            console.log('[Orchestrator] Standing alone: Skipping Developer Control Console local start.');
-        }
 
         console.log('[Orchestrator] Starting Outbox Sync Worker...');
         this.syncWorker.start();
@@ -284,11 +255,6 @@ export class WatchdogOrchestrator {
         console.log('[Orchestrator] Stopping Agent Identity Service...');
         this.identityService.stop();
 
-        const startConsole = process.env.WATCHDOG_START_DEV_CONSOLE !== 'false';
-        if (startConsole) {
-            console.log('[Orchestrator] Stopping Developer Control Console...');
-            await this.devConsoleServer.stop();
-        }
 
         console.log('[Orchestrator] Stopping Outbox Sync Worker...');
         this.syncWorker.stop();

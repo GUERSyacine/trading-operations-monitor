@@ -5,7 +5,10 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "watch": "tsc -w"
+    "watch": "tsc -w",
+    "dev:cloud": "node dist/cloud/main.js",
+    "start:agent": "node dist/agent/main.js",
+    "start:cloud": "node dist/cloud/main.js"
   },
   "dependencies": {
     "@prisma/client": "^5.10.2",
