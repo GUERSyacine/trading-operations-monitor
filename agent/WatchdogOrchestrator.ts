@@ -6,7 +6,7 @@ import { OperationsWatchdogService } from './detectors/operations/OperationsWatc
 import { RuntimeMonitorService } from './detectors/operations/RuntimeMonitorService';
 import { EventPersistenceService } from '../shared/services/EventPersistenceService';
 import { FreqtradeAdapter } from './adapters/freqtrade/FreqtradeAdapter';
-import { FreqtradeWebhookReceiver } from './detectors/infrastructure/FreqtradeWebhookReceiver';
+
 import { FreqtradeWebSocketAdapter } from './detectors/infrastructure/FreqtradeWebSocketAdapter';
 import { LifecycleAnomalyDetector } from './incident/manager/LifecycleAnomalyDetector';
 import { MVP_CONFIG } from '../shared/mvpConfig';
@@ -35,7 +35,7 @@ export class WatchdogOrchestrator {
     private opsService: OperationsWatchdogService;
     private runtimeService: RuntimeMonitorService;
     private freqtradeAdapter: FreqtradeAdapter;
-    private webhookReceiver: FreqtradeWebhookReceiver;
+
     private freqtradeWsAdapter: FreqtradeWebSocketAdapter;
     private anomalyDetector: LifecycleAnomalyDetector;
     private startedAt = Date.now();
@@ -122,7 +122,7 @@ export class WatchdogOrchestrator {
         );
 
         this.runtimeService = new RuntimeMonitorService(this.alertingService);
-        this.webhookReceiver = new FreqtradeWebhookReceiver(persistence);
+
 
         const ftWsToken = process.env.FREQTRADE_WS_TOKEN || 'bUSvW1ejp16EhdFuhZB_E81ZEcZssGxVSg';
         this.freqtradeWsAdapter = new FreqtradeWebSocketAdapter(
@@ -189,8 +189,7 @@ export class WatchdogOrchestrator {
         console.log('[Orchestrator] Starting Freqtrade Ingestion Adapter...');
         this.freqtradeAdapter.start();
 
-        console.log('[Orchestrator] Starting Freqtrade Webhook Receiver...');
-        this.webhookReceiver.start();
+
 
         console.log('[Orchestrator] Starting Freqtrade WebSocket Ingestion Adapter...');
         this.freqtradeWsAdapter.connect();
@@ -262,8 +261,7 @@ export class WatchdogOrchestrator {
         console.log('[Orchestrator] Stopping Freqtrade Ingestion Adapter...');
         this.freqtradeAdapter.stop();
 
-        console.log('[Orchestrator] Stopping Freqtrade Webhook Receiver...');
-        await this.webhookReceiver.stop();
+
 
         console.log('[Orchestrator] Stopping Freqtrade WebSocket Ingestion Adapter...');
         this.freqtradeWsAdapter.disconnect();
