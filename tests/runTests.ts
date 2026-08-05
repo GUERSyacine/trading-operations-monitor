@@ -10,7 +10,6 @@ import { ReportingService } from '../agent/reporting/ReportingService';
 import { AlertingService } from '../agent/notification/AlertingService';
 import { HealthTreeService } from '../agent/incident/analysis/HealthTreeService';
 import { prisma } from '../shared/prisma';
-import { FreqtradeWebhookReceiver } from '../agent/detectors/infrastructure/FreqtradeWebhookReceiver';
 import { WatchdogOrchestrator } from '../agent/WatchdogOrchestrator';
 import { EventPersistenceService } from '../shared/services/EventPersistenceService';
 import { MVP_CONFIG } from '../shared/mvpConfig';
@@ -475,56 +474,7 @@ async function runTests() {
         assert(pipelineC.metadata?.observability?.confidence?.score === 'HIGH', 'Confidence score should be HIGH.');
         assert(mockAlerting.alertsSent.length === 0, 'No alert should trigger for recent unfilled signal.');
 
-        // Scenario E: Webhook Ingestion Integration
-        const receiver = new FreqtradeWebhookReceiver(new EventPersistenceService(), 9876, '127.0.0.1');
-        receiver.start();
 
-        let persistedEvents: any[] = [];
-        const webhookOriginalCreate = (prisma.decisionAudit as any).create;
-        (prisma.decisionAudit as any).create = async (args: any) => {
-            persistedEvents.push(args.data);
-            return args.data as any;
-        };
-
-        const response1 = await fetch('http://127.0.0.1:9876/webhooks/freqtrade', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                type: 'entry',
-                trade_id: 101,
-                symbol: 'ETH/USDT',
-                strategy: 'TREND_RIDER',
-                direction: 'long',
-                price: 3200,
-                amount: 0.5
-            })
-        });
-        const resJson1 = await response1.json() as any;
-        assert(response1.status === 200, 'Webhook receiver should return status 200 for SIGNAL.');
-        assert(resJson1.status === 'success', 'SIGNAL ingestion should be successful.');
-        assert(persistedEvents.length === 1 && persistedEvents[0].classification === 'SIGNAL', 'Persists SIGNAL event.');
-        assert((persistedEvents[0].metadata as any).lifecycleEvent.symbol === 'ETHUSDT', 'Symbol is normalized to ETHUSDT.');
-
-        persistedEvents = [];
-        const response2 = await fetch('http://127.0.0.1:9876/webhooks/freqtrade', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                type: 'entry_fill',
-                trade_id: 101,
-                order_id: 'order_abc',
-                symbol: 'ETH/USDT',
-                price: 3205,
-                amount: 0.5
-            })
-        });
-        const resJson2 = await response2.json() as any;
-        assert(response2.status === 200, 'Webhook receiver should return 200 for fill.');
-        assert(persistedEvents.length === 1 && persistedEvents[0].classification === 'ORDER_FILLED', 'Persists ORDER_FILLED event.');
-        assert((persistedEvents[0].metadata as any).lifecycleEvent.orderId === 'order_abc', 'orderId is stored correctly.');
-
-        (prisma.decisionAudit as any).create = webhookOriginalCreate;
-        await receiver.stop();
 
         // Scenario D: Old SIGNAL (No fill beyond timeout)
         mockFindMany = async () => [

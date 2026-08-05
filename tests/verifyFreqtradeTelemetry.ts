@@ -2,12 +2,11 @@ import * as dotenv from 'dotenv';
 dotenv.config({ path: '../.env' });
 dotenv.config(); // fallback to current dir
 
-
 import { EventPersistenceService } from '../shared/services/EventPersistenceService';
-import { FreqtradeWebhookReceiver } from '../agent/detectors/infrastructure/FreqtradeWebhookReceiver';
+import { FreqtradeWebSocketAdapter } from '../agent/detectors/infrastructure/FreqtradeWebSocketAdapter';
 import { FreqtradeAdapter } from '../agent/adapters/freqtrade/FreqtradeAdapter';
 import { prisma } from '../shared/prisma';
-
+import WebSocket from 'ws';
 
 async function runVerification() {
     console.log('🧪 Starting Level 1 Freqtrade Telemetry Ingestion Verification...');
@@ -25,52 +24,69 @@ async function runVerification() {
     });
     console.log('🧹 Cleaned up existing Freqtrade telemetry from database.');
 
-    // 2. Test Webhook Ingestion via FreqtradeWebhookReceiver
-    const receiver = new FreqtradeWebhookReceiver(persistence, 19999, '127.0.0.1');
-    receiver.start();
+    // 2. Test WebSocket Ingestion via local mock WebSocket Server & FreqtradeWebSocketAdapter
+    console.log('📡 Starting local Mock WebSocket server...');
+    const wss = new WebSocket.Server({ port: 19999 });
 
-    console.log('📡 Injecting simulated webhooks...');
-    
-    // Inject entry signal
-    const entryRes = await fetch('http://127.0.0.1:19999/webhooks/freqtrade', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            type: 'entry',
-            trade_id: 201,
-            symbol: 'SOL/USDT',
-            strategy: 'SOL_RIDER',
-            direction: 'long',
-            price: 150.5,
-            amount: 10
-        })
+    wss.on('connection', (ws) => {
+        console.log('🔌 Client connected to Mock WebSocket server.');
+        
+        // Wait a brief moment to send messages after connection is open
+        setTimeout(() => {
+            console.log('📡 Injecting simulated WebSocket messages...');
+            
+            // Inject entry signal (maps to ORDER_CREATED)
+            ws.send(JSON.stringify({
+                type: 'entry',
+                trade_id: 201,
+                pair: 'SOL/USDT',
+                direction: 'Long',
+                order_rate: 150.5,
+                amount: 10,
+                open_date: new Date().toISOString()
+            }));
+
+            // Inject exit fill (maps to ORDER_FILLED)
+            setTimeout(() => {
+                ws.send(JSON.stringify({
+                    type: 'exit_fill',
+                    trade_id: 201,
+                    order_id: 'ft_ord_999',
+                    pair: 'SOL/USDT',
+                    direction: 'Long',
+                    close_rate: 155.2,
+                    amount: 10,
+                    close_date: new Date().toISOString()
+                }));
+            }, 100);
+        }, 100);
     });
-    if (entryRes.status !== 200) {
-        throw new Error(`Failed to send entry webhook. Status: ${entryRes.status}`);
-    }
 
-    // Inject exit fill
-    const fillRes = await fetch('http://127.0.0.1:19999/webhooks/freqtrade', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            type: 'exit_fill',
-            trade_id: 201,
-            order_id: 'ft_ord_999',
-            symbol: 'SOL/USDT',
-            price: 155.2,
-            amount: 10
-        })
+    const config = {
+        baseUrl: 'http://127.0.0.1:19999',
+        wsToken: 'test_token',
+        username: 'freqtrader',
+        password: 'password123'
+    };
+
+    const wsAdapter = new FreqtradeWebSocketAdapter(config, persistence);
+    wsAdapter.connect();
+
+    // Wait for connection to establish and messages to be received/processed
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Cleanup websocket client and server
+    wsAdapter.disconnect();
+    await new Promise<void>((resolve, reject) => {
+        wss.close((err) => {
+            if (err) reject(err);
+            else resolve();
+        });
     });
-    if (fillRes.status !== 200) {
-        throw new Error(`Failed to send exit_fill webhook. Status: ${fillRes.status}`);
-    }
-
-    await receiver.stop();
-    console.log('🛑 Stopped webhook receiver.');
+    console.log('🛑 Stopped mock WebSocket server and client.');
 
     // 3. Test Polling Ingestion via FreqtradeAdapter
-    const config = {
+    const pollingConfig = {
         name: 'freqtrade',
         baseUrl: 'http://127.0.0.1:8080/api/v1',
         username: 'admin',
@@ -78,7 +94,7 @@ async function runVerification() {
         pollIntervalMs: 5000
     };
 
-    const adapter = new FreqtradeAdapter(config, persistence);
+    const adapter = new FreqtradeAdapter(pollingConfig, persistence);
 
     // Mock the apiRequest call to return test trades and orders
     const mockTrades: any = {
@@ -151,23 +167,23 @@ async function runVerification() {
     // Assertions
     console.log('\n✏️ Running Assertions:');
     
-    // Check Event 1: SIGNAL Webhook
+    // Check Event 1: ORDER_CREATED via WebSocket
     const evt1 = events[0];
-    console.log('  - Asserting Event 1 (SIGNAL via Webhook)...');
-    if (evt1.eventType !== 'SIGNAL' || evt1.captureMethod !== 'WEBHOOK' || evt1.schemaVersion !== 1) {
-        throw new Error('Event 1 mismatch.');
+    console.log('  - Asserting Event 1 (ORDER_CREATED via WebSocket)...');
+    if (evt1.eventType !== 'ORDER_CREATED' || evt1.captureMethod !== 'WEBSOCKET' || evt1.schemaVersion !== 1) {
+        throw new Error(`Event 1 mismatch. eventType=${evt1.eventType}, captureMethod=${evt1.captureMethod}`);
     }
-    if (evt1.eventId !== `FREQTRADE:201:SIGNAL:${evt1.eventTimestamp}`) {
+    if (evt1.eventId !== `FREQTRADE:201:entry:${evt1.eventTimestamp}`) {
         throw new Error(`Deterministic ID failed for Event 1: ${evt1.eventId}`);
     }
 
-    // Check Event 2: ORDER_FILLED Webhook
+    // Check Event 2: ORDER_FILLED via WebSocket
     const evt2 = events[1];
-    console.log('  - Asserting Event 2 (ORDER_FILLED via Webhook)...');
-    if (evt2.eventType !== 'ORDER_FILLED' || evt2.captureMethod !== 'WEBHOOK') {
+    console.log('  - Asserting Event 2 (ORDER_FILLED via WebSocket)...');
+    if (evt2.eventType !== 'ORDER_FILLED' || evt2.captureMethod !== 'WEBSOCKET') {
         throw new Error('Event 2 mismatch.');
     }
-    if (evt2.eventId !== `FREQTRADE:ft_ord_999:ORDER_FILLED:${evt2.eventTimestamp}`) {
+    if (evt2.eventId !== `FREQTRADE:201:exit_fill:${evt2.eventTimestamp}`) {
         throw new Error(`Deterministic ID failed for Event 2: ${evt2.eventId}`);
     }
 
