@@ -1236,36 +1236,19 @@ export class OperationsWatchdogService {
                     const auditTime = audit.createdAt.getTime();
                     const auditSide = meta.side ?? lifecycle.side;
 
-                    // Look forward in time for the closest event with an explicit orderId
+                    // Find the chronologically closest explicit order ID (absolute distance in time)
                     let bestOrderId: string | undefined = undefined;
                     let bestDiff = Infinity;
 
                     for (const exp of explicitOrderIds) {
-                        if (exp.time >= auditTime) {
-                            const diff = exp.time - auditTime;
-                            if (diff < bestDiff) {
-                                // Match side if both are specified, or fall back to any closest event
-                                if (!auditSide || !exp.side || auditSide === exp.side) {
-                                    bestDiff = diff;
-                                    bestOrderId = exp.orderId;
-                                }
-                            }
+                        // Match side if both are specified
+                        if (auditSide && exp.side && auditSide !== exp.side) {
+                            continue;
                         }
-                    }
-
-                    // If not found forward, look backward
-                    if (!bestOrderId) {
-                        bestDiff = Infinity;
-                        for (const exp of explicitOrderIds) {
-                            if (exp.time < auditTime) {
-                                const diff = auditTime - exp.time;
-                                if (diff < bestDiff) {
-                                    if (!auditSide || !exp.side || auditSide === exp.side) {
-                                        bestDiff = diff;
-                                        bestOrderId = exp.orderId;
-                                    }
-                                }
-                            }
+                        const diff = Math.abs(exp.time - auditTime);
+                        if (diff < bestDiff) {
+                            bestDiff = diff;
+                            bestOrderId = exp.orderId;
                         }
                     }
 
