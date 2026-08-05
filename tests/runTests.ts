@@ -851,6 +851,32 @@ async function runTests() {
         assert((watchdog as any).consecutiveStructuralViolations === 0, 'Recycled Trade ID across symbols should not increment structural violations.');
         assert(mockIncidentManager.incidentsReported.length === 0, 'No execution risk incidents should be reported.');
 
+        // Test J8: Trade ID Recycling & Same-Symbol Reuse regression check
+        console.log('   > Running Test J8: Trade ID Recycling & Same-Symbol Reuse regression checks...');
+        
+        const now8 = Date.now();
+        mockFindMany = async () => [
+            // Old Order sequence for Trade 228 (ETHUSDT)
+            { classification: 'ORDER_CREATED', createdAt: new Date(now8 - 100 * 1000), metadata: { tradeId: '228', symbol: 'ETHUSDT', source: 'FREQTRADE' } },
+            { classification: 'ORDER_OPEN', createdAt: new Date(now8 - 90 * 1000), metadata: { tradeId: '228', orderId: 'ord_old', symbol: 'ETHUSDT', source: 'FREQTRADE' } },
+            { classification: 'ORDER_CANCELLED', createdAt: new Date(now8 - 42 * 1000), metadata: { tradeId: '228', symbol: 'ETHUSDT', source: 'FREQTRADE' } },
+            
+            // New Order sequence for Trade 228 (same trade ID, same symbol, reused after restart)
+            { classification: 'ORDER_CREATED', createdAt: new Date(now8 - 48 * 1000), metadata: { tradeId: '228', symbol: 'ETHUSDT', source: 'FREQTRADE' } },
+            { classification: 'ORDER_OPEN', createdAt: new Date(now8 - 40 * 1000), metadata: { tradeId: '228', orderId: 'ord_new', symbol: 'ETHUSDT', source: 'FREQTRADE' } },
+            { classification: 'ORDER_FILLED', createdAt: new Date(now8 - 30 * 1000), metadata: { tradeId: '228', symbol: 'ETHUSDT', source: 'FREQTRADE' } }
+        ];
+        (watchdog as any).consecutiveStructuralViolations = 0;
+        (watchdog as any).consecutiveStructuralViolationsMap.clear();
+        mockIncidentManager.incidentsReported = [];
+        mockIncidentManager.incidentsResolved = [];
+        
+        const checkJ8 = await watchdog.checkOrderPipeline(5 * 60 * 1000);
+        assert(checkJ8.metadata?.observability?.lifecycle?.invalidTrades === 0, 'Recycled Trade ID on same symbol should have 0 invalid trades.');
+        assert(checkJ8.metadata?.observability?.lifecycle?.validTrades === 1, 'Recycled Trade ID on same symbol should result in 1 independent valid consolidated trade.');
+        assert((watchdog as any).consecutiveStructuralViolations === 0, 'Recycled Trade ID on same symbol should not increment structural violations.');
+        assert(mockIncidentManager.incidentsReported.length === 0, 'No execution risk incidents should be reported.');
+
         // Reset mocks
         mockCreate = async (args: any) => args.data as any;
         (prisma.decisionAudit as any).findFirst = originalFindFirst;

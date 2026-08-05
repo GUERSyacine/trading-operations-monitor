@@ -1236,7 +1236,25 @@ export class OperationsWatchdogService {
                     const auditTime = audit.createdAt.getTime();
                     const auditSide = meta.side ?? lifecycle.side;
 
-                    // Find the chronologically closest explicit order ID (absolute distance in time)
+                    const isInitiation = [
+                        'SIGNAL',
+                        'ORDER_CREATED',
+                        'ORDER_SUBMITTED',
+                        'ORDER_SENT',
+                        'ORDER_ACKNOWLEDGED',
+                        'ORDER_ACK'
+                    ].includes(classification);
+
+                    const isTermination = [
+                        'ORDER_CANCELLED',
+                        'ORDER_FILLED',
+                        'ORDER_PARTIALLY_FILLED',
+                        'ORDER_FAILED',
+                        'EXCHANGE_REJECTED',
+                        'ORDER'
+                    ].includes(classification);
+
+                    // Find the chronologically closest explicit order ID (using directional heuristics)
                     let bestOrderId: string | undefined = undefined;
                     let bestDiff = Infinity;
 
@@ -1245,6 +1263,17 @@ export class OperationsWatchdogService {
                         if (auditSide && exp.side && auditSide !== exp.side) {
                             continue;
                         }
+
+                        // Apply directional filter:
+                        // Initiation events must look forward in time (exp.time >= auditTime)
+                        if (isInitiation && exp.time < auditTime) {
+                            continue;
+                        }
+                        // Termination events must look backward in time (exp.time <= auditTime)
+                        if (isTermination && exp.time > auditTime) {
+                            continue;
+                        }
+
                         const diff = Math.abs(exp.time - auditTime);
                         if (diff < bestDiff) {
                             bestDiff = diff;
@@ -1252,9 +1281,24 @@ export class OperationsWatchdogService {
                         }
                     }
 
+                    // Fallback to absolute closest if directional search yielded no candidate
+                    if (bestOrderId === undefined) {
+                        for (const exp of explicitOrderIds) {
+                            if (auditSide && exp.side && auditSide !== exp.side) {
+                                continue;
+                            }
+                            const diff = Math.abs(exp.time - auditTime);
+                            if (diff < bestDiff) {
+                                bestDiff = diff;
+                                bestOrderId = exp.orderId;
+                            }
+                        }
+                    }
+
                     const resolvedId = bestOrderId || 'default_order';
                     resolvedOrderIds.set(auditKey, resolvedId);
                 }
+
 
                 const auditsWithOrderId: Map<string, typeof audits> = new Map();
                 for (let i = 0; i < tradeTimeline.length; i++) {
