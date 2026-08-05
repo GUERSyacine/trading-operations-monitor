@@ -1,5 +1,6 @@
 import { IncidentManager } from './IncidentManager';
 import { prisma } from '../../../shared/prisma';
+import { buildTradeKey, normalizeSymbol } from '../../../shared/types/telemetry';
 
 export class LifecycleAnomalyDetector {
     constructor(private incidentManager: IncidentManager) {}
@@ -35,13 +36,14 @@ export class LifecycleAnomalyDetector {
                 }
             });
 
-            // 3. Build in-memory set of resolved trade IDs
-            const resolvedTradeIds = new Set<string>();
+            // 3. Build in-memory set of resolved trade keys (tradeId::symbol)
+            const resolvedTradeKeys = new Set<string>();
             for (const audit of resolvedAudits) {
                 const lifecycleEvent = (audit.metadata as any)?.lifecycleEvent;
                 const tradeId = lifecycleEvent?.tradeId || (audit.metadata as any)?.rawPayload?.trade_id;
+                const symbol = lifecycleEvent?.symbol || (audit.metadata as any)?.rawPayload?.pair || 'unknown';
                 if (tradeId !== undefined && tradeId !== null) {
-                    resolvedTradeIds.add(String(tradeId));
+                    resolvedTradeKeys.add(buildTradeKey(tradeId, symbol));
                 }
             }
 
@@ -54,12 +56,13 @@ export class LifecycleAnomalyDetector {
 
                 const tradeId = String(lifecycleEvent.tradeId);
                 const symbol = lifecycleEvent.symbol || 'unknown';
+                const tradeKey = buildTradeKey(tradeId, symbol);
                 const observedAt = Number(lifecycleEvent.observedAt || audit.createdAt.getTime());
 
                 // Check if the order has been open/unfilled for longer than stuckTimeoutMs
                 if (now - observedAt > stuckTimeoutMs) {
-                    const sourceKey = `OP:${tradeId}`;
-                    if (!resolvedTradeIds.has(tradeId)) {
+                    const sourceKey = `OP:${tradeId}:${normalizeSymbol(symbol)}`;
+                    if (!resolvedTradeKeys.has(tradeKey)) {
                         // Order is stuck and has no resolve event. Report Incident.
                         await this.incidentManager.reportIncident({
                             symbol: symbol,

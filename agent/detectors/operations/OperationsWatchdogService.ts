@@ -1,6 +1,6 @@
 import { prisma } from '../../../shared/prisma';
 import { AlertingService } from '../../notification/AlertingService';
-import { HealthCheckResult, HealthNode, HealthStatus, SOURCE_CAPABILITIES, LifecycleSource, LifecycleEventType } from '../../../shared/types/telemetry';
+import { HealthCheckResult, HealthNode, HealthStatus, SOURCE_CAPABILITIES, LifecycleSource, LifecycleEventType, buildTradeKey, normalizeSymbol } from '../../../shared/types/telemetry';
 import { MVP_CONFIG } from '../../../shared/mvpConfig';
 import { IncidentManager } from '../../incident/manager/IncidentManager';
 import { TradingAdapter } from '../../adapters/base/TradingAdapter';
@@ -1100,17 +1100,18 @@ export class OperationsWatchdogService {
             const telemetryCoverage = evalResult.telemetryCoverage;
 
             // Two-Stage Correlation Model & Reconstruction Engine
-            const uniqueTradeIds = new Set<string>();
+            const uniqueTradeKeys = new Set<string>();
             for (const audit of audits) {
                 const meta = audit.metadata as Record<string, any> || {};
                 const lifecycle = meta.lifecycleEvent || {};
                 const tId = meta.tradeId ?? lifecycle.tradeId;
+                const symbol = meta.symbol ?? lifecycle.symbol ?? 'unknown';
                 if (tId !== undefined && tId !== null && tId !== '') {
-                    uniqueTradeIds.add(String(tId));
+                    uniqueTradeKeys.add(buildTradeKey(tId, symbol));
                 }
             }
 
-            const orderToTradeMap = new Map<string, string>();
+            const orderToTradeMap = new Map<string, string>(); // orderId -> tradeKey
             let correlationConflicts = 0;
 
             for (const audit of audits) {
@@ -1118,38 +1119,39 @@ export class OperationsWatchdogService {
                 const lifecycle = meta.lifecycleEvent || {};
                 const tId = meta.tradeId ?? lifecycle.tradeId;
                 const oId = meta.orderId ?? lifecycle.orderId;
+                const symbol = meta.symbol ?? lifecycle.symbol ?? 'unknown';
 
                 if (tId !== undefined && tId !== null && tId !== '' && oId !== undefined && oId !== null && oId !== '') {
-                    const tradeIdStr = String(tId);
+                    const tradeKeyStr = buildTradeKey(tId, symbol);
                     const orderIdStr = String(oId);
 
                     if (orderToTradeMap.has(orderIdStr)) {
-                        const existingTradeId = orderToTradeMap.get(orderIdStr);
-                        if (existingTradeId !== tradeIdStr) {
+                        const existingTradeKey = orderToTradeMap.get(orderIdStr);
+                        if (existingTradeKey !== tradeKeyStr) {
                             correlationConflicts++;
-                            console.warn(`[OperationsWatchdog] Correlation conflict: orderId ${orderIdStr} maps to both tradeId ${existingTradeId} and ${tradeIdStr}`);
+                            console.warn(`[OperationsWatchdog] Correlation conflict: orderId ${orderIdStr} maps to both tradeKey ${existingTradeKey} and ${tradeKeyStr}`);
                         }
                     } else {
-                        orderToTradeMap.set(orderIdStr, tradeIdStr);
+                        orderToTradeMap.set(orderIdStr, tradeKeyStr);
                     }
                 }
             }
 
-            const tradeToOrdersMap = new Map<string, Set<string>>();
-            for (const [orderId, tradeId] of orderToTradeMap.entries()) {
-                if (!tradeToOrdersMap.has(tradeId)) {
-                    tradeToOrdersMap.set(tradeId, new Set<string>());
+            const tradeToOrdersMap = new Map<string, Set<string>>(); // tradeKey -> Set<orderId>
+            for (const [orderId, tradeKey] of orderToTradeMap.entries()) {
+                if (!tradeToOrdersMap.has(tradeKey)) {
+                    tradeToOrdersMap.set(tradeKey, new Set<string>());
                 }
-                tradeToOrdersMap.get(tradeId)!.add(orderId);
+                tradeToOrdersMap.get(tradeKey)!.add(orderId);
             }
 
             console.log('CORRELATION DEBUG');
-            console.log('uniqueTradeIds=', uniqueTradeIds.size);
+            console.log('uniqueTradeKeys=', uniqueTradeKeys.size);
             console.log('orderToTradeMap=', orderToTradeMap.size);
             console.log('tradeToOrdersMap=', tradeToOrdersMap.size);
 
             let tradesWithLifecycleTelemetry = 0;
-            const totalTradesAnalyzed = uniqueTradeIds.size;
+            const totalTradesAnalyzed = uniqueTradeKeys.size;
 
             let validTrades = 0;
             let invalidTrades = 0;
@@ -1163,18 +1165,26 @@ export class OperationsWatchdogService {
 
             const observedViolationsInCycle = new Set<RiskViolationType>();
 
-            for (const tradeId of uniqueTradeIds) {
-                const associatedOrders = tradeToOrdersMap.get(tradeId) || new Set<string>();
+            for (const tradeKey of uniqueTradeKeys) {
+                const parts = tradeKey.split('::');
+                const tradeId = parts[0];
+                const tradeSymbol = parts[1];
+                const associatedOrders = tradeToOrdersMap.get(tradeKey) || new Set<string>();
                 
                 const tradeTimeline = audits.filter(audit => {
                     const meta = audit.metadata as Record<string, any> || {};
                     const lifecycle = meta.lifecycleEvent || {};
                     const rawTradeId = meta.tradeId ?? lifecycle.tradeId;
                     const rawOrderId = meta.orderId ?? lifecycle.orderId;
+                    const symbol = meta.symbol ?? lifecycle.symbol ?? 'unknown';
+                    
                     const tId = rawTradeId !== undefined && rawTradeId !== null ? String(rawTradeId) : undefined;
                     const oId = rawOrderId !== undefined && rawOrderId !== null ? String(rawOrderId) : undefined;
                     
-                    return tId === tradeId || (oId !== undefined && associatedOrders.has(oId));
+                    const matchesTradeKey = (tId === tradeId && normalizeSymbol(symbol) === tradeSymbol);
+                    const matchesAssociatedOrder = (oId !== undefined && associatedOrders.has(oId));
+                    
+                    return matchesTradeKey || matchesAssociatedOrder;
                 });
 
                 tradeTimeline.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
@@ -1482,15 +1492,7 @@ export class OperationsWatchdogService {
                     duplicateEventsObserved += result.duplicates;
                 }
 
-                let tradeSymbol = 'unknown';
-                for (const audit of tradeTimeline) {
-                    const meta = audit.metadata as Record<string, any> || {};
-                    const s = meta.lifecycleEvent?.symbol || meta.symbol;
-                    if (s && s !== 'unknown') {
-                        tradeSymbol = String(s);
-                        break;
-                    }
-                }
+                // tradeSymbol is already extracted from tradeKey above
 
                 if (hasValidatedOrder) {
                     if (tradeIsInvalid) {
@@ -1500,7 +1502,7 @@ export class OperationsWatchdogService {
                             observedViolationsInCycle.add(tradeViolationType);
 
                              // Report symbol-specific / trade-specific incident with source OP:${tradeId}:${violationType}
-                             const sourceKey = `OP:${tradeId}:${tradeViolationType}`;
+                             const sourceKey = `OP:${tradeId}:${tradeSymbol}:${tradeViolationType}`;
                              await this.incidentManager.reportIncident({
                                  symbol: tradeSymbol,
                                  level: 'HIGH',
@@ -1517,11 +1519,11 @@ export class OperationsWatchdogService {
  
                      // If trade is valid (or no longer has anomalies), resolve any active incidents matching the trade ID source prefix
                      if (!tradeIsInvalid) {
-                         const sourcePrefix = `OP:${tradeId}:`;
+                         const sourcePrefix = `OP:${tradeId}:${tradeSymbol}:`;
                          if (typeof this.incidentManager.resolveIncidentsBySourcePrefix === 'function') {
                              await this.incidentManager.resolveIncidentsBySourcePrefix(sourcePrefix, tradeSymbol);
                          } else {
-                             await this.incidentManager.resolveIncidentBySource(`OP:${tradeId}`, tradeSymbol);
+                             await this.incidentManager.resolveIncidentBySource(`OP:${tradeId}:${tradeSymbol}`, tradeSymbol);
                          }
                      }
 

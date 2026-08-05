@@ -825,6 +825,32 @@ async function runTests() {
         assert((watchdog as any).consecutiveStructuralViolations === 1, 'Simulator trade with partial timeline should increment structural violations.');
         assert(mockIncidentManager.incidentsReported.some((i: any) => i.reason.includes('UNEXPECTED_FILL')), 'Simulator trade with partial timeline should report UNEXPECTED_FILL incident.');
 
+        // Test J7: Trade ID Recycling / Re-use regression check
+        console.log('   > Running Test J7: Trade ID Recycling & Reuse regression checks...');
+        
+        const now = Date.now();
+        mockFindMany = async () => [
+            // ETHUSDT lifecycle for Trade 227
+            { classification: 'ORDER_CREATED', createdAt: new Date(now - 100 * 1000), metadata: { tradeId: '227', symbol: 'ETHUSDT', source: 'FREQTRADE' } },
+            { classification: 'ORDER_OPEN', createdAt: new Date(now - 90 * 1000), metadata: { tradeId: '227', symbol: 'ETHUSDT', source: 'FREQTRADE' } },
+            { classification: 'ORDER_CANCELLED', createdAt: new Date(now - 80 * 1000), metadata: { tradeId: '227', symbol: 'ETHUSDT', source: 'FREQTRADE' } },
+            
+            // SNDKBUSDT lifecycle for Trade 227 (reused trade ID)
+            { classification: 'ORDER_CREATED', createdAt: new Date(now - 50 * 1000), metadata: { tradeId: '227', symbol: 'SNDKBUSDT', source: 'FREQTRADE' } },
+            { classification: 'ORDER_OPEN', createdAt: new Date(now - 40 * 1000), metadata: { tradeId: '227', symbol: 'SNDKBUSDT', source: 'FREQTRADE' } },
+            { classification: 'ORDER_FILLED', createdAt: new Date(now - 30 * 1000), metadata: { tradeId: '227', symbol: 'SNDKBUSDT', source: 'FREQTRADE' } }
+        ];
+        (watchdog as any).consecutiveStructuralViolations = 0;
+        (watchdog as any).consecutiveStructuralViolationsMap.clear();
+        mockIncidentManager.incidentsReported = [];
+        mockIncidentManager.incidentsResolved = [];
+        
+        const checkJ7 = await watchdog.checkOrderPipeline(5 * 60 * 1000);
+        assert(checkJ7.metadata?.observability?.lifecycle?.invalidTrades === 0, 'Recycled Trade ID across symbols should have 0 invalid trades.');
+        assert(checkJ7.metadata?.observability?.lifecycle?.validTrades === 2, 'Recycled Trade ID across symbols should result in 2 independent valid trades.');
+        assert((watchdog as any).consecutiveStructuralViolations === 0, 'Recycled Trade ID across symbols should not increment structural violations.');
+        assert(mockIncidentManager.incidentsReported.length === 0, 'No execution risk incidents should be reported.');
+
         // Reset mocks
         mockCreate = async (args: any) => args.data as any;
         (prisma.decisionAudit as any).findFirst = originalFindFirst;

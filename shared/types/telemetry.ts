@@ -191,3 +191,15 @@ export function isInfrastructureSource(source: string): boolean {
     return source === 'INFRASTRUCTURE';
 }
 
+export function normalizeSymbol(symbol: any): string {
+    if (typeof symbol === 'string') {
+        return symbol.replace('/', '').toUpperCase();
+    }
+    return 'UNKNOWN';
+}
+
+export function buildTradeKey(tradeId: number | string, symbol: string): string {
+    return `${tradeId}::${normalizeSymbol(symbol)}`;
+}
+
+
