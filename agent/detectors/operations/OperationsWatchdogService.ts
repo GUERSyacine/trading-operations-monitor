@@ -1009,6 +1009,27 @@ export class OperationsWatchdogService {
             }, {});
 
             console.log('classifications:', classifications);
+            
+            // Calculate and log Telemetry Reconciliation Statistics
+            let wsTotalEvents = 0;
+            let wsDeterministicCount = 0;
+            let wsPendingHeuristicCount = 0;
+
+            for (const audit of audits) {
+                const meta = audit.metadata as Record<string, any> || {};
+                const lifecycle = meta.lifecycleEvent || {};
+                if (lifecycle.captureMethod === 'WEBSOCKET') {
+                    wsTotalEvents++;
+                    const oId = lifecycle.orderId;
+                    if (oId && oId !== 'undefined' && oId !== 'null') {
+                        wsDeterministicCount++;
+                    } else {
+                        wsPendingHeuristicCount++;
+                    }
+                }
+            }
+
+            console.log(`[TelemetryReconciliation] DB Status: Total WS events = ${wsTotalEvents}. Deterministic = ${wsDeterministicCount}, Pending association = ${wsPendingHeuristicCount}`);
             console.log('================================================');
 
             let signals = 0;
@@ -1160,6 +1181,10 @@ export class OperationsWatchdogService {
             let tradesWithSkippedStages = 0;
             let duplicateEventsObserved = 0;
 
+            // Track telemetry reconciliation method stats cycle-wide
+            let wsHeuristicCount = 0;
+            let wsUnresolvedCount = 0;
+
             // Map event classifications to state values for chronological sequence validation
             // (Note: getEventStateValue and canonicalOrder have been moved to class methods)
 
@@ -1297,6 +1322,17 @@ export class OperationsWatchdogService {
 
                     const resolvedId = bestOrderId || 'default_order';
                     resolvedOrderIds.set(auditKey, resolvedId);
+                    
+                    if (lifecycle.captureMethod === 'WEBSOCKET') {
+                        if (bestOrderId) {
+                            wsHeuristicCount++;
+                            // Log heuristic fallback usage for this specific event
+                            console.log(`[TelemetryReconciliation] Fallback: Using chronological heuristic to associate ${classification} for trade ${tradeId} (symbol ${tradeSymbol}) to order ${resolvedId} [HEURISTIC]`);
+                        } else {
+                            wsUnresolvedCount++;
+                            console.log(`[TelemetryReconciliation] Unresolved: Could not safely associate ${classification} for trade ${tradeId} (symbol ${tradeSymbol}) [UNRESOLVED]`);
+                        }
+                    }
                 }
 
 
@@ -1564,6 +1600,14 @@ export class OperationsWatchdogService {
                     }
                 }
             }
+
+            const totalWsResolved = wsDeterministicCount + wsHeuristicCount + wsUnresolvedCount;
+            console.log('================ RECONCILIATION SUMMARY ================');
+            console.log(`[TelemetryReconciliation] DETERMINISTIC: ${wsDeterministicCount}`);
+            console.log(`[TelemetryReconciliation] HEURISTIC:     ${wsHeuristicCount}`);
+            console.log(`[TelemetryReconciliation] UNRESOLVED:    ${wsUnresolvedCount}`);
+            console.log(`[TelemetryReconciliation] Total WS Events: ${totalWsResolved}`);
+            console.log('========================================================');
 
             const validOrInvalidCount = validTrades + invalidTrades;
             const lifecycleConfidenceScore = validOrInvalidCount > 0 ? Number((validTrades / validOrInvalidCount).toFixed(4)) : 1.0;
@@ -1894,7 +1938,12 @@ export class OperationsWatchdogService {
                         terminalTrades, // Note: terminalTrades represents a separate completeness dimension and is not mutually exclusive with validTrades or invalidTrades.
                         tradesWithSkippedStages,
                         duplicateEventsObserved,
-                        lifecycleConfidenceScore
+                        lifecycleConfidenceScore,
+                        telemetryReconciliation: {
+                            deterministicCount: wsDeterministicCount,
+                            heuristicCount: wsHeuristicCount,
+                            unresolvedCount: wsUnresolvedCount
+                        }
                     },
                     analytics: {
                         unfilledSignalCount,
