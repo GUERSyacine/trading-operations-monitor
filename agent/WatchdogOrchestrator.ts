@@ -27,6 +27,13 @@ import { AgentIdentityService } from './identity/AgentIdentityService';
 import { AgentHeartbeatScheduler } from './identity/AgentHeartbeatScheduler';
 import { AgentConfigurationScheduler } from './identity/AgentConfigurationScheduler';
 
+// Repository Imports
+import {
+    PrismaIncidentRepository,
+    PrismaDecisionAuditRepository,
+    PrismaIncidentOutboxRepository
+} from '../shared/repositories/PrismaRepositories';
+
 export class WatchdogOrchestrator {
     private alertingService: AlertingService;
     private incidentManager: IncidentManager;
@@ -61,7 +68,11 @@ export class WatchdogOrchestrator {
     private anomalyInterval?: NodeJS.Timeout;
 
     constructor() {
-        const persistence = new EventPersistenceService();
+        const incidentRepo = new PrismaIncidentRepository();
+        const decisionAuditRepo = new PrismaDecisionAuditRepository();
+        const outboxRepo = new PrismaIncidentOutboxRepository();
+
+        const persistence = new EventPersistenceService(decisionAuditRepo);
 
         // Instantiate Developer Console Services first for constructor injection
         const eventBus = EventBus.getInstance();
@@ -71,9 +82,9 @@ export class WatchdogOrchestrator {
         const machineProvider = new DefaultMachineInfoProvider(
             () => this.identityService?.getIdentity()?.machineId || this.identityService?.getActiveMachineId()
         );
-        const outboxPublisher = new OutboxPublisher(machineProvider);
+        const outboxPublisher = new OutboxPublisher(machineProvider, outboxRepo);
         this.alertingService = new AlertingService({ flags: featureFlagService, outboxPublisher });
-        this.incidentManager = new IncidentManager(this.alertingService, outboxPublisher);
+        this.incidentManager = new IncidentManager(this.alertingService, outboxPublisher, incidentRepo, outboxRepo);
         this.infraService = new InfrastructureWatchdogService(this.alertingService, failureService, featureFlagService);
 
         const ftUrl = process.env.FREQTRADE_API_URL || 'http://localhost:8080/api/v1';
@@ -135,7 +146,7 @@ export class WatchdogOrchestrator {
             eventBus
         );
 
-        this.anomalyDetector = new LifecycleAnomalyDetector(this.incidentManager);
+        this.anomalyDetector = new LifecycleAnomalyDetector(this.incidentManager, decisionAuditRepo);
         this.syncWorker = new OutboxSyncWorker(
             undefined, // cloudGatewayUrl
             undefined, // syncIntervalMs
@@ -146,7 +157,8 @@ export class WatchdogOrchestrator {
             () => this.identityService?.getIdentity()?.agentId,
             () => this.identityService?.getIdentity()?.agentSecret,
             () => MVP_CONFIG.AGENT.VERSION,
-            () => MVP_CONFIG.AGENT.CAPABILITIES
+            () => MVP_CONFIG.AGENT.CAPABILITIES,
+            outboxRepo
         );
     }
 

@@ -1,7 +1,14 @@
 import { IncidentControllerState, IncidentSeverity, SymbolIncidentState } from '../../detectors/market/execution-intelligence/types';
-import { prisma } from '../../../shared/prisma';
 import { AlertingService } from '../../notification/AlertingService';
-import { IncidentSeverity as PrismaSeverity, IncidentTransitionType, IncidentActor, IncidentGroupType } from '@prisma/client';
+import {
+    IIncidentRepository,
+    IIncidentOutboxRepository,
+    IncidentSeverity as PrismaSeverity,
+    IncidentTransitionType,
+    IncidentActor,
+    IncidentGroupType,
+    IncidentRecord
+} from '../../../shared/repositories/interfaces';
 import { MVP_CONFIG } from '../../../shared/mvpConfig';
 import { isInfrastructureSource } from '../../../shared/types/telemetry';
 import { IncidentPublisher } from '../../../shared/contracts/types';
@@ -24,9 +31,30 @@ export class IncidentManager {
     };
     private globalIncidents = new Map<string, { level: IncidentSeverity; reason: string; since: number }>();
     private publisher?: IncidentPublisher;
+    private incidentRepo: IIncidentRepository;
+    private outboxRepo?: IIncidentOutboxRepository;
 
-    constructor(private alertingService?: AlertingService, publisher?: IncidentPublisher) {
+    constructor(
+        private alertingService?: AlertingService,
+        publisher?: IncidentPublisher,
+        incidentRepo?: IIncidentRepository,
+        outboxRepo?: IIncidentOutboxRepository
+    ) {
         this.publisher = publisher;
+
+        if (incidentRepo) {
+            this.incidentRepo = incidentRepo;
+        } else {
+            const { PrismaIncidentRepository } = require('../../../shared/repositories/PrismaRepositories');
+            this.incidentRepo = new PrismaIncidentRepository();
+        }
+
+        if (outboxRepo) {
+            this.outboxRepo = outboxRepo;
+        } else {
+            const { PrismaIncidentOutboxRepository } = require('../../../shared/repositories/PrismaRepositories');
+            this.outboxRepo = new PrismaIncidentOutboxRepository();
+        }
 
         // Register to listen to the LAB_RESET event to clear simulation state asynchronously
         EventBus.getInstance().subscribe((event) => {
@@ -79,11 +107,7 @@ export class IncidentManager {
      */
     async init(): Promise<void> {
         try {
-            const activeIncidents = await prisma.incident.findMany({
-                where: {
-                    resolvedAt: null
-                }
-            });
+            const activeIncidents = await this.incidentRepo.findActiveIncidents();
 
             for (const record of activeIncidents) {
                 const detectedAtNum = Number(record.detectedAt);
@@ -243,7 +267,7 @@ export class IncidentManager {
     }
 
     private async logTransition(
-        tx: any,
+        tx: IIncidentRepository,
         incidentId: number,
         transitionType: IncidentTransitionType,
         level: PrismaSeverity | null,
@@ -251,15 +275,13 @@ export class IncidentManager {
         timestamp: number,
         actor: IncidentActor
     ) {
-        await tx.incidentTransition.create({
-            data: {
-                incidentId,
-                transitionType,
-                level,
-                reason,
-                actor,
-                occurredAt: BigInt(timestamp)
-            }
+        await tx.createTransition({
+            incidentId,
+            transitionType,
+            level: level as any,
+            reason,
+            actor,
+            occurredAt: BigInt(timestamp)
         });
     }
 
@@ -296,26 +318,20 @@ export class IncidentManager {
             let incidentId: number | undefined;
             let isUpdate = false;
 
-            await prisma.$transaction(async (tx) => {
-                const existing = await tx.incident.findFirst({
-                    where: {
-                        symbol,
-                        source,
-                        resolvedAt: null
-                    }
-                });
+            await this.incidentRepo.runInTransaction(async (tx) => {
+                const existing = await tx.findUnresolvedIncident(symbol, source);
+
+                let groupId: number | null = null;
 
                 if (existing) {
-                    await tx.incident.update({
-                        where: { id: existing.id },
-                        data: {
-                            level: prismaLevel,
-                            reason,
-                            detectedAt: BigInt(detectedAt)
-                        }
+                    await tx.updateIncident(existing.id, {
+                        level: prismaLevel as any,
+                        reason,
+                        detectedAt: BigInt(detectedAt)
                     });
                     await this.logTransition(tx, existing.id, 'LEVEL_CHANGED', prismaLevel, reason, now, actor);
                     incidentId = existing.id;
+                    groupId = existing.groupId;
                     isUpdate = true;
                 } else {
                     const timeThreshold = BigInt(detectedAt - MVP_CONFIG.INCIDENTS.GROUPING_WINDOW_MS);
@@ -325,89 +341,49 @@ export class IncidentManager {
                         if (symbol && symbol !== 'GLOBAL') {
                             // Symbol incident priority:
                             // 1. Exact OPS:<symbol>
-                            group = await tx.incidentGroup.findFirst({
-                                where: {
-                                    correlationKey,
-                                    resolvedAt: null,
-                                    openedAt: { gte: timeThreshold }
-                                },
-                                orderBy: { openedAt: 'desc' }
-                            });
+                            group = await tx.findUnresolvedGroup(correlationKey, timeThreshold);
                             // 2. Fall back to active OPS:GLOBAL group
                             if (!group) {
-                                group = await tx.incidentGroup.findFirst({
-                                    where: {
-                                        correlationKey: 'OPS:GLOBAL',
-                                        resolvedAt: null,
-                                        openedAt: { gte: timeThreshold }
-                                    },
-                                    orderBy: { openedAt: 'desc' }
-                                });
+                                group = await tx.findUnresolvedGroup('OPS:GLOBAL', timeThreshold);
                             }
                         } else {
                             // Global incident priority:
                             // 1. Most recently opened active OPERATIONS group within window
-                            group = await tx.incidentGroup.findFirst({
-                                where: {
-                                    groupType: 'OPERATIONS',
-                                    resolvedAt: null,
-                                    openedAt: { gte: timeThreshold }
-                                },
-                                orderBy: { openedAt: 'desc' }
-                            });
+                            group = await tx.findUnresolvedOperationsGroup(timeThreshold);
                         }
                     } else {
                         // Infrastructure incident: exact match on INFRA:GLOBAL
-                        group = await tx.incidentGroup.findFirst({
-                            where: {
-                                correlationKey,
-                                resolvedAt: null,
-                                openedAt: { gte: timeThreshold }
-                            },
-                            orderBy: { openedAt: 'desc' }
-                        });
+                        group = await tx.findUnresolvedGroup(correlationKey, timeThreshold);
                     }
 
                     if (!group) {
-                        group = await tx.incidentGroup.create({
-                            data: {
-                                correlationKey,
-                                symbol,
-                                groupType,
-                                openedAt: BigInt(detectedAt),
-                                resolvedAt: null,
-                                highestSeverity: prismaLevel
-                            }
+                        group = await tx.createGroup({
+                            correlationKey,
+                            symbol,
+                            groupType,
+                            openedAt: BigInt(detectedAt),
+                            highestSeverity: prismaLevel as any
                         });
                     }
 
-                    const newIncident = await tx.incident.create({
-                        data: {
-                            symbol,
-                            level: prismaLevel,
-                            source,
-                            reason,
-                            detectedAt: BigInt(detectedAt),
-                            groupId: group.id
-                        }
+                    const newIncident = await tx.createIncident({
+                        symbol,
+                        level: prismaLevel as any,
+                        source,
+                        reason,
+                        detectedAt: BigInt(detectedAt),
+                        groupId: group.id
                     });
                     await this.logTransition(tx, newIncident.id, 'DETECTED', prismaLevel, reason, now, actor);
                     incidentId = newIncident.id;
+                    groupId = group.id;
                     isUpdate = false;
                 }
 
-                const incidentRecord = await tx.incident.findUnique({
-                    where: { id: incidentId },
-                    select: { groupId: true }
-                });
-
-                if (incidentRecord && incidentRecord.groupId) {
-                    const groupId = incidentRecord.groupId;
-                    const activeChildren = await tx.incident.findMany({
-                        where: {
-                            groupId,
-                            resolvedAt: null
-                        }
+                if (groupId) {
+                    const activeChildren = await tx.findIncidents({
+                        groupId,
+                        resolvedAt: null
                     });
 
                     let maxSeverity: PrismaSeverity;
@@ -419,9 +395,7 @@ export class IncidentManager {
                             }
                         }
                     } else {
-                        const allChildren = await tx.incident.findMany({
-                            where: { groupId }
-                        });
+                        const allChildren = await tx.findIncidents({ groupId });
                         maxSeverity = allChildren[0]?.level || prismaLevel;
                         for (const child of allChildren) {
                             if (IncidentManager.SEVERITY_ORDER[child.level] > IncidentManager.SEVERITY_ORDER[maxSeverity]) {
@@ -430,10 +404,7 @@ export class IncidentManager {
                         }
                     }
 
-                    await tx.incidentGroup.update({
-                        where: { id: groupId },
-                        data: { highestSeverity: maxSeverity }
-                    });
+                    await tx.updateGroup(groupId, { highestSeverity: maxSeverity });
                 }
             });
 
@@ -450,24 +421,26 @@ export class IncidentManager {
     // Recovery Logic
     // We need methods to clear incidents, via manual intervention or TTL
     private async resolveAndLogIncidents(
-        whereClause: any,
+        filterFn: (incident: IncidentRecord) => boolean,
         actor: IncidentActor,
         reason: string,
         now: number
     ) {
         try {
-            let resolvedIncidents: any[] = [];
+            let resolvedIncidents: IncidentRecord[] = [];
 
-            await prisma.$transaction(async (tx) => {
-                const active = await tx.incident.findMany({ where: whereClause });
-                if (active.length > 0) {
-                    resolvedIncidents = active;
-                    const ids = active.map(i => i.id);
-                    await tx.incident.updateMany({
-                        where: { id: { in: ids } },
-                        data: { resolvedAt: BigInt(now) }
-                    });
-                    for (const incident of active) {
+            await this.incidentRepo.runInTransaction(async (tx) => {
+                const active = await tx.findActiveIncidents();
+                const toResolve = active.filter(filterFn);
+
+                if (toResolve.length > 0) {
+                    resolvedIncidents = toResolve;
+                    const ids = toResolve.map(i => i.id);
+                    await tx.updateManyIncidents(
+                        { id: { in: ids } },
+                        { resolvedAt: BigInt(now) }
+                    );
+                    for (const incident of toResolve) {
                         await this.logTransition(
                             tx,
                             incident.id,
@@ -479,19 +452,15 @@ export class IncidentManager {
                         );
                     }
 
-                    const groupIds = Array.from(new Set(active.map(i => i.groupId).filter(Boolean))) as number[];
+                    const groupIds = Array.from(new Set(toResolve.map(i => i.groupId).filter(Boolean))) as number[];
                     for (const groupId of groupIds) {
-                        const activeChildren = await tx.incident.findMany({
-                            where: {
-                                groupId: groupId,
-                                resolvedAt: null
-                            }
+                        const activeChildren = await tx.findIncidents({
+                            groupId: groupId,
+                            resolvedAt: null
                         });
 
                         if (activeChildren.length === 0) {
-                            const allChildren = await tx.incident.findMany({
-                                where: { groupId }
-                            });
+                            const allChildren = await tx.findIncidents({ groupId });
 
                             let peakSeverity: PrismaSeverity = 'INFO';
                             if (allChildren.length > 0) {
@@ -503,12 +472,9 @@ export class IncidentManager {
                                 }
                             }
 
-                            await tx.incidentGroup.update({
-                                where: { id: groupId },
-                                data: {
-                                    resolvedAt: BigInt(now),
-                                    highestSeverity: peakSeverity
-                                }
+                            await tx.updateGroup(groupId, {
+                                resolvedAt: BigInt(now),
+                                highestSeverity: peakSeverity
                             });
                             console.log(`[IncidentManager] Automatically resolved IncidentGroup #${groupId} with peak severity ${peakSeverity} as all child incidents resolved.`);
                         } else {
@@ -519,11 +485,8 @@ export class IncidentManager {
                                 }
                             }
 
-                            await tx.incidentGroup.update({
-                                where: { id: groupId },
-                                data: {
-                                    highestSeverity: maxSeverity
-                                }
+                            await tx.updateGroup(groupId, {
+                                highestSeverity: maxSeverity
                             });
                         }
                     }
@@ -553,7 +516,7 @@ export class IncidentManager {
             }
             if (deletedCount > 0) {
                 await this.resolveAndLogIncidents(
-                    { symbol, resolvedAt: null },
+                    (inc) => inc.symbol === symbol,
                     'RECOVERY',
                     `Resolved incident for symbol: ${symbol}`,
                     now
@@ -562,7 +525,7 @@ export class IncidentManager {
         } else {
             this.globalIncidents.clear();
             await this.resolveAndLogIncidents(
-                { symbol: null, resolvedAt: null },
+                (inc) => inc.symbol === null,
                 'RECOVERY',
                 'Resolved all global incidents',
                 now
@@ -576,7 +539,7 @@ export class IncidentManager {
         if (active) {
             delete this.state.symbols[key];
             await this.resolveAndLogIncidents(
-                { symbol: active.symbol, source: active.source, resolvedAt: null },
+                (inc) => inc.symbol === active.symbol && inc.source === active.source,
                 'RECOVERY',
                 `Resolved incident by key: ${key}`,
                 now
@@ -595,7 +558,7 @@ export class IncidentManager {
                 delete this.state.symbols[symbol];
                 const actor = this.determineActor(symbol, source);
                 await this.resolveAndLogIncidents(
-                    { symbol, source, resolvedAt: null },
+                    (inc) => inc.symbol === symbol && inc.source === source,
                     actor,
                     `Resolved incident for symbol ${symbol} from source ${source}`,
                     now
@@ -608,7 +571,7 @@ export class IncidentManager {
                 this.globalIncidents.delete(source);
                 const actor = this.determineActor(null, source);
                 await this.resolveAndLogIncidents(
-                    { symbol: null, source, resolvedAt: null },
+                    (inc) => inc.symbol === null && inc.source === source,
                     actor,
                     `Resolved global incident from source ${source}`,
                     now
@@ -636,7 +599,7 @@ export class IncidentManager {
 
         if (sourcesToDelete.length > 0) {
             await this.resolveAndLogIncidents(
-                { symbol, source: { in: sourcesToDelete }, resolvedAt: null },
+                (inc) => inc.symbol === symbol && sourcesToDelete.includes(inc.source),
                 'RECOVERY',
                 `Resolved incidents matching source prefix ${sourcePrefix} for symbol ${symbol}`,
                 now
@@ -682,19 +645,18 @@ export class IncidentManager {
             }
         }
         const now = Date.now();
-        const whereClause = {
-            resolvedAt: null,
-            OR: [
-                { source: { startsWith: 'ORDER_PIPELINE:sim_' } },
-                { source: { startsWith: 'OP:sim_' } },
-                { source: { contains: 'SIMULATOR' } },
-                { source: 'LIFECYCLE_INTEGRITY' },
-                { symbol: { startsWith: 'sim_' } },
-                { reason: { contains: 'sim_' } }
-            ]
-        };
-        await this.resolveAndLogIncidents(whereClause, 'SIMULATOR', 'Resolved by simulator reset', now);
+        await this.resolveAndLogIncidents(
+            (inc) =>
+                inc.source.startsWith('ORDER_PIPELINE:sim_') ||
+                inc.source.startsWith('OP:sim_') ||
+                inc.source.includes('SIMULATOR') ||
+                inc.source === 'LIFECYCLE_INTEGRITY' ||
+                (inc.symbol !== null && inc.symbol.startsWith('sim_')) ||
+                inc.reason.includes('sim_'),
+            'SIMULATOR',
+            'Resolved by simulator reset',
+            now
+        );
         console.log('[IncidentManager] Resolved all active simulation incidents in Neon DB.');
     }
 }
-

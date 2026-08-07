@@ -12,6 +12,7 @@ import { HealthTreeService } from '../agent/incident/analysis/HealthTreeService'
 import { prisma } from '../shared/prisma';
 import { WatchdogOrchestrator } from '../agent/WatchdogOrchestrator';
 import { EventPersistenceService } from '../shared/services/EventPersistenceService';
+import { MockIncidentRepository, MockDecisionAuditRepository } from '../shared/repositories/MockRepositories';
 import { MVP_CONFIG } from '../shared/mvpConfig';
 import { EvidenceCollector } from '../agent/incident/analysis/EvidenceCollector';
 import { TimelineReconstructor } from '../cloud/analysis/TimelineReconstructor';
@@ -1561,7 +1562,7 @@ async function runTests() {
                 if ('source' in args.where) {
                     res = res.filter(i => i.source === args.where.source);
                 }
-                if ('resolvedAt' in args.where) {
+                if (args.where.resolvedAt !== undefined) {
                     res = res.filter(i => i.resolvedAt === args.where.resolvedAt);
                 }
             }
@@ -1735,7 +1736,7 @@ async function runTests() {
                 if ('source' in args.where) {
                     res = res.filter(i => i.source === args.where.source);
                 }
-                if ('resolvedAt' in args.where) {
+                if (args.where.resolvedAt !== undefined) {
                     res = res.filter(i => i.resolvedAt === args.where.resolvedAt);
                 }
             }
@@ -1904,7 +1905,7 @@ async function runTests() {
                 if (args.where.source) {
                     res = res.filter(i => i.source === args.where.source);
                 }
-                if ('resolvedAt' in args.where) {
+                if (args.where.resolvedAt !== undefined) {
                     res = res.filter(i => i.resolvedAt === args.where.resolvedAt);
                 }
             }
@@ -2286,7 +2287,7 @@ async function runTests() {
                 if (args.where.source) {
                     res = res.filter(i => i.source === args.where.source);
                 }
-                if ('resolvedAt' in args.where) {
+                if (args.where.resolvedAt !== undefined) {
                     res = res.filter(i => i.resolvedAt === args.where.resolvedAt);
                 }
             }
@@ -2469,42 +2470,41 @@ async function runTests() {
     try {
         console.log('--- Checking RCA Phase 3.1: Evidence Collection ---');
 
-        const originalFindUniqueGroup = prisma.incidentGroup.findUnique;
-        const originalFindManyAudits = prisma.decisionAudit.findMany;
-
-        const mockGroup = {
+        const mockIncidentRepo = new MockIncidentRepository();
+        mockIncidentRepo.groups.push({
             id: 101,
             correlationKey: 'INFRA:GLOBAL',
             symbol: null,
             groupType: 'INFRASTRUCTURE',
             openedAt: BigInt(1710000000000),
             resolvedAt: BigInt(1710000060000),
-            highestSeverity: 'CRITICAL',
-            incidents: [
-                {
-                    id: 501,
-                    symbol: null,
-                    level: 'CRITICAL',
-                    source: 'DOCKER',
-                    reason: 'Docker container down',
-                    detectedAt: BigInt(1710000005000),
-                    resolvedAt: BigInt(1710000045000),
-                    groupId: 101
-                },
-                {
-                    id: 502,
-                    symbol: null,
-                    level: 'WARNING',
-                    source: 'VM',
-                    reason: 'High CPU utilization',
-                    detectedAt: BigInt(1710000010000),
-                    resolvedAt: null,
-                    groupId: 101
-                }
-            ]
-        } as any;
+            highestSeverity: 'CRITICAL'
+        });
+        mockIncidentRepo.incidents.push(
+            {
+                id: 501,
+                symbol: null,
+                level: 'CRITICAL',
+                source: 'DOCKER',
+                reason: 'Docker container down',
+                detectedAt: BigInt(1710000005000),
+                resolvedAt: BigInt(1710000045000),
+                groupId: 101
+            },
+            {
+                id: 502,
+                symbol: null,
+                level: 'WARNING',
+                source: 'VM',
+                reason: 'High CPU utilization',
+                detectedAt: BigInt(1710000010000),
+                resolvedAt: null,
+                groupId: 101
+            }
+        );
 
-        const mockAudits = [
+        const mockDecisionAuditRepo = new MockDecisionAuditRepository();
+        mockDecisionAuditRepo.audits.push(
             {
                 id: 'audit-1',
                 classification: 'VM_HEALTH',
@@ -2523,20 +2523,9 @@ async function runTests() {
                 metadata: null,
                 createdAt: new Date(1710000090000)
             }
-        ] as any;
+        );
 
-        (prisma.incidentGroup as any).findUnique = async (args: any) => {
-            if (args.where.id === 101) return mockGroup;
-            return null;
-        };
-
-        (prisma.decisionAudit as any).findMany = async (args: any) => {
-            const gte = args.where.createdAt.gte.getTime();
-            const lte = args.where.createdAt.lte.getTime();
-            return mockAudits.filter((a: any) => a.createdAt.getTime() >= gte && a.createdAt.getTime() <= lte);
-        };
-
-        const collector = new EvidenceCollector();
+        const collector = new EvidenceCollector(mockIncidentRepo, mockDecisionAuditRepo);
         const evidence = await collector.collectEvidence(101);
 
         // Assertions
@@ -2574,10 +2563,6 @@ async function runTests() {
         // Verify out of bounds audit was excluded
         const hasExchangeAudit = evidence.some(e => e.source === 'EXCHANGE_HEALTH');
         assert(!hasExchangeAudit, 'Should exclude audits outside group active timeframe.');
-
-        // Restore mocks
-        prisma.incidentGroup.findUnique = originalFindUniqueGroup;
-        prisma.decisionAudit.findMany = originalFindManyAudits;
 
         console.log('✅ [PASS] Evidence Collection sequence, types, sorting, and boundary exclusions verified.');
     } catch (e: any) {

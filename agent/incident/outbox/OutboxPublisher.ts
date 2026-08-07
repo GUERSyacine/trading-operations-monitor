@@ -1,21 +1,31 @@
 import { IncidentPayload, MachineInfoProvider, OutboxAlertPayload, OutboxPublisherContract } from '../../../shared/contracts/types';
-import { prisma } from '../../../shared/prisma';
+import { IIncidentOutboxRepository } from '../../../shared/repositories/interfaces';
 
 export class OutboxPublisher implements OutboxPublisherContract {
-    constructor(private machineProvider: MachineInfoProvider) {}
+    private outboxRepo: IIncidentOutboxRepository;
+
+    constructor(
+        private machineProvider: MachineInfoProvider,
+        outboxRepo?: IIncidentOutboxRepository
+    ) {
+        if (outboxRepo) {
+            this.outboxRepo = outboxRepo;
+        } else {
+            const { PrismaIncidentOutboxRepository } = require('../../../shared/repositories/PrismaRepositories');
+            this.outboxRepo = new PrismaIncidentOutboxRepository();
+        }
+    }
 
     /**
      * Enqueue a generic payload to the Outbox table.
      */
     private async enqueue(payload: any): Promise<void> {
-        await prisma.incidentOutbox.create({
-            data: {
-                payload,
-                status: 'PENDING',
-                attempts: 0,
-                nextRetryAt: new Date(),
-                lastError: null
-            }
+        await this.outboxRepo.create({
+            payload,
+            status: 'PENDING',
+            attempts: 0,
+            nextRetryAt: new Date(),
+            lastError: null
         });
     }
 

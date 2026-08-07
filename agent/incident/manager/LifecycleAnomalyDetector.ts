@@ -1,9 +1,21 @@
 import { IncidentManager } from './IncidentManager';
-import { prisma } from '../../../shared/prisma';
+import { IDecisionAuditRepository } from '../../../shared/repositories/interfaces';
 import { buildTradeKey, normalizeSymbol } from '../../../shared/types/telemetry';
 
 export class LifecycleAnomalyDetector {
-    constructor(private incidentManager: IncidentManager) {}
+    private decisionAuditRepo: IDecisionAuditRepository;
+
+    constructor(
+        private incidentManager: IncidentManager,
+        decisionAuditRepo?: IDecisionAuditRepository
+    ) {
+        if (decisionAuditRepo) {
+            this.decisionAuditRepo = decisionAuditRepo;
+        } else {
+            const { PrismaDecisionAuditRepository } = require('../../../shared/repositories/PrismaRepositories');
+            this.decisionAuditRepo = new PrismaDecisionAuditRepository();
+        }
+    }
 
     /**
      * Checks for stuck orders in the database by performing lookback-bounded bulk querying.
@@ -15,7 +27,7 @@ export class LifecycleAnomalyDetector {
 
         try {
             // 1. Fetch all ORDER_CREATED audits in the lookback window
-            const createdAudits = await prisma.decisionAudit.findMany({
+            const createdAudits = await this.decisionAuditRepo.findMany({
                 where: {
                     classification: 'ORDER_CREATED',
                     createdAt: {
@@ -25,7 +37,7 @@ export class LifecycleAnomalyDetector {
             });
 
             // 2. Fetch all matching resolved audits (filled or cancelled) in the lookback window
-            const resolvedAudits = await prisma.decisionAudit.findMany({
+            const resolvedAudits = await this.decisionAuditRepo.findMany({
                 where: {
                     classification: {
                         in: ['ORDER_FILLED', 'ORDER_CANCELLED']

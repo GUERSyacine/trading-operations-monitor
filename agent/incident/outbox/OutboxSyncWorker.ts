@@ -1,10 +1,11 @@
-import { prisma } from '../../../shared/prisma';
 import { MVP_CONFIG } from '../../../shared/mvpConfig';
+import { IIncidentOutboxRepository } from '../../../shared/repositories/interfaces';
 
 export class OutboxSyncWorker {
     private nextTimeout?: NodeJS.Timeout;
     private isRunning = false;
     private isSyncing = false;
+    private outboxRepo: IIncidentOutboxRepository;
 
     constructor(
         private readonly cloudGatewayUrl: string = MVP_CONFIG.CLOUD_SYNC.GATEWAY_URL,
@@ -16,8 +17,16 @@ export class OutboxSyncWorker {
         private readonly getAgentId?: () => string | undefined,
         private readonly getAgentSecret?: () => string | undefined,
         private readonly getAgentVersion?: () => string | undefined,
-        private readonly getAgentCapabilities?: () => string[] | undefined
-    ) {}
+        private readonly getAgentCapabilities?: () => string[] | undefined,
+        outboxRepo?: IIncidentOutboxRepository
+    ) {
+        if (outboxRepo) {
+            this.outboxRepo = outboxRepo;
+        } else {
+            const { PrismaIncidentOutboxRepository } = require('../../../shared/repositories/PrismaRepositories');
+            this.outboxRepo = new PrismaIncidentOutboxRepository();
+        }
+    }
 
     /**
      * Start the sync worker scheduler.
@@ -66,7 +75,7 @@ export class OutboxSyncWorker {
 
         try {
             const now = new Date();
-            const records = await prisma.incidentOutbox.findMany({
+            const records = await this.outboxRepo.findMany({
                 where: {
                     status: 'PENDING',
                     attempts: { lt: this.maxAttempts },
@@ -159,20 +168,17 @@ export class OutboxSyncWorker {
                     lastDelayMs = delayMs;
                     lastNextRetryAt = nextRetryAt;
 
-                    await prisma.incidentOutbox.update({
-                        where: { id: record.id },
-                        data: {
-                            status,
-                            attempts,
-                            lastError: errMsg,
-                            nextRetryAt
-                        }
+                    await this.outboxRepo.update(record.id, {
+                        status,
+                        attempts,
+                        lastError: errMsg,
+                        nextRetryAt
                     });
                 }
             }
 
             if (successIds.length > 0) {
-                await prisma.incidentOutbox.updateMany({
+                await this.outboxRepo.updateMany({
                     where: { id: { in: successIds } },
                     data: {
                         status: 'SENT',
@@ -187,7 +193,7 @@ export class OutboxSyncWorker {
             // Fetch remaining backlog count in local database outbox
             let remainingCount = 0;
             try {
-                remainingCount = await prisma.incidentOutbox.count({
+                remainingCount = await this.outboxRepo.count({
                     where: { status: 'PENDING' }
                 });
             } catch (err) {
@@ -212,7 +218,7 @@ Reason:       ${lastErrorMsg}
 ======================================================`);
             } else {
                 console.log(`======================================================
-📦 OUTBOX PUBLISHER - BATCH SYNCED
+📦 OUTBOX PUBLISHER - BATCH SYSED
 ======================================================
 Batch Size:   ${records.length}
 Status:       SUCCESS

@@ -1,4 +1,4 @@
-import { prisma } from '../prisma';
+import { IDecisionAuditRepository } from '../repositories/interfaces';
 import { LifecycleEvent, LifecycleEventType } from '../types/telemetry';
 
 export interface NormalizedEvent {
@@ -24,19 +24,29 @@ export interface NormalizedEvent {
 }
 
 export class EventPersistenceService {
+    private decisionAuditRepo: IDecisionAuditRepository;
+
+    constructor(decisionAuditRepo?: IDecisionAuditRepository) {
+        if (decisionAuditRepo) {
+            this.decisionAuditRepo = decisionAuditRepo;
+        } else {
+            // Lazy load default to keep imports and dependencies clean
+            const { PrismaDecisionAuditRepository } = require('../repositories/PrismaRepositories');
+            this.decisionAuditRepo = new PrismaDecisionAuditRepository();
+        }
+    }
+
     /**
      * Persist a normalized event to the decision_audit table.
      */
     async persistEvent(event: NormalizedEvent): Promise<void> {
         try {
-            await prisma.decisionAudit.create({
-                data: {
-                    classification: event.classification,
-                    systemRiskState: event.systemRiskState || 'NORMAL',
-                    rejectionReason: event.rejectionReason || null,
-                    metadata: event.metadata || undefined,
-                    createdAt: event.createdAt || new Date()
-                }
+            await this.decisionAuditRepo.create({
+                classification: event.classification,
+                systemRiskState: event.systemRiskState || 'NORMAL',
+                rejectionReason: event.rejectionReason || null,
+                metadata: event.metadata || undefined,
+                createdAt: event.createdAt || new Date()
             });
         } catch (error: any) {
             console.error(`[EventPersistenceService] Failed to persist event ${event.classification}:`, error?.message || error);
@@ -49,7 +59,7 @@ export class EventPersistenceService {
      */
     async getLastEventTime(classification: string, sourceSystem: string): Promise<number> {
         try {
-            const lastEvent = await prisma.decisionAudit.findFirst({
+            const lastEvent = await this.decisionAuditRepo.findFirst({
                 where: {
                     classification,
                     metadata: {
@@ -73,7 +83,7 @@ export class EventPersistenceService {
      */
     async hasOrderEvent(orderId: string): Promise<boolean> {
         try {
-            const existing = await prisma.decisionAudit.findFirst({
+            const existing = await this.decisionAuditRepo.findFirst({
                 where: {
                     classification: 'ORDER',
                     metadata: {
@@ -94,20 +104,18 @@ export class EventPersistenceService {
      */
     async persistLifecycleEvent(event: LifecycleEvent, rawPayload: any): Promise<void> {
         try {
-            await prisma.decisionAudit.create({
-                data: {
-                    classification: event.eventType,
-                    systemRiskState: 'NORMAL',
-                    rejectionReason: null,
-                    metadata: {
-                        telemetrySource: event.source,
-                        lifecycleEvent: event as any,
-                        rawPayload: rawPayload,
-                        websocketEventType: rawPayload?.type || null,
-                        websocketDirection: rawPayload?.direction || null
-                    } as any,
-                    createdAt: new Date(event.observedAt)
-                }
+            await this.decisionAuditRepo.create({
+                classification: event.eventType,
+                systemRiskState: 'NORMAL',
+                rejectionReason: null,
+                metadata: {
+                    telemetrySource: event.source,
+                    lifecycleEvent: event as any,
+                    rawPayload: rawPayload,
+                    websocketEventType: rawPayload?.type || null,
+                    websocketDirection: rawPayload?.direction || null
+                } as any,
+                createdAt: new Date(event.observedAt)
             });
             console.log(`[EventPersistenceService] Persisted ${event.eventType} event. eventId: ${event.eventId}`);
         } catch (error: any) {
@@ -120,7 +128,7 @@ export class EventPersistenceService {
      */
     async hasLifecycleEvent(eventId: string): Promise<boolean> {
         try {
-            const existing = await prisma.decisionAudit.findFirst({
+            const existing = await this.decisionAuditRepo.findFirst({
                 where: {
                     metadata: {
                         path: ['lifecycleEvent', 'eventId'],
@@ -144,7 +152,7 @@ export class EventPersistenceService {
         try {
             // 1. If orderId is provided, first search for an exact match on orderId
             if (orderId && orderId !== 'undefined' && orderId !== 'null') {
-                const exactMatch = await prisma.decisionAudit.findFirst({
+                const exactMatch = await this.decisionAuditRepo.findFirst({
                     where: {
                         classification: eventType,
                         metadata: {
@@ -159,7 +167,7 @@ export class EventPersistenceService {
 
                 // 2. If no exact match on orderId, search for any unbound record for the same tradeId
                 // (e.g. created by WebSocket which does not contain orderId)
-                const unboundMatches = await prisma.decisionAudit.findMany({
+                const unboundMatches = await this.decisionAuditRepo.findMany({
                     where: {
                         classification: eventType,
                         metadata: {
@@ -181,17 +189,14 @@ export class EventPersistenceService {
                                 orderId: orderId
                             }
                         };
-                        await prisma.decisionAudit.update({
-                            where: { id: match.id },
-                            data: { metadata: updatedMetadata }
-                        });
+                        await this.decisionAuditRepo.update(match.id, { metadata: updatedMetadata });
                         console.log(`[EventPersistenceService] Reconciled and bound orderId ${orderId} to existing unbound ${eventType} event (trade ${tradeId})`);
                         return true;
                     }
                 }
             } else {
                 // Fallback for when no orderId is provided (e.g. checking by tradeId only)
-                const existing = await prisma.decisionAudit.findFirst({
+                const existing = await this.decisionAuditRepo.findFirst({
                     where: {
                         classification: eventType,
                         metadata: {

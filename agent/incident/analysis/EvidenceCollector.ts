@@ -1,18 +1,43 @@
-import { prisma } from '../../../shared/prisma';
-import { Incident, IncidentGroup, DecisionAudit } from '@prisma/client';
 import { Evidence } from '../../../shared/types/telemetry';
-
+import {
+    IIncidentRepository,
+    IDecisionAuditRepository,
+    IncidentGroupRecord,
+    IncidentRecord,
+    DecisionAuditRecord
+} from '../../../shared/repositories/interfaces';
 
 export class EvidenceCollector {
+    private incidentRepo: IIncidentRepository;
+    private decisionAuditRepo: IDecisionAuditRepository;
+
+    constructor(
+        incidentRepo?: IIncidentRepository,
+        decisionAuditRepo?: IDecisionAuditRepository
+    ) {
+        if (incidentRepo) {
+            this.incidentRepo = incidentRepo;
+        } else {
+            const { PrismaIncidentRepository } = require('../../../shared/repositories/PrismaRepositories');
+            this.incidentRepo = new PrismaIncidentRepository();
+        }
+
+        if (decisionAuditRepo) {
+            this.decisionAuditRepo = decisionAuditRepo;
+        } else {
+            const { PrismaDecisionAuditRepository } = require('../../../shared/repositories/PrismaRepositories');
+            this.decisionAuditRepo = new PrismaDecisionAuditRepository();
+        }
+    }
+
     public async collectEvidence(groupId: number): Promise<Evidence[]> {
-        const group = await prisma.incidentGroup.findUnique({
-            where: { id: groupId },
-            include: { incidents: true }
-        });
+        const group = await this.incidentRepo.findGroupById(groupId);
 
         if (!group) {
             throw new Error(`IncidentGroup #${groupId} not found`);
         }
+
+        const incidents = await this.incidentRepo.findIncidents({ groupId });
 
         const evidenceList: Evidence[] = [];
 
@@ -23,7 +48,7 @@ export class EvidenceCollector {
         }
 
         // 2. Map Incident Events
-        for (const incident of group.incidents) {
+        for (const incident of incidents) {
             evidenceList.push(this.normalizeIncidentDetection(group.id, incident));
             if (incident.resolvedAt !== null) {
                 evidenceList.push(this.normalizeIncidentResolution(group.id, incident));
@@ -35,7 +60,7 @@ export class EvidenceCollector {
         const startTime = new Date(openedAtMs);
         const endTime = group.resolvedAt ? new Date(Number(group.resolvedAt)) : new Date();
 
-        const audits = await prisma.decisionAudit.findMany({
+        const audits = await this.decisionAuditRepo.findMany({
             where: {
                 createdAt: {
                     gte: startTime,
@@ -62,7 +87,7 @@ export class EvidenceCollector {
         return sorted;
     }
 
-    private normalizeGroupCreation(group: IncidentGroup): Evidence {
+    private normalizeGroupCreation(group: IncidentGroupRecord): Evidence {
         const timestamp = Number(group.openedAt);
         return {
             id: `EVD:GROUP:${group.id}:${timestamp}`,
@@ -74,14 +99,14 @@ export class EvidenceCollector {
             timestamp,
             origin: 'ASSESSMENT',
             entityId: String(group.id),
-            severity: group.highestSeverity,
+            severity: group.highestSeverity as any,
             symbol: group.symbol || undefined,
             correlationKey: group.correlationKey,
             message: `Incident Group #${group.id} opened with key ${group.correlationKey}`
         };
     }
 
-    private normalizeGroupResolution(group: IncidentGroup): Evidence {
+    private normalizeGroupResolution(group: IncidentGroupRecord): Evidence {
         const timestamp = Number(group.resolvedAt);
         return {
             id: `EVD:GROUP_RESOLVED:${group.id}:${timestamp}`,
@@ -99,7 +124,7 @@ export class EvidenceCollector {
         };
     }
 
-    private normalizeIncidentDetection(groupId: number, incident: Incident): Evidence {
+    private normalizeIncidentDetection(groupId: number, incident: IncidentRecord): Evidence {
         const timestamp = Number(incident.detectedAt);
         return {
             id: `EVD:INCIDENT_DETECTED:${incident.id}:${timestamp}`,
@@ -111,13 +136,13 @@ export class EvidenceCollector {
             timestamp,
             origin: 'ASSESSMENT',
             entityId: String(incident.id),
-            severity: incident.level,
+            severity: incident.level as any,
             symbol: incident.symbol || undefined,
             message: incident.reason
         };
     }
 
-    private normalizeIncidentResolution(groupId: number, incident: Incident): Evidence {
+    private normalizeIncidentResolution(groupId: number, incident: IncidentRecord): Evidence {
         const timestamp = Number(incident.resolvedAt);
         return {
             id: `EVD:INCIDENT_RESOLVED:${incident.id}:${timestamp}`,
@@ -129,13 +154,13 @@ export class EvidenceCollector {
             timestamp,
             origin: 'ASSESSMENT',
             entityId: String(incident.id),
-            severity: incident.level,
+            severity: incident.level as any,
             symbol: incident.symbol || undefined,
             message: `Resolved: ${incident.reason}`
         };
     }
 
-    private normalizeAudit(groupId: number, audit: DecisionAudit): Evidence {
+    private normalizeAudit(groupId: number, audit: DecisionAuditRecord): Evidence {
         const timestamp = audit.createdAt.getTime();
         const meta = audit.metadata ? (audit.metadata as Record<string, unknown>) : undefined;
         return {
